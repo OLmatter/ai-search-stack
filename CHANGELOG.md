@@ -1,53 +1,43 @@
 # Changelog
 
-所有版本变更记录。
+## [2.1.0] - 2026-08-05
 
-## [2.0.0] - 2026-08-05
+### 🎯 重大调整：从分散 SOP+SKILL 到 1 顶层 SOP+SKILL
 
-### 🎉 重大重构：从单工具到 toolbox
-
-- **新设计哲学**：5 个独立工具 + 4 个元文档，**不强行统一 API**
-- **新结构**：
-  ```
-  docs/                  元文档（横切所有工具）
-  tools/google-bridge/   Chrome 桥（原 search_helper）
-  tools/searxng/         公网元搜（新增）
-  tools/hackernews/      HN Algolia（新增）
-  tools/github/          GitHub API（新增）
-  tools/chat-scraper/    32+ 中国平台（从 OLmatter/chat-scraper 合并入）
-  ```
-- **每个工具独立**：
-  - 自带 `README.md`（工具介绍）
-  - 自带 `SOP.md`（部署 + 启动 + 维护）
-  - 自带 `SKILL.md`（调用技巧 + 何时用）
-  - 自带 `requirements.txt`
-  - 可单独用 / 单独换 / 单独维护
-- **4 个元文档**：
-  - `docs/choosing-tool.md` —— 决策树 + 决策矩阵
-  - `docs/composition-patterns.md` —— 4 个工作流（找+验 / 跨语言 / 兜底链 / 监控+验证）
-  - `docs/quality-gate.md` —— 3 维信号过滤
-  - `docs/query-design.md` —— query 怎么写
-
-### Added
-
-- `tools/searxng/client.py` —— SearXNG 元搜索客户端
-- `tools/hackernews/client.py` —— HN Algolia 客户端
-- `tools/github/client.py` —— GitHub Releases / Advisories / Repo Search
-- `tools/chat-scraper/` —— 32+ 中国平台 scraper（从 chat-scraper 合并入）
+**用户原话**："不是一个工具一个sop。是只有一个sop和skill当做路由。根据任务把他们引导到不同工具。"
 
 ### Changed
 
-- `tools/google-bridge/search_helper.py`（原 root search_helper.py）—— 移入子目录
-- README 重新设计：toolbox 模式 + 工具对比表
-- ARCHITECTURE 调整：toolbox 模型
-- CI 升级：5 个 tool 矩阵语法检查
+- ❌ 删除 `tools/*/SOP.md`（5 份分散 SOP）
+- ❌ 删除 `tools/*/SKILL.md`（5 份分散 SKILL）
+- ❌ 删除 `docs/` 目录（choosing-tool / composition-patterns / quality-gate / query-design）
+- ✅ 新增顶层 `SOP.md` —— 唯一 SOP：怎么选工具（路由）+ 怎么用（5 步流程）
+- ✅ 新增顶层 `SKILL.md` —— 唯一 SKILL：4 个组合模式 + 3 维信号过滤 + query 模板
+- ✅ `tools/<tool>/README.md` 保留（工具自己的部署 / 启动 / 失败回滚）
+- ✅ README + ARCHITECTURE 重新设计（强调 1 SOP + 1 SKILL 路由）
 
-### Migration from v1.0
+### 设计变化
 
-- 旧调用：`curl http://localhost:18799/search?q=...&vendor=claude&role=primary`
-- 新调用：`curl http://localhost:18799/search?q=...&vendor=claude&role=primary`（**路径不变**，仍用 18799）
-- 旧目录：`./search_helper.py` → 新目录：`tools/google-bridge/search_helper.py`
-- 旧 symlink 可加：`ln -s tools/google-bridge/start_search_helper.sh start_search_helper.sh`
+| v2.0.0 | v2.1.0 |
+|---|---|
+| 4 元文档（choosing / composition / quality-gate / query-design）| **1 顶层 SOP + 1 顶层 SKILL** |
+| 5 per-tool SOP.md | 0 per-tool SOP.md（合并到顶层 SOP）|
+| 5 per-tool SKILL.md | 0 per-tool SKILL.md（合并到顶层 SKILL）|
+| 路由分散在 5 处 | **路由集中在 1 处** |
+
+### 兼容
+
+- 工具代码 / 启动脚本 / 客户端 / 部署流程：**完全不变**
+- 用户只读 `SOP.md` + `SKILL.md` 就能用整个工具箱
+- 想了解某个工具细节时，单独看 `tools/<tool>/README.md`
+
+[2.1.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v2.1.0
+
+## [2.0.0] - 2026-08-05
+
+### Added
+- 5 个独立工具：google-bridge / searxng / hackernews / github / chat-scraper
+- 4 元文档 + 5 per-tool SOP/SKILL（**已被 v2.1 取代**）
 
 [2.0.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v2.0.0
 
@@ -55,9 +45,8 @@
 
 ### Added
 - 首个稳定版
-- `search_helper.py` v23.7（Chrome 桥）
-- `start_search_helper.sh` / `start_mihomo.sh` / `auto_select_node.py`
-- README + ARCHITECTURE + CHANGELOG + CONTRIBUTING + .github CI
+- `search_helper.py` v23.7
+- README + ARCHITECTURE + CHANGELOG + .github CI
 - MIT License
 
 [1.0.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v1.0.0
