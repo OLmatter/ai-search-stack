@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Logs
+*.log
+honeypot.jsonl
+
+# Chrome user data (cookies, fingerprints)
+chrome_udd/
+chrome_user_data/
+*.udd/
+
+# Config / secrets
+.env
+*.env
+config.local.yaml
+config.local.json
+mihomo_config.yaml
+
+# OS
+.DS_Store
+Thumbs.db
