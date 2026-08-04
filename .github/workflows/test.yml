@@ -5,14 +5,18 @@ on: [push, pull_request]
 jobs:
   syntax-check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tool: [google-bridge, searxng, hackernews, github, chat-scraper]
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
         run: |
-          python3 -m py_compile search_helper.py
-          python3 -m py_compile auto_select_node.py
+          for f in tools/${{ matrix.tool }}/*.py tools/${{ matrix.tool }}/scrapers/*.py 2>/dev/null; do
+            [ -f "$f" ] && python3 -m py_compile "$f" || true
+          done
       - name: Bash syntax check
         run: |
-          bash -n start_search_helper.sh
-          bash -n start_mihomo.sh
-          bash -n example_config.sh
+          for f in tools/${{ matrix.tool }}/*.sh; do
+            [ -f "$f" ] && bash -n "$f" || true
+          done

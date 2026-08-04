@@ -1,0 +1,2 @@
+# 纯标准库
+# 可选：设置 GITHUB_TOKEN 环境变量提升 rate limit（5000/h vs 60/h）
