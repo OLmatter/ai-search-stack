@@ -70,8 +70,14 @@ def list_platforms() -> Dict[str, str]:
     out: Dict[str, str] = {
         GENERAL: "baidu (no site:, general web search)",
         "bilibili": "bilibili official API (structured fields)",
+        # 专用引擎链（非裸百度）：路由见 search()
+        "zhihu": "dedicated chain: searxng -> sogou -> baidu site:zhihu.com",
+        "zhuanlan": "dedicated chain: searxng -> sogou -> baidu "
+                    "site:zhuanlan.zhihu.com",
     }
     for name, domain in sorted(SITE_MAP.items()):
+        if name in ("zhihu", "zhuanlan"):
+            continue    # 已由专用引擎链接管，避免误导消费者
         out[name] = f"baidu site:{domain}"
     return out
 
@@ -89,10 +95,15 @@ def _normalize(platforms: Optional[List[str]]) -> List[str]:
 
 
 def _error_record(e: Exception, q: str, platform: str) -> Dict:
-    """统一错误条目（slug 异常优先用 slug，否则用异常类名）。"""
+    """统一错误条目（slug 异常优先用 slug，否则用异常类名；
+    引擎链异常可带 chain 属性，一并透传）。"""
     slug = getattr(e, "slug", None) or type(e).__name__
-    return {"error": f"{slug}: {e}", "tool": _TOOL,
-            "query": q, "platform": platform}
+    record = {"error": f"{slug}: {e}", "tool": _TOOL,
+              "query": q, "platform": platform}
+    chain = getattr(e, "chain", None)
+    if chain:
+        record["chain"] = chain
+    return record
 
 
 def search(

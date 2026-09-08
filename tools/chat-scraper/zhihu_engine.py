@@ -17,6 +17,7 @@
 链条内单引擎故障自动降级；全链失败才报错（slug 取最后一环）。
 """
 import json
+import os
 import re
 import sys
 import threading
@@ -36,8 +37,10 @@ SEARXNG_INSTANCE = "http://127.0.0.1:8888"   # tools/searxng/docker 起的本地
 ENV_SEARXNG_INTERVAL = "CHAT_SCRAPER_SEARXNG_MIN_INTERVAL"
 ENV_SOGOU_INTERVAL = "CHAT_SCRAPER_SOGOU_MIN_INTERVAL"
 ENV_SOGOU_RESOLVE = "CHAT_SCRAPER_SOGOU_RESOLVE"
+ENV_SOGOU_RESOLVE_INTERVAL = "CHAT_SCRAPER_SOGOU_RESOLVE_INTERVAL"
 DEFAULT_SEARXNG_INTERVAL = 2.0   # 本机服务，但背后是真实上游引擎，保持礼貌
 DEFAULT_SOGOU_INTERVAL = 5.0     # 搜狗验证码随频率上升，宁慢勿封
+DEFAULT_RESOLVE_INTERVAL = 2.0   # /link 解跳转的额外节流
 
 _SINCE_TO_SEARXNG = {"24h": "day", "7d": "week", "30d": "month", "90d": "year"}
 _SOGOU_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -57,8 +60,6 @@ class SogouBlocked(RuntimeError):
 
 
 def _env_interval(env: str, default: float) -> float:
-    raw = ""
-    import os
     raw = os.environ.get(env, "")
     try:
         val = float(raw) if raw else default
@@ -95,19 +96,24 @@ def _clean_sogou_title(s: str) -> str:
 
 
 def _searxng_search(q: str, num: int, since: Optional[str],
-                    vendor: str, role: str) -> List[Dict]:
-    """主路径：本机 SearXNG，site: 过滤交给聚合后端（实测 brave 严格尊重）。"""
+                    vendor: str, role: str, site: str = "zhihu.com") -> List[Dict]:
+    """主路径：本机 SearXNG，site: 过滤交给聚合后端（实测 brave/google cse
+    均严格尊重）。"""
     _wait_turn(_last_searxng_ts, _env_interval(
         ENV_SEARXNG_INTERVAL, DEFAULT_SEARXNG_INTERVAL))
     instance = SEARXNG_INSTANCE.rstrip("/")
     params: Dict[str, object] = {
-        "q": f"{q} site:zhihu.com",
+        "q": f"{q} site:{site}",
         "format": "json",
         "safesearch": "0",
     }
     tr = _SINCE_TO_SEARXNG.get(since or "")
     if tr:
         params["time_range"] = tr
+    elif since:
+        # 与 searxng_client 同款协议：未知值警告后不过滤，不静默
+        print(f"[zhihu_engine] warning: unsupported since={since!r} "
+              f"(only 24h/7d/30d/90d); no time filter applied", file=sys.stderr)
     try:
         resp = requests.get(f"{instance}/search", params=params, timeout=15)
         resp.raise_for_status()
@@ -175,7 +181,8 @@ def _resolve_sogou_link(session: requests.Session, link_url: str) -> str:
 
     失败原样返回跳转链（调用方不做二次尝试）。
     """
-    _wait_turn(_last_resolve_ts, 2.0)
+    _wait_turn(_last_resolve_ts, _env_interval(
+        ENV_SOGOU_RESOLVE_INTERVAL, DEFAULT_RESOLVE_INTERVAL))
     try:
         resp = session.get(link_url, timeout=10, allow_redirects=False,
                            headers={"User-Agent": _SOGOU_UA})
@@ -188,23 +195,28 @@ def _resolve_sogou_link(session: requests.Session, link_url: str) -> str:
 
 
 def _sogou_search(q: str, num: int, vendor: str, role: str,
-                  since: Optional[str] = None) -> List[Dict]:
+                  since: Optional[str] = None, site: str = "zhihu.com") -> List[Dict]:
     """备选路径：搜狗 site: 搜索（跳转解析默认开，可 env 关）。
 
     注意：搜狗 web 无时间窗参数，since 仅透传记录不做过滤（与文档一致）。
     """
-    import os
     _wait_turn(_last_sogou_ts, _env_interval(
         ENV_SOGOU_INTERVAL, DEFAULT_SOGOU_INTERVAL))
     session = requests.Session()
     session.headers.update({"User-Agent": _SOGOU_UA})
     resp = session.get("https://www.sogou.com/web",
-                       params={"query": f"{q} site:zhihu.com"}, timeout=15)
+                       params={"query": f"{q} site:{site}"}, timeout=15)
     if resp.status_code != 200 or "antispider" in resp.url or \
             "验证码" in resp.text[:2000]:
         raise SogouBlocked(
             f"HTTP {resp.status_code}, url={resp.url[:80]!r}")
     parsed = _sogou_parse(resp.text)
+    if not parsed:
+        # 结构正常却 0 条 + 页面任意位置有风控特征 → 是软风控不是真空
+        # （搜狗的验证码页偶尔带正常外壳，只查前 2000 字符会漏判）
+        if "验证码" in resp.text or "antispider" in resp.text.lower():
+            raise SogouBlocked(
+                f"soft-block page (0 parsed rows, risk markers present)")
     resolve = os.environ.get(ENV_SOGOU_RESOLVE, "1") not in ("0", "false")
     out: List[Dict] = []
     for row in parsed[:num]:
@@ -225,11 +237,11 @@ def _sogou_search(q: str, num: int, vendor: str, role: str,
 
 
 def _baidu_fallback(q: str, num: int, since: Optional[str],
-                    vendor: str, role: str) -> List[Dict]:
+                    vendor: str, role: str, site: str = "zhihu.com") -> List[Dict]:
     """保底：百度 site:（软风控期会报 baidu_soft_blocked / ConnectionError）。"""
     import baidu_engine
     rows = baidu_engine.search(q, num=num, since=since, vendor=vendor,
-                               role=role, site="zhihu.com",
+                               role=role, site=site,
                                platform=_PLATFORM, on_error="raise")
     for r in rows:
         r["engine"] = "baidu"
@@ -242,16 +254,19 @@ def search(q: str, num: int = 10, since: Optional[str] = None,
            on_error: str = "report") -> List[Dict]:
     """知乎搜索：SearXNG → 搜狗 → 百度 降级链。
 
+    site 参数贯穿三环（门面把 zhuanlan 路由为 site:zhuanlan.zhihu.com，
+    三环都做真限定；默认 zhihu.com 全域）。
     单引擎报错或 0 结果都触发降级（site: 限定下 0 结果常常是引擎索引弱，
-    不是真空）；全链失败时按 on_error 协议报错，error 里带完整链条日志。
-    site 参数保留（zhuanlan 路由会传 zhuanlan.zhihu.com），当前实现固定
-    查 zhihu.com 全域——zhuanlan 的差异留给百度保底路径。
+    不是真空）；只要有任一环失败，即使后环返回 0 条也按 on_error 协议报错
+    （报错对象带 chain 属性记录每环结局，门面会透传到 error 记录）；
+    全链成功但 0 结果才是真真空。
     """
     chain: List[str] = []
     last_error: Optional[Exception] = None
-    for name, fn in (("searxng", lambda: _searxng_search(q, num, since, vendor, role)),
-                     ("sogou", lambda: _sogou_search(q, num, vendor, role, since)),
-                     ("baidu", lambda: _baidu_fallback(q, num, since, vendor, role))):
+    for name, fn in (
+            ("searxng", lambda: _searxng_search(q, num, since, vendor, role, site)),
+            ("sogou", lambda: _sogou_search(q, num, vendor, role, since, site)),
+            ("baidu", lambda: _baidu_fallback(q, num, since, vendor, role, site))):
         chain.append(name)
         try:
             rows = fn()
@@ -262,13 +277,14 @@ def search(q: str, num: int = 10, since: Optional[str] = None,
             last_error = e
             chain[-1] += f"(失败:{type(e).__name__})"
     if last_error is not None:
+        last_error.chain = "→".join(chain) or "none"   # 门面透传到 error 记录
         if on_error == "raise":
             raise last_error
         if on_error == "report":
             slug = getattr(last_error, "slug", None) or type(last_error).__name__
             return [{"error": f"{slug}: {last_error}", "tool": _TOOL,
                      "query": q, "platform": _PLATFORM,
-                     "chain": "→".join(chain) or "none"}]
+                     "chain": last_error.chain}]
     return []   # 全链真空（都成功但都 0 结果）——这是真 0 结果
 
 

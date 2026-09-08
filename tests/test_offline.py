@@ -286,6 +286,40 @@ class TestZhihuEngine(unittest.TestCase):
                  mock.patch.object(zg, "_sogou_search", return_value=[]), \
                  mock.patch.object(zg, "_baidu_fallback", return_value=[]):
                 self.assertEqual(zg.search("q", on_error="report"), [])
+        # raise 路径：chain 挂在异常对象上，门面 _error_record 必须透传
+        # （审查发现：chain 曾在标准调用路径丢失）
+        with mock.patch.object(zg, "_searxng_search",
+                               side_effect=zg.SearxngUnavailable("down")), \
+             mock.patch.object(zg, "_sogou_search", return_value=[]), \
+             mock.patch.object(zg, "_baidu_fallback", return_value=[]):
+            with self.assertRaises(zg.SearxngUnavailable) as cm:
+                zg.search("q", on_error="raise")
+            self.assertIn("sogou(0条)", cm.exception.chain)
+            import search as cs
+            rec = cs._error_record(cm.exception, "q", "zhihu")
+            self.assertIn("chain", rec)
+
+    def test_site_param_reaches_engines(self):
+        # zhuanlan 的 site 限定必须贯穿三环（v3.1.0 曾是死参数，审查修正）
+        import zhihu_engine as zg
+        from unittest import mock
+        captured = {}
+
+        def fake_searxng(q, num, since, vendor, role, site):
+            captured["searxng"] = site
+            raise zg.SearxngUnavailable("skip")
+
+        with mock.patch.object(zg, "_searxng_search", side_effect=fake_searxng), \
+             mock.patch.object(zg, "_sogou_search",
+                               side_effect=lambda q, num, vendor, role, since, site:
+                               captured.__setitem__("sogou", site) or []), \
+             mock.patch.object(zg, "_baidu_fallback",
+                               side_effect=lambda q, num, since, vendor, role, site:
+                               captured.__setitem__("baidu", site) or []):
+            zg.search("q", site="zhuanlan.zhihu.com", on_error="report")
+        self.assertEqual(captured, {"searxng": "zhuanlan.zhihu.com",
+                                    "sogou": "zhuanlan.zhihu.com",
+                                    "baidu": "zhuanlan.zhihu.com"})
 
     def test_routing_intercepts_zhihu(self):
         import search as cs

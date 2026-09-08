@@ -9,7 +9,7 @@
 ### Added
 
 - `tools/chat-scraper/zhihu_engine.py`：降级链 **本机 SearXNG → 搜狗 → 百度 site:**
-  - 主路径 SearXNG：`site:zhihu.com` 交给聚合后端（实测 brave 严格尊重且返回直链、零验证码），支持 since→time_range
+  - 主路径 SearXNG：`site:` 交给聚合后端（实测 brave / google cse 均严格尊重且返回直链、零验证码；后端随健康度浮动，engine 字段可观测），支持 since→time_range
   - 搜狗：尊重 site: 但结果包在 `/link?url=` 跳转里——默认解跳转（302 Location / `location.replace` 双模式，≥2s 节流，`CHAT_SCRAPER_SOGOU_RESOLVE=0` 可关，解不开保留跳转链）；验证码报 `sogou_blocked`
   - 百度 site: 保底（复用 baidu_engine，IP 软风控时报 `baidu_soft_blocked`）
   - 降级语义：单引擎**报错或 0 结果都降级**；全链失败报错带 `chain` 字段（每环结局可诊断），全链成功 0 结果才是真真空
