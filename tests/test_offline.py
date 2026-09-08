@@ -536,6 +536,25 @@ class TestZhihuSignAndContent(unittest.TestCase):
         with self.assertRaises(zc.ZhihuApiError):
             zc.fetch_question("19550227/answers")
 
+    def test_browser_read_url_guard(self):
+        # 审查补充：read_via_browser 的域护栏零成本离线测试
+        # （校验在浏览器 import 之前执行，非法 URL 不起浏览器）
+        import zhihu_content as zc
+        for bad in ("https://zhihu.com.evil.com/x",
+                    "https://www.zhihu.com.evil.com/x",
+                    "https://zhihu.com@evil.com/x",
+                    "javascript:alert(1)"):
+            with self.assertRaises(zc.ZhihuApiError):
+                zc._check_page_url(bad)
+
+    def test_browser_read_accepts_zhuanlan(self):
+        # 审查 #2：zhuanlan 文章是搜索线的常见产物，必须放行
+        import zhihu_content as zc
+        for good in ("https://zhuanlan.zhihu.com/p/1",
+                     "https://www.zhihu.com/question/19550227",
+                     "https://www.zhihu.com/question/19550227/answer/12202014"):
+            self.assertEqual(zc._check_page_url(good), good)
+
     def test_missing_cookie_file_is_auth_error(self):
         import zhihu_content as zc
         from unittest import mock

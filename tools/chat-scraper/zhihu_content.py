@@ -206,6 +206,15 @@ def fetch_answers(question_id: str, num: int = 10,
     return out
 
 
+def _check_page_url(url: str) -> str:
+    """知乎内容页 URL 校验（www./zhuanlan./裸域均放行；防域伪装）。
+    校验在浏览器启动前执行，可离线单测。"""
+    if not re.fullmatch(r"https?://(?:www\.|zhuanlan\.)?zhihu\.com/\S+",
+                        url or ""):
+        raise ZhihuApiError(f"not a zhihu page url: {url!r}")
+    return url
+
+
 def read_via_browser(url: str, headless: bool = True,
                      wait_ms: int = 6000) -> Dict:
     """免 cookie 读知乎页面：无头 camoufox + 百度搜索来路（SEO 引流放行）。
@@ -217,8 +226,7 @@ def read_via_browser(url: str, headless: bool = True,
     Returns:
         {title, content(纯文本, 截 8000 字), url, engine: "zhihu-seo-browser"}
     """
-    if not re.fullmatch(r"https?://(www\.)?zhihu\.com/\S+", url or ""):
-        raise ZhihuApiError(f"not a zhihu page url: {url!r}")
+    _check_page_url(url)
     try:
         from camoufox.sync_api import Camoufox
     except ImportError as e:
