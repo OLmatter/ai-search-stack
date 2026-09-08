@@ -70,15 +70,19 @@ china_results = china(q="Claude SEPA 漏洞", platforms=["zhihu", "weibo"])
 import time
 import json
 from urllib.request import urlopen
+from urllib.parse import quote
 
 def robust_search(q, vendor, since="7d"):
-    # 1. google-bridge（timeout 要给足：服务端有冷却/反 CAPTCHA 路径，15s 会在重负载路径必超时）
+    # 1. google-bridge（timeout 要给足：服务端有冷却/反 CAPTCHA 路径，15s 会在重负载路径必超时；
+    #    q 必须 quote——带空格的裸 URL 会抛 InvalidURL，别用裸 except 吞掉它）
     try:
-        r = json.loads(urlopen(f"http://127.0.0.1:18799/search?q={q}&num=10&since={since}&vendor={vendor}&role=primary", timeout=90).read())
+        r = json.loads(urlopen(
+            f"http://127.0.0.1:18799/search?q={quote(q)}&num=10&since={since}"
+            f"&vendor={vendor}&role=primary", timeout=90).read())
         if r.get("results"):
             return r["results"]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[robust_search] google-bridge failed: {e}")  # 降级要可见，别静默
 
     # 2. searxng 兜底（本地实例）
     time.sleep(1)
@@ -93,7 +97,7 @@ def robust_search(q, vendor, since="7d"):
 # 1. 找
 results = robust_search("claude exploit", vendor="claude", since="7d")
 
-# 2. dedup
+# 2. dedup（load_dedup_db 是你自己的去重库，非本工具箱提供）
 known = load_dedup_db()
 fresh = [r for r in results if r["url"] not in known]
 
@@ -174,12 +178,21 @@ curl "...search?q=test&num=10&since=7d&vendor=claude&role=primary"
 ### 案例 1：找 Claude SEPA 漏洞 + 验证
 
 ```python
-# 1. google-bridge 找
-candidates = curl "http://127.0.0.1:18799/search?q=claude+SEPA+漏洞&num=10&since=7d&vendor=claude&role=primary"
+import json
+from urllib.request import urlopen
+from urllib.parse import quote
+import sys; sys.path.insert(0, "tools/hackernews")
+from hackernews_client import search as hn_search
 
-# 2. hackernews 验证
+# 1. google-bridge 找
+resp = urlopen("http://127.0.0.1:18799/search?q=" + quote("claude SEPA 漏洞")
+               + "&num=10&since=7d&vendor=claude&role=primary", timeout=90)
+candidates = json.loads(resp.read())["results"]
+
+# 2. hackernews 验证（过滤故障记录后再判阈值）
 for c in candidates:
     hn = hn_search(c["title"], since="7d", vendor="claude", role="verify")
+    hn = [r for r in hn if "error" not in r]
     if hn and hn[0]["points"] >= 50:
         # 真信号
         ...

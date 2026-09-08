@@ -22,3 +22,6 @@ mihomo_config.yaml
 # OS
 .DS_Store
 Thumbs.db
+
+# google-bridge runtime artifacts (v23.9)
+state/

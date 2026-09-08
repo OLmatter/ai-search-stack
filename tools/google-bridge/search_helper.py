@@ -68,16 +68,28 @@ _driver_lock = None  # threading.Lock, created lazily
 # Cooldown: prevent rapid-fire queries that trigger Google CAPTCHA
 # - Per-request minimum: 30s between queries
 # - Post-CAPTCHA: 300s (5 min) before next attempt
-# - After 2 CAPTCHAs in 10 min: refuse and return empty
+# - After 2 CAPTCHAs in a rolling 10-min window: refuse (503) until the
+#   window drains — the counter DECAYS, a CAPTCHA hours ago must not
+#   permanently lock the service (v23.9: was an ever-growing int).
 import threading as _th
 import time as _time
+from collections import deque as _deque
 _last_query_ts = [0.0]  # thread-safe via lock
 _last_captcha_ts = [0.0]
-_captcha_count_10m = [0]
+_captcha_window: list = []  # timestamps of recent CAPTCHAs (rolling 10 min)
 _cooldown_lock = _th.Lock()
 COOLDOWN_BETWEEN = int(os.environ.get('NO1_COOLDOWN', '30'))   # seconds
 COOLDOWN_POST_CAPTCHA = 300  # 5 min after CAPTCHA
 CAPTCHA_LIMIT_10M = 2  # max 2 CAPTCHAs in 10 min, then refuse
+CAPTCHA_WINDOW_S = 600  # rolling window length
+
+
+def _prune_captcha_window() -> int:
+    """Caller must hold _cooldown_lock. Returns CAPTCHAs still in window."""
+    cutoff = _time.time() - CAPTCHA_WINDOW_S
+    while _captcha_window and _captcha_window[0] < cutoff:
+        _captcha_window.pop(0)
+    return len(_captcha_window)
 # v23.8 (2026-09-09): tunable via env so tests/slow links can adjust without
 # editing code. Sleep is always taken OUTSIDE _cooldown_lock so concurrent
 # requests are not serialised behind a sleeper.
@@ -295,7 +307,8 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
     # OUTSIDE the lock (previously time.sleep() ran while holding
     # _cooldown_lock, serialising every concurrent request behind a 30s nap).
     # After sleeping, loop once more to re-check under the lock; hard skips
-    # (post-CAPTCHA lockout, CAPTCHA rate limit) still return [] immediately.
+    # (post-CAPTCHA lockout, CAPTCHA rate limit) raise immediately (v23.9:
+    # answered as HTTP 503 captcha_blocked, never as 200/0-results).
     while True:
         wait_s = 0
         with _cooldown_lock:
@@ -306,7 +319,7 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
                 _honeypot_skip(query, num, since, f'post_captcha_lockout_{skip_s}s')
                 raise CaptchaBlocked(
                     f'post-CAPTCHA lockout, {skip_s}s remaining (cooldown gate)')
-            if _captcha_count_10m[0] >= CAPTCHA_LIMIT_10M:
+            if _prune_captcha_window() >= CAPTCHA_LIMIT_10M:
                 print(f'[cooldown] CAPTCHA limit ({CAPTCHA_LIMIT_10M}/10min) hit, skip', flush=True)
                 _honeypot_skip(query, num, since, 'captcha_limit_10m')
                 raise CaptchaBlocked(
@@ -388,11 +401,13 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
     if is_captcha:
         with _cooldown_lock:
             _last_captcha_ts[0] = _time.time()
-            _captcha_count_10m[0] += 1
+            _captcha_window.append(_time.time())
+            _prune_captcha_window()
+            captcha_count = len(_captcha_window)
         # v23.8: wait is configurable (NO1_CAPTCHA_SLEEP, default 60s) and is
         # taken WITHOUT holding _cooldown_lock, so other requests are not
         # serialised behind it.
-        print(f'  CAPTCHA detected (count_10m={_captcha_count_10m[0]}), '
+        print(f'  CAPTCHA detected (count_10m={captcha_count}), '
               f'waiting {CAPTCHA_SLEEP}s and retrying', flush=True)
         time.sleep(CAPTCHA_SLEEP)
         ok, html = _do_search(url)
@@ -600,7 +615,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         url = urlparse(path_str)
         if url.path == '/health':
             return self._send_json({'ok': True, 'service': 'search_helper',
-                                    'version': 'v23.8', 'engine': 'undetected-chromedriver'})
+                                    'version': 'v23.9', 'engine': 'undetected-chromedriver'})
 
         # v16 (2026-07-30): /chrome_ready — lightweight Chrome liveness probe.
         # Returns 200 with {alive, info, driver_state} so watchdog can
@@ -761,7 +776,7 @@ def main():
     bind = os.environ.get('SEARCH_HELPER_BIND', '127.0.0.1')
     from http.server import ThreadingHTTPServer
     server = ThreadingHTTPServer((bind, port), SearchHandler)
-    print(f'search_helper v23.8 (portable paths + encoded query + load-failure 502 + '
+    print(f'search_helper v23.9 (portable paths + encoded query + load-failure 502 + '
           f'lock-free cooldowns + tunable NO1_CAPTCHA_SLEEP/NO1_MIN_HTML_LEN) listening on {bind}:{port}', flush=True)
     print('  GET /health', flush=True)
     print('  GET /search?q=...&num=10&since=24h&vendor=claude&role=primary', flush=True)

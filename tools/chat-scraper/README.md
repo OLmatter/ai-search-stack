@@ -88,7 +88,7 @@ curl -G "http://127.0.0.1:8765/search" \
 `search(..., on_error="report")`（默认）：出错返回
 `[{"error": "<slug>: <msg>", "tool": "chat-scraper", "query": q, "platform": p}]`，调用方检查 `result[0].get("error")` 区分「故障」与「真空（0 结果）」。
 `on_error="raise"` 抛出；`on_error="empty"` 兼容旧行为返回 []（故障平台静默跳过）。
-常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）。
+常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
 
 ## 本机实测记录（2026-09-09）
 

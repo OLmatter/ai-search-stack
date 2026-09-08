@@ -69,23 +69,8 @@ def search(
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
 
-        results = []
-        for hit in data.get("hits", []):
-            results.append({
-                "title": hit.get("title") or hit.get("story_title") or "",
-                "url": hit.get("url") or hit.get("story_url")
-                       or f"https://news.ycombinator.com/item?id={hit.get('objectID', '')}",
-                "content": hit.get("story_text") or hit.get("comment_text") or "",
-                # comment 模式下 Algolia 返回 points/num_comments 为 JSON null，
-                # `hit.get("points", 0)` 会拿到 None，这里统一 `or 0` + int() 兜底
-                "points": int(hit.get("points") or 0),
-                "comments": int(hit.get("num_comments") or 0),
-                "author": hit.get("author") or "",
-                "ts": hit.get("created_at") or "",
-                "vendor": vendor,
-                "role": role,
-                "since": since or "all",
-            })
+        results = [_row_from_hit(hit, vendor=vendor, role=role, since=since)
+                   for hit in data.get("hits", [])]
         return results
     except Exception as e:
         if on_error == "raise":
@@ -93,6 +78,28 @@ def search(
         if on_error == "report":
             return [{"error": f"{type(e).__name__}: {e}", "tool": _TOOL, "query": q}]
         return []  # on_error == "empty"：兼容旧行为
+
+
+def _row_from_hit(hit: Dict, vendor: str, role: str, since: Optional[str]) -> Dict:
+    """Algolia hit -> 统一结果行。
+
+    comment 模式下 points/num_comments 为 JSON null，`hit.get("points", 0)`
+    会拿到 None（key 存在时默认值不生效），调用方 `points >= 50` 就 TypeError——
+    这里统一 `or 0` + int() 兜底（v3 回归测试锁死：tests/test_offline.py）。
+    """
+    return {
+        "title": hit.get("title") or hit.get("story_title") or "",
+        "url": hit.get("url") or hit.get("story_url")
+               or f"https://news.ycombinator.com/item?id={hit.get('objectID', '')}",
+        "content": hit.get("story_text") or hit.get("comment_text") or "",
+        "points": int(hit.get("points") or 0),
+        "comments": int(hit.get("num_comments") or 0),
+        "author": hit.get("author") or "",
+        "ts": hit.get("created_at") or "",
+        "vendor": vendor,
+        "role": role,
+        "since": since or "all",
+    }
 
 
 def _since_to_timestamp(since: str) -> int:

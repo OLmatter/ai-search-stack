@@ -76,6 +76,35 @@ class TestHackernews(unittest.TestCase):
         self.assertLess(abs(got - expect), 120,
                         f"7d 截止戳偏差 {got - expect:.0f}s（时区漂移回归？）")
 
+    def test_null_points_coerced_to_int(self):
+        # v3 修复前：comment 模式 points 为 JSON null，`hit.get("points", 0)`
+        # 拿到 None，调用方 `points >= 50` 直接 TypeError（审计实测）
+        import hackernews_client as hn
+        row = hn._row_from_hit({"title": None, "points": None,
+                                "num_comments": None, "author": None},
+                               vendor="t", role="verify", since="7d")
+        self.assertEqual(row["points"], 0)
+        self.assertIsInstance(row["points"], int)
+        self.assertEqual(row["comments"], 0)
+        self.assertEqual(row["title"], "")
+
+    def test_search_end_to_end_null_points(self):
+        # 端到端锁死：mock 掉 urlopen，返回 points=null 的真实 hit 形状
+        import io
+        import json
+        from unittest import mock
+        import urllib.request  # noqa: F401  (hackernews_client 引用其命名空间)
+        import hackernews_client as hn
+        payload = json.dumps({"hits": [{"objectID": "1", "title": "t",
+                                        "points": None, "num_comments": None}]}).encode()
+        fake_resp = io.BytesIO(payload)
+        fake_resp.__enter__ = lambda s: s
+        fake_resp.__exit__ = lambda s, *a: False
+        with mock.patch("urllib.request.urlopen", return_value=fake_resp):
+            results = hn.search("q", on_error="raise")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["points"], 0)
+
 
 class TestGithub(unittest.TestCase):
     def test_error_protocol_modes(self):

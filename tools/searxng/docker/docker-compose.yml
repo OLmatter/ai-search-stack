@@ -1,6 +1,8 @@
 # SearXNG 本地实例：为 tools/searxng/searxng_client.py 提供 JSON API
 # 用法: cd tools/searxng/docker && docker compose up -d
 # 验证: curl "http://127.0.0.1:8888/search?q=test&format=json" 应返回 JSON
+# 注意: 仅限本机使用（端口只绑 127.0.0.1）。SEARXNG_SECRET 是入库的示例值，
+#       若要暴露到任何网络，先换成 `python -c "import secrets;print(secrets.token_hex(32))"` 生成的私有值
 services:
   searxng:
     image: searxng/searxng:latest
@@ -11,5 +13,5 @@ services:
       - ./searxng:/etc/searxng:rw
     environment:
       - SEARXNG_BASE_URL=http://127.0.0.1:8888/
-      - SEARXNG_SECRET=523a2a5d9e91aa1a60f8d7f40aaa475b09bdc0e6ad68e98a63d142c72ac29592
+      - SEARXNG_SECRET=523a2a5d9e91aa1a60f8d7f40aaa475b09bdc0e6ad68e98a63d142c72ac29592  # 示例值，勿用于公网
     restart: unless-stopped

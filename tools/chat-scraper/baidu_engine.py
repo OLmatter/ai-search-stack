@@ -272,8 +272,14 @@ def _main() -> int:
     results = search(args.q, num=args.num, since=args.since,
                      vendor=args.vendor, role=args.role, site=args.site,
                      on_error=args.on_error)
+    errors = [r for r in results if "error" in r]
+    if errors:
+        for r in errors:
+            print(f"[baidu_engine] error ({r.get('platform', '?')}): {r['error']}",
+                  file=sys.stderr)
+        return 1
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    return 1 if results and results[0].get("error") else 0
+    return 0
 
 
 if __name__ == "__main__":

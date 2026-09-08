@@ -65,7 +65,9 @@ def search(
             "categories": categories,
         }
         if since:
-            params["time_range"] = _since_to_time_range(since)
+            time_range = _since_to_time_range(since)
+            if time_range:          # 未知 since 映射为空串：不加参数（URL 干净）
+                params["time_range"] = time_range
 
         url = f"{instance}/search?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": "ai-search-stack/2.0"})

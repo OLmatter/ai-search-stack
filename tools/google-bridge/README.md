@@ -38,10 +38,11 @@ curl "http://127.0.0.1:18799/search?q=ENCODED&num=10&since=7d&vendor=claude&role
 前置条件：
 
 1. **Chrome 浏览器**：默认找 `C:\Program Files\Google\Chrome\Application\chrome.exe`，不同位置用 `NO1_CHROME_BIN` 指定。
-2. **chromedriver 自备**（Windows 上自动下载经常连不上 Google 存储）：到 <https://googlechromelabs.github.io/chrome-for-testing/> 下载与 Chrome 大版本一致的 `chromedriver-win64.zip`，然后任选其一：
+2. **chromedriver 自备**（Windows 上自动下载经常连不上 Google 存储）：下载与 Chrome 大版本一致的 `chromedriver-win64.zip`，任选其一放置：
    - 放到本目录 `state/bin/chromedriver.exe`（drop-in，推荐）；
    - 或 `export NO1_CHROMEDRIVER_BIN=/path/to/chromedriver.exe`；
    - 或放进 PATH。
+   下载源：国内镜像 `https://registry.npmmirror.com/-/binary/chrome-for-testing/<版本>/win64/chromedriver-win64.zip`（实测可用），或官方 <https://googlechromelabs.github.io/chrome-for-testing/>。
    查找优先级：`NO1_CHROMEDRIVER_BIN` → `state/bin/chromedriver(.exe)` → `PATH` → 让 undetected-chromedriver 自动下载。
 3. **代理必须有**：无代理 google.com 直连不通。先起 mihomo（`bash start_mihomo.sh`，需 `NO1_MIHOMO_BIN`），确认 `NO1_PROXY`（默认 `socks5://127.0.0.1:7897`）可达。
 
@@ -70,7 +71,7 @@ bash start_search_helper.sh   # 自动：Xvfb :99 → 代理健康检查 → 选
 
 - `search_helper.py` — HTTP 桥（默认 127.0.0.1:18799；要对外用 `SEARCH_HELPER_BIND=0.0.0.0`）
   - `GET /health`、`GET /chrome_ready`、`GET /search?q=...&num=&since=&vendor=&role=`、`GET /export?...`
-  - 页面加载失败返回 502 + `{"error": ...}`（与"真 0 结果"的 200 区分）；缺 `q` 返回 400
+  - 失败语义（与"真 0 结果"的 200 区分）：页面没加载出来 → 502 `page_load_failed`；CAPTCHA 持续/锁定/限速 → 503 `captcha_blocked`（等冷却或切 searxng）；缺 `q` → 400
 - `start_search_helper.sh` — 跨平台启动器（Linux 守护流程；Windows 前台拉起）
 - `start_mihomo.sh` — mihomo 代理启动（二进制缺失时明确报错退出）
 - `auto_select_node.py` — 自动选最快 mihomo 节点
@@ -98,4 +99,4 @@ bash start_search_helper.sh   # 自动：Xvfb :99 → 代理健康检查 → 选
 - ↔️ `searxng`（可选）— 主工具 CAPTCHA 锁时的兜底
 - ↔️ `hackernews`（可选）— 社区反应验证
 - ↔️ `github`（可选）— 代码/CVE 验证
-- ↔️ `chat-scraper`（替代）— 32+ 中国平台
+- ↔️ `chat-scraper`（替代）— 中国平台（bilibili API + 百度 site: 路由 16 站）

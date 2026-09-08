@@ -30,8 +30,8 @@
 # google-bridge：真 Google，需 Chrome + 代理（mihomo 或任何 http/socks 代理）
 cd tools/google-bridge
 pip install -r requirements.txt
-cp example_config.sh .env && vim .env   # 填 NO1_PROXY 等（Windows 可直接跳过 .sh，见下）
-bash start_search_helper.sh             # Linux；Windows Git Bash 请直接:
+cp example_config.sh .env && vim .env   # 填 NO1_PROXY 等
+source .env                             # 必须加载：search_helper 自己不读 .env
 python search_helper.py                 # 默认已绑 127.0.0.1:18799
 curl http://127.0.0.1:18799/health      # {"ok": true, ...}
 
@@ -75,6 +75,7 @@ python -c "import sys; sys.path.insert(0, 'tools/chat-scraper'); from search imp
 - `vendor`：主题分类（自定义，如 `claude` / `chatgpt` / `pip`）
 - `role`：`primary`（主搜）/ `fallback`（兜底）/ `verify`（验证）
 - `since`：`24h`（实时故障）/ `7d`（默认）/ `30d`（月度回顾）
+  - 例外：`github` 工具无时间语义（release/advisory 按 API 全量返回，输出 `since: "all"`），必传的是 vendor/role
 
 不传 → 指标归类为 "?"，无法算 vendor coverage / fallback 命中率。
 
@@ -114,11 +115,12 @@ if results and "error" in results[0]:
 
 | 失败现象 | 判别 | 回滚 |
 |---|---|---|
-| 结果带 `error`（或 CLI exit 1） | **故障**，不是没搜到 | 看报错：连接拒绝→起服务；`baidu_soft_blocked`→等冷却/换工具；403 rate limit→配 token/等待 |
+| 结果带 `error`（或 CLI exit 1） | **故障**，不是没搜到 | 看报错：连接拒绝→起服务；`baidu_soft_blocked`/连接被 RST→等冷却/换工具；403 rate limit→配 token/等待 |
+| google-bridge 返回 HTTP 503 `captcha_blocked` | Google 对出口 IP 风控（CAPTCHA 持续/锁定/限速） | 等 `NO1_COOLDOWN`~5 分钟冷却；切 searxng 兜底；低频使用 |
+| google-bridge 返回 HTTP 502 `page_load_failed` | 页面没加载出来（网络/代理死） | 查代理（`NO1_PROXY`）、查 Chrome/chromedriver |
 | 工具 A 没启 | /health 不通 | 启动工具 A（`tools/<tool>/README.md`） |
-| 真 0 结果（无 error 字段） | 查询真空 | 改 query（见 SKILL.md 模板）/ 改 since / 换工具 |
+| 真 0 结果（无 error 字段，HTTP 200） | 查询真空 | 改 query（见 SKILL.md 模板）/ 改 since / 换工具 |
 | 所有工具都失败 | 全部 error | 写"信号沉默"报告 + 退出 |
-| CAPTCHA 锁 | google-bridge 自带 backoff | 等冷却 + 切 searxng 兜底 |
 
 ## 自动化检查
 

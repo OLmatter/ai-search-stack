@@ -140,7 +140,12 @@ def _get_wbi_keys(force_refresh: bool = False) -> Tuple[str, str]:
         _wait_turn()
         s = _get_session()
         resp = s.get(_API_NAV, timeout=TIMEOUT)
-        wbi_img = ((resp.json().get("data") or {}).get("wbi_img") or {})
+        try:
+            nav = resp.json()
+        except ValueError as e:
+            raise BilibiliApiError(
+                f"nav returned non-JSON (HTTP {resp.status_code}): {e}") from e
+        wbi_img = ((nav.get("data") or {}).get("wbi_img") or {})
         img_key = _key_from_url(wbi_img.get("img_url", ""))
         sub_key = _key_from_url(wbi_img.get("sub_url", ""))
         if not img_key or not sub_key:
@@ -259,6 +264,8 @@ def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
             cutoff = time.time() - window
 
     out: List[Dict] = []
+    if num <= 0:
+        return out
     for item in (payload.get("data") or {}).get("result") or []:
         bvid = item.get("bvid") or ""
         if not bvid:
@@ -299,8 +306,13 @@ def _main() -> int:
     results = search(args.q, num=args.num, since=args.since,
                      vendor=args.vendor, role=args.role,
                      on_error=args.on_error)
+    errors = [r for r in results if "error" in r]
+    if errors:
+        for r in errors:
+            print(f"[bilibili_engine] error: {r['error']}", file=sys.stderr)
+        return 1
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    return 1 if results and results[0].get("error") else 0
+    return 0
 
 
 if __name__ == "__main__":

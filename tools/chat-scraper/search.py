@@ -179,8 +179,16 @@ def _main() -> int:
     results = search(args.q, platforms=platforms, num=args.num,
                      since=args.since, vendor=args.vendor, role=args.role,
                      on_error=args.on_error)
+    errors = [r for r in results if "error" in r]
+    if errors:
+        # 任一平台故障即 stderr + exit 1（与仓库统一错误协议一致）；
+        # 半成功聚合的数据仍可经库调用 on_error="report" 获取
+        for r in errors:
+            print(f"[chat-scraper] error ({r.get('platform', '?')}): {r['error']}",
+                  file=sys.stderr)
+        return 1
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    return 1 if results and results[0].get("error") else 0
+    return 0
 
 
 if __name__ == "__main__":

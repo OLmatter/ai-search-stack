@@ -1,8 +1,13 @@
 # searxng
 
-> **SearXNG 元搜索客户端** —— 公网元搜，作为 google-bridge 兜底。
+> **SearXNG 元搜索客户端** —— 自建实例（`docker/` 一条命令），作为 google-bridge 兜底。
 
 当 google-bridge 被 CAPTCHA 锁时，用 SearXNG 兜底。**纯标准库 + HTTP，零依赖**。
+
+> ⚠️ **不要用公网实例**：主流公网 SearXNG 默认禁 `format=json`（实测 `searx.be`
+> 返回 HTML、`searx.tiekoetter.com` 429），客户端必走错误协议。本工具的默认实例
+> 是 `http://127.0.0.1:8888`——用仓库自带的 `docker/` compose 一条命令起好，
+> JSON 已启用、limiter 已关，开箱即用。
 
 ## 何时用
 
@@ -14,24 +19,26 @@
 | 想要真 Google 100% 全结果 | ❌ 改用 `google-bridge` |
 | 平台特定搜索（知乎/B站/微信公众号） | ❌ 改用 `chat-scraper` |
 
-> ⚠️ **实例必须允许 JSON 输出**：SearXNG 默认 settings 只允许 HTML，
-> 需在 `settings.yml` 的 `search.formats` 里加 `json`，否则请求 `format=json`
-> 会失败/返回 HTML，解析走错误协议。实测公网 `searx.be` 的 JSON 未启用（返回 HTML），
-> 公网实例请自建或挑选确认开了 JSON 的。
+> ⚠️ **实例必须允许 JSON 输出**：SearXNG 默认 settings 只允许 HTML，需在
+> `settings.yml` 的 `search.formats` 里加 `json`。仓库自带的 compose 已配好，
+> 自己搭实例的人必须记得这一步，否则请求 `format=json` 会失败/返回 HTML。
 
 ## 快速开始
 
 本机用 `python`（不是 `python3`；本机 python = 3.12 anaconda）。
 
-### 1. 跑 SearXNG 实例
+### 1. 跑 SearXNG 实例（唯一推荐方式）
 
 ```bash
-# 本地 Docker（推荐）
-docker run -d --name searxng -p 8888:8080 \
-  -e SEARXNG_SECRET=changeme \
-  searxng/searxng
-# 记得给该实例开 JSON 输出（settings.yml: search.formats: [html, json]）
+cd tools/searxng/docker
+docker compose up -d
+# 验证（应返回 JSON）：
+curl "http://127.0.0.1:8888/search?q=test&format=json" | head -c 200
 ```
+
+该 compose 已含启用 JSON 的 `settings.yml`（`search.formats: [html, json]`、
+limiter 关闭、端口只绑 127.0.0.1）。裸 `docker run searxng/searxng` 起的实例
+**JSON 未启用**，客户端拿不到结果——别用。
 
 ### 2. 装依赖
 
@@ -98,8 +105,8 @@ searxng）协议一致，组合时统一用 `result[0].get("error")` 判故障�
 
 ## 配套文档
 
-- `SOP.md` — 部署 SearXNG + 调客户端
-- `SKILL.md` — 调用技巧 + CAPTCHA 兜底链
+- [`../../SOP.md`](../../SOP.md) — 工具箱路由 + 部署（含本工具的 compose 用法）+ 错误协议
+- [`../../SKILL.md`](../../SKILL.md) — 组合模式（含 CAPTCHA 兜底链）+ 3 维过滤
 
 ## 关联
 
