@@ -1,4 +1,4 @@
-"""search_helper v23.7 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 + Linux UDD fallback + vendor/role URL params + /export with vendor/role filters + JSON Lines export.
+"""search_helper v23.8 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export.
 
 Endpoints:
   GET /search?q=...&num=10&since=24h
@@ -25,7 +25,7 @@ Architecture:
 """
 import sys, json, os, time, traceback, shutil
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, urlencode
 
 # Force UTF-8 stdout
 if hasattr(sys.stdout, 'reconfigure'):
@@ -52,7 +52,12 @@ if sys.platform != 'win32' and not os.environ.get('DISPLAY'):
 import faulthandler
 import signal
 faulthandler.enable()
-faulthandler.register(signal.SIGUSR1)
+# v23.8 (2026-09-09): platform guard. SIGUSR1 does not exist on Windows
+# (Anaconda Python has neither signal.SIGUSR1 nor faulthandler.register),
+# so unconditional registration crashed with AttributeError at import time.
+# Register only where the platform supports it; silently skip elsewhere.
+if hasattr(signal, 'SIGUSR1') and hasattr(faulthandler, 'register'):
+    faulthandler.register(signal.SIGUSR1)
 
 # Lazy import: only load selenium when actually serving requests
 _uc = None
@@ -73,6 +78,16 @@ _cooldown_lock = _th.Lock()
 COOLDOWN_BETWEEN = int(os.environ.get('NO1_COOLDOWN', '30'))   # seconds
 COOLDOWN_POST_CAPTCHA = 300  # 5 min after CAPTCHA
 CAPTCHA_LIMIT_10M = 2  # max 2 CAPTCHAs in 10 min, then refuse
+# v23.8 (2026-09-09): tunable via env so tests/slow links can adjust without
+# editing code. Sleep is always taken OUTSIDE _cooldown_lock so concurrent
+# requests are not serialised behind a sleeper.
+CAPTCHA_SLEEP = int(os.environ.get('NO1_CAPTCHA_SLEEP', '60'))  # wait after CAPTCHA before retry
+# Heuristic: a real Google SERP is a large page (>100KB). A tiny HTML that
+# does NOT contain "did not match any documents" is almost always a
+# CAPTCHA / sorry page, not a genuine zero-result page. This threshold is a
+# HEURISTIC, not a contract — tune via NO1_MIN_HTML_LEN if Google changes
+# page sizes (e.g. for very sparse result layouts).
+MIN_HTML_LEN = int(os.environ.get('NO1_MIN_HTML_LEN', '10000'))
 
 def _ensure_lock():
     global _driver_lock
@@ -124,6 +139,26 @@ _chrome_last_error_ts = [0.0]  # v16: track last Chrome startup failure
 _chrome_last_error_msg = ['']
 
 
+def _find_chromedriver():
+    """v23.8: locate a chromedriver binary without hardcoding machine paths.
+
+    Priority:
+      1. NO1_CHROMEDRIVER_BIN env var (explicit, wins)
+      2. <this script's dir>/state/bin/chromedriver(.exe)  — drop-in location
+      3. shutil.which('chromedriver')                      — system PATH
+      4. None → caller lets undetected-chromedriver auto-download
+    """
+    env_bin = os.environ.get('NO1_CHROMEDRIVER_BIN')
+    if env_bin:
+        return env_bin
+    here = os.path.dirname(os.path.abspath(__file__))
+    exe_name = 'chromedriver.exe' if sys.platform == 'win32' else 'chromedriver'
+    cand = os.path.join(here, 'state', 'bin', exe_name)
+    if os.path.isfile(cand):
+        return cand
+    return shutil.which('chromedriver')
+
+
 def get_driver():
     """Lazy-init undetected-chromedriver (one per process, lock-protected)."""
     global _uc, _driver, _user_data_dir
@@ -139,14 +174,12 @@ def get_driver():
     _uc = uc
 
     # Persistent user-data-dir: keep cookies, fingerprint, trust between runs.
-    # v23.7 (2026-08-01): platform-aware fallback. Previously this was a hardcoded
-    # Windows path which on Linux would create a literal-named directory
-    # "C:\Users\520hh\no1_chrome_udd" inside no1_agent/ — discovered when scp
-    # restore warned "Server sent suspect path". Fixed by selecting platform default.
-    if sys.platform == 'win32':
-        _default_udd = r'C:\Users\520hh\no1_chrome_udd'
-    else:
-        _default_udd = '/home/yuliu/no1_chrome_udd_linux'
+    # v23.8 (2026-09-09): portable default. Previously hardcoded per-machine
+    # paths (C:\Users\520hh\... on Windows, /home/yuliu/... on Linux) which
+    # broke on any other account/host. Now defaults to ~/.no1_chrome_udd on
+    # every platform; override with NO1_CHROME_UDD.
+    from pathlib import Path
+    _default_udd = str(Path.home() / '.no1_chrome_udd')
     _user_data_dir = os.environ.get('NO1_CHROME_UDD', _default_udd)
     os.makedirs(_user_data_dir, exist_ok=True)
 
@@ -188,11 +221,25 @@ def get_driver():
             if sys.platform == 'win32':
                 chrome_bin = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
             else:
-                chrome_bin = '/home/yuliu/chrome/chrome-linux64/chrome'
+                # v23.8: portable Linux default — look on PATH first (google-chrome
+                # / chromium), fall back to the legacy per-user install location
+                # only if it actually exists. Override with NO1_CHROME_BIN.
+                chrome_bin = (shutil.which('google-chrome')
+                              or shutil.which('google-chrome-stable')
+                              or shutil.which('chromium')
+                              or shutil.which('chromium-browser'))
+                if not chrome_bin:
+                    _legacy = '/home/yuliu/chrome/chrome-linux64/chrome'
+                    if os.path.isfile(_legacy):
+                        chrome_bin = _legacy
         kwargs['browser_executable_path'] = chrome_bin
-        driver_bin = os.environ.get('NO1_CHROMEDRIVER_BIN')
+        driver_bin = _find_chromedriver()
         if driver_bin:
+            print(f'[get_driver] chromedriver: {driver_bin}', flush=True)
             kwargs['driver_executable_path'] = driver_bin
+        else:
+            print('[get_driver] no chromedriver found (env/state/bin/PATH); '
+                  'letting undetected-chromedriver auto-download', flush=True)
         try:
             _driver = uc.Chrome(**kwargs)
             _chrome_last_error_ts[0] = 0.0
@@ -206,8 +253,19 @@ def get_driver():
     return _driver
 
 
+class PageLoadError(RuntimeError):
+    """v23.8: Google page failed to LOAD at all (network dead / Chrome dead).
+
+    Raised instead of silently returning [] so the HTTP layer can answer
+    502 + {"error": ...} and callers can distinguish "no results" from
+    "network is dead". Previously a load failure returned HTTP 200 with
+    count=0, which callers misread as a genuinely empty result set.
+    """
+
+
 def search_google_stealth(query: str, num: int = 10, since: str = '24h',
-                           vendor: str = '?', query_role: str = 'primary'):
+                           vendor: str = '?', query_role: str = 'primary',
+                           client_ip: str = '?'):
     """Run a Google search via undetected-chromedriver and return results.
 
     Returns list of {title, url, snippet, platform, date} dicts.
@@ -223,28 +281,44 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
     import re
     from urllib.parse import unquote
 
-    # Cooldown gate
-    with _cooldown_lock:
-        now = _time.time()
-        if _last_captcha_ts[0] > 0 and now - _last_captcha_ts[0] < COOLDOWN_POST_CAPTCHA:
-            wait_s = int(COOLDOWN_POST_CAPTCHA - (now - _last_captcha_ts[0]))
-            print(f'[cooldown] post-CAPTCHA lockout, {wait_s}s remaining, skip', flush=True)
-            _honeypot_skip(query, num, since, f'post_captcha_lockout_{wait_s}s')
-            return []
-        if _captcha_count_10m[0] >= CAPTCHA_LIMIT_10M:
-            print(f'[cooldown] CAPTCHA limit ({CAPTCHA_LIMIT_10M}/10min) hit, skip', flush=True)
-            _honeypot_skip(query, num, since, 'captcha_limit_10m')
-            return []
-        if _last_query_ts[0] > 0:
-            since_last = now - _last_query_ts[0]
-            if since_last < COOLDOWN_BETWEEN:
-                wait_s = int(COOLDOWN_BETWEEN - since_last)
-                print(f'[cooldown] only {int(since_last)}s since last query, sleeping {wait_s}s', flush=True)
-                _time.sleep(wait_s)
-        _last_query_ts[0] = _time.time()
+    # Cooldown gate.
+    # v23.8 (2026-09-09): read the remaining wait UNDER the lock, then sleep
+    # OUTSIDE the lock (previously time.sleep() ran while holding
+    # _cooldown_lock, serialising every concurrent request behind a 30s nap).
+    # After sleeping, loop once more to re-check under the lock; hard skips
+    # (post-CAPTCHA lockout, CAPTCHA rate limit) still return [] immediately.
+    while True:
+        wait_s = 0
+        with _cooldown_lock:
+            now = _time.time()
+            if _last_captcha_ts[0] > 0 and now - _last_captcha_ts[0] < COOLDOWN_POST_CAPTCHA:
+                skip_s = int(COOLDOWN_POST_CAPTCHA - (now - _last_captcha_ts[0]))
+                print(f'[cooldown] post-CAPTCHA lockout, {skip_s}s remaining, skip', flush=True)
+                _honeypot_skip(query, num, since, f'post_captcha_lockout_{skip_s}s')
+                return []
+            if _captcha_count_10m[0] >= CAPTCHA_LIMIT_10M:
+                print(f'[cooldown] CAPTCHA limit ({CAPTCHA_LIMIT_10M}/10min) hit, skip', flush=True)
+                _honeypot_skip(query, num, since, 'captcha_limit_10m')
+                return []
+            if _last_query_ts[0] > 0:
+                since_last = now - _last_query_ts[0]
+                if since_last < COOLDOWN_BETWEEN:
+                    wait_s = max(int(COOLDOWN_BETWEEN - since_last), 1)
+                    print(f'[cooldown] only {int(since_last)}s since last query, '
+                          f'sleeping {wait_s}s (outside lock)', flush=True)
+            if wait_s <= 0:
+                # Claim the slot now so parallel callers queue behind us.
+                _last_query_ts[0] = _time.time()
+        if wait_s > 0:
+            _time.sleep(wait_s)  # lock NOT held
+            continue
+        break
 
     driver = get_driver()
-    url = f'https://www.google.com/search?q={query}&hl=en&gl=us&num={num}'
+    # v23.8 (2026-09-09): build the query string with urlencode — the query was
+    # previously interpolated raw, so spaces/&/CJK produced broken URLs.
+    url = 'https://www.google.com/search?' + urlencode(
+        {'q': query, 'hl': 'en', 'gl': 'us', 'num': num})
     # Default: no time filter (since 7d is too aggressive for most signals)
     # 支付漏洞/exploit 信号通常 2-3 天后才稳定, 24h 滤掉太多
     if since == '24h':
@@ -273,7 +347,8 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
     # First attempt
     ok, html = _do_search(url)
     if not ok:
-        return []
+        raise PageLoadError(f'Google page failed to load for q={query!r} '
+                            f'(network dead / Chrome dead / timeout)')
 
     # Handle consent page
     if 'consent.google.com' in driver.current_url or 'Before you continue' in html:
@@ -289,24 +364,29 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
                 continue
         ok, html = _do_search(url)
         if not ok:
-            return []
+            raise PageLoadError(f'Google page failed to load after consent click, q={query!r}')
 
-    # CAPTCHA detection: tiny HTML + "unusual traffic"
+    # CAPTCHA detection: tiny HTML + "unusual traffic" (see MIN_HTML_LEN note:
+    # the size check is a heuristic, tunable via NO1_MIN_HTML_LEN)
     is_captcha = (
         'unusual traffic' in html.lower() or
         'Our systems have detected' in html or
         '/sorry/index' in driver.current_url or
-        (len(html) < 10000 and 'did not match any documents' not in html)
+        (len(html) < MIN_HTML_LEN and 'did not match any documents' not in html)
     )
     if is_captcha:
         with _cooldown_lock:
             _last_captcha_ts[0] = _time.time()
             _captcha_count_10m[0] += 1
-        print(f'  CAPTCHA detected (count_10m={_captcha_count_10m[0]}), waiting 60s and retrying', flush=True)
-        time.sleep(60)
+        # v23.8: wait is configurable (NO1_CAPTCHA_SLEEP, default 60s) and is
+        # taken WITHOUT holding _cooldown_lock, so other requests are not
+        # serialised behind it.
+        print(f'  CAPTCHA detected (count_10m={_captcha_count_10m[0]}), '
+              f'waiting {CAPTCHA_SLEEP}s and retrying', flush=True)
+        time.sleep(CAPTCHA_SLEEP)
         ok, html = _do_search(url)
         if not ok:
-            return []
+            raise PageLoadError(f'Google page failed to load after CAPTCHA backoff, q={query!r}')
         if 'unusual traffic' in html.lower() or '/sorry/index' in driver.current_url:
             print('  CAPTCHA persists, giving up', flush=True)
             return []
@@ -326,8 +406,8 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
         except Exception:
             pass
         return []
-        driver.get(url)
-        time.sleep(5)
+    # (v23.8: removed unreachable driver.get()/sleep() that used to follow the
+    # return above)
 
     # Wait for results to render (Google loads results via JS)
     time.sleep(3)
@@ -414,7 +494,9 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
             'engine': 'chrome_bridge',
             'vendor': vendor,
             'query_role': query_role,
-            'client_ip': getattr(_driver, 'session_id', '?') if results is not None else '?',
+            # v23.8: real HTTP client IP (was the chromedriver session_id —
+            # meaningless and misleading in the honeypot log).
+            'client_ip': client_ip,
         }
         with open(honeypot, 'a', encoding='utf-8') as _hf:
             _hf.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
@@ -487,7 +569,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         url = urlparse(path_str)
         if url.path == '/health':
             return self._send_json({'ok': True, 'service': 'search_helper',
-                                    'version': 'v23.7', 'engine': 'undetected-chromedriver'})
+                                    'version': 'v23.8', 'engine': 'undetected-chromedriver'})
 
         # v16 (2026-07-30): /chrome_ready — lightweight Chrome liveness probe.
         # Returns 200 with {alive, info, driver_state} so watchdog can
@@ -506,11 +588,9 @@ class SearchHandler(BaseHTTPRequestHandler):
 
         if url.path in ('/search', '/search_x'):
             qs = parse_qs(url.query)
+            # v23.8: parse_qs already percent-decodes q — the extra unquote()
+            # here double-decoded queries containing %25xx-style escapes.
             q = qs.get('q', [''])[0]
-            try:
-                q = unquote(q, encoding='utf-8', errors='replace')
-            except Exception:
-                pass
             num = int(qs.get('num', ['10'])[0])
             since = qs.get('since', ['7d'])[0]  # default 7d (avoid filtering 2-3 day signals)
             # v23.3 (2026-07-31): accept vendor + query_role URL params so
@@ -521,14 +601,22 @@ class SearchHandler(BaseHTTPRequestHandler):
             query_role = qs.get('role', qs.get('query_role', ['primary']))[0]
             if not q:
                 return self._send_json({'error': 'missing q'}, 400)
+            # http.server equivalent of flask's request.remote_addr
+            client_ip = self.client_address[0] if self.client_address else '?'
             try:
                 results = search_google_stealth(q, num=num, since=since,
-                                                  vendor=vendor, query_role=query_role)
+                                                  vendor=vendor, query_role=query_role,
+                                                  client_ip=client_ip)
                 return self._send_json({
                     'q': q, 'count': len(results), 'num': num, 'since': since,
                     'vendor': vendor, 'role': query_role,
                     'results': results, 'engine': 'undetected-chromedriver'
                 })
+            except PageLoadError as e:
+                # v23.8: page did not LOAD — report 502 so callers can tell
+                # "network dead" apart from "genuinely zero results" (200).
+                print(f'  PAGE LOAD FAILED: {e}', flush=True)
+                return self._send_json({'error': str(e), 'kind': 'page_load_failed'}, 502)
             except Exception as e:
                 tb = traceback.format_exc()
                 print(f'  ERROR: {e}\n{tb}', flush=True)
@@ -631,10 +719,14 @@ class SearchHandler(BaseHTTPRequestHandler):
 
 def main():
     port = int(os.environ.get('SEARCH_HELPER_PORT', '18799'))
-    bind = os.environ.get('SEARCH_HELPER_BIND', '0.0.0.0')
+    # v23.8 (2026-09-09): default to loopback only. The old default 0.0.0.0
+    # exposed an unauthenticated search proxy to the whole LAN; bind publicly
+    # only via explicit SEARCH_HELPER_BIND=0.0.0.0.
+    bind = os.environ.get('SEARCH_HELPER_BIND', '127.0.0.1')
     from http.server import ThreadingHTTPServer
     server = ThreadingHTTPServer((bind, port), SearchHandler)
-    print(f'search_helper v23.7 (honeypot + 7d default + cooldown + query-metrics fields + faulthandler + Linux UDD + vendor/role URL + /export JSONL) listening on {bind}:{port}', flush=True)
+    print(f'search_helper v23.8 (portable paths + encoded query + load-failure 502 + '
+          f'lock-free cooldowns + tunable NO1_CAPTCHA_SLEEP/NO1_MIN_HTML_LEN) listening on {bind}:{port}', flush=True)
     print('  GET /health', flush=True)
     print('  GET /search?q=...&num=10&since=24h&vendor=claude&role=primary', flush=True)
     print('  GET /export?kind=search&since=2026-07-30&q=claude  →  CSV 下载', flush=True)
