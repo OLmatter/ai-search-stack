@@ -23,5 +23,5 @@ mihomo_config.yaml
 .DS_Store
 Thumbs.db
 
-# google-bridge runtime artifacts (v23.9)
+# runtime artifacts: google-bridge state/, chat-scraper state/ (zhihu_cookies.json 等)
 state/

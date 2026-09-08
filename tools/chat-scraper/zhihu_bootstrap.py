@@ -79,6 +79,8 @@ def bootstrap(url: str = DEFAULT_BOOTSTRAP_URL,
         for round_no in range(MAX_ROUNDS):
             if _have_targets(ctx):
                 break
+            if round_no:
+                print(f"[zhihu_bootstrap] round {round_no + 1}/{MAX_ROUNDS}...", flush=True)
             try:
                 page.evaluate(
                     """async () => {
@@ -111,6 +113,11 @@ def bootstrap(url: str = DEFAULT_BOOTSTRAP_URL,
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+        # cookie 是能调官方 API 的凭证，收紧权限（Windows 上仅 best-effort）
+        try:
+            os.chmod(out_path, 0o600)
+        except OSError:
+            pass
         print(f"[zhihu_bootstrap] PASS: d_c0({'Y' if cookies.get('d_c0') else 'N'}) "
               f"__zse_ck(len={len(cookies.get('__zse_ck', ''))}) -> {out_path}",
               flush=True)

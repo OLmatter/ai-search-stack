@@ -22,7 +22,7 @@
   （include 补 answer_count）/answers（web 同款 /feeds 端点，/answers 子
   端点实测被 40362 行为限制）；401/403/40353 → `zhihu_auth_expired`
   （提示重跑引导，绝不伪装真空）
-- 测试 +5（签名形状/确定性、cookie 缺失与过期的错误映射），共 35 个
+- 测试 +3（32→35：签名形状/确定性、cookie 缺失与过期的错误映射；复审轮再 +4 至 39，见下）
 - 实测：引导十几秒；question 19550227 → 200（answer_count=13）；answers
   → 周源/极客公园真实回答（赞 61/38）
 
@@ -35,7 +35,7 @@
 
 [3.3.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.3.0
 
-## [3.2.0] - 2026-09-09 - 2026-09-09
+## [3.2.0] - 2026-09-09
 
 ### 🎯 百度引擎稳定化（头指纹 + 移动端桶 + 搜狗第三环）
 

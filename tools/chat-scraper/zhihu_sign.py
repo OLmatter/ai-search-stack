@@ -168,7 +168,8 @@ if __name__ == "__main__":
     print("x-zse-93 =", h["x-zse-93"])
     print("x-zse-96 =", h["x-zse-96"])
     assert h["x-zse-96"].startswith("2.0_")
-    assert "=" not in h["x-zse-96"][4:]
+    # 注意 "=" 是自定义字母表里的合法字符（非 base64 填充），不能断言不存在
+    assert set(h["x-zse-96"][4:]) <= set(ALPHABET)
     # 确定性检查
     assert h["x-zse-96"] == sign_headers(u, "FAKE|1|0|FAKE")["x-zse-96"]
     print("self-test OK, len(zse96) =", len(h["x-zse-96"]))

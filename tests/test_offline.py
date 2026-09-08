@@ -480,6 +480,62 @@ class TestZhihuSignAndContent(unittest.TestCase):
         self.assertNotEqual(h["x-zse-96"],
                             zs.sign_headers(url, "OTHER")["x-zse-96"])
 
+    def test_sign_golden_vector(self):
+        # 金标准向量（审查 #7）：ZK/ZB 重排表或块加密被改坏时在此爆。
+        # 本实现整体已过知乎服务器验签（2026-09-09 真会话 HTTP 200）。
+        import zhihu_sign as zs
+        url = ("https://www.zhihu.com/api/v4/questions/19550227"
+               "?include=detail,answer_count")
+        golden = ("2.0_jAJf6aCxgOgRYhjgIp1Rrw=IisCu9=KAm/jlMIUjm5n1tpSz"
+                  "igPqM+Cx+V4CbMkZ")
+        self.assertEqual(zs.sign_headers(url, "GOLDEN|0|0|VECTOR")["x-zse-96"],
+                         golden)
+
+    def test_behavior_limit_distinct_from_auth(self):
+        # 审查 #1：40362 行为限制 ≠ cookie 过期。cookie 明明是好的，
+        # 误报 auth 会诱导用户白跑引导，还给被标记 IP 再压浏览器流量
+        import zhihu_content as zc
+        from unittest import mock
+        cookie_json = json.dumps(
+            {"cookies": {"d_c0": "fake", "__zse_ck": "fake"},
+             "user_agent": "Firefox"})
+        fake_resp = mock.Mock(status_code=403)
+        fake_resp.json.return_value = {
+            "error": {"code": 40362, "message": "暂时限制本次访问"}}
+        with mock.patch.object(zc, "_cookie_path",
+                               return_value="state/fake.json"), \
+             mock.patch.object(zc.os.path, "exists", return_value=True), \
+             mock.patch("builtins.open",
+                        mock.mock_open(read_data=cookie_json)), \
+             mock.patch.object(zc.requests, "get", return_value=fake_resp):
+            with self.assertRaises(zc.ZhihuBehaviorLimited) as cm:
+                zc.fetch_answers("19550227")
+        self.assertIn("降频", str(cm.exception))
+
+    def test_200_with_error_body_not_vacuum(self):
+        # 审查 #2：HTTP 200 包 error body 不得伪装成真空 []
+        import zhihu_content as zc
+        from unittest import mock
+        cookie_json = json.dumps(
+            {"cookies": {"d_c0": "fake"}, "user_agent": "Firefox"})
+        fake_resp = mock.Mock(status_code=200)
+        fake_resp.json.return_value = {
+            "error": {"code": 100, "message": "bad params"}}
+        with mock.patch.object(zc, "_cookie_path",
+                               return_value="state/fake.json"), \
+             mock.patch.object(zc.os.path, "exists", return_value=True), \
+             mock.patch("builtins.open",
+                        mock.mock_open(read_data=cookie_json)), \
+             mock.patch.object(zc.requests, "get", return_value=fake_resp):
+            with self.assertRaises(zc.ZhihuApiError):
+                zc.fetch_answers("19550227")
+
+    def test_question_id_validated(self):
+        # 审查 #5：非纯数字 id 拒绝，防 path 拼接打到别的端点
+        import zhihu_content as zc
+        with self.assertRaises(zc.ZhihuApiError):
+            zc.fetch_question("19550227/answers")
+
     def test_missing_cookie_file_is_auth_error(self):
         import zhihu_content as zc
         from unittest import mock
