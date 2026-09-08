@@ -1,6 +1,41 @@
 # Changelog
 
-## [3.2.0] - 2026-09-09
+## [3.3.0] - 2026-09-09
+
+### 🎯 知乎无头引导 + 官方 API 内容读取（定制浏览器组件落地）
+
+无头隐身浏览器选型实测（camoufox / patchright / DrissionPage）：**camoufox
+无头一次通过知乎 zse-ck VMP 挑战**（patchright 无头暴露 HeadlessChrome 指纹
+即死、弃用；DrissionPage 价值在 headed 接管真 Chrome，留作硬目标兜底）。
+定位：隐身浏览器=凭证引导器，不是爬虫引擎。
+
+### Added
+- `tools/chat-scraper/zhihu_sign.py`：x-zse-96（101_3_3.0，SM4 变种+自定义
+  base64）纯 Python 签名，移植自开源 zhihu_sign_rs；服务器验签已验证（此前
+  侦察：错误码 10003→40353 跃迁；本轮：真 cookie+签名 → questions API
+  HTTP 200 真实 JSON）
+- `tools/chat-scraper/zhihu_bootstrap.py`：无头 camoufox 引导器——开知乎
+  内容页（首页会 302 登录，已避开）让 VMP JS 现算 `__zse_ck`，领
+  `d_c0+__zse_ck` 存 state/zhihu_cookies.json；fetch 兜底+reload 多轮；
+  camoufox 为可选依赖（缺失时给安装指引）
+- `tools/chat-scraper/zhihu_content.py`：官方 API 内容读取——question
+  （include 补 answer_count）/answers（web 同款 /feeds 端点，/answers 子
+  端点实测被 40362 行为限制）；401/403/40353 → `zhihu_auth_expired`
+  （提示重跑引导，绝不伪装真空）
+- 测试 +5（签名形状/确定性、cookie 缺失与过期的错误映射），共 35 个
+- 实测：引导十几秒；question 19550227 → 200（answer_count=13）；answers
+  → 周源/极客公园真实回答（赞 61/38）
+
+### 边界（如实声明）
+- **知乎搜索线不走官方 API**：search_v3 带有效 cookie 仍强制登录
+  （401 ZERR_NOT_LOGIN），上登录账号属用户决策、本工具不碰凭据；搜索继续
+  用引擎链，搜到 URL 后用本模块读内容
+- cookie 有效期未标定；纯 HTTP TLS 指纹今日可过（兜底：curl_cffi/浏览器内
+  fetch）；无头能过是当下事实非永久保证（headed camoufox 作二档）
+
+[3.3.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.3.0
+
+## [3.2.0] - 2026-09-09 - 2026-09-09
 
 ### 🎯 百度引擎稳定化（头指纹 + 移动端桶 + 搜狗第三环）
 

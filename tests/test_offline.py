@@ -14,6 +14,7 @@ import time
 import unittest
 import requests
 from contextlib import redirect_stderr
+import json
 from io import StringIO
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -458,6 +459,54 @@ class TestSogouEngine(unittest.TestCase):
             self.assertEqual(cs.search("q", platforms=["csdn"],
                                        on_error="raise"), [])
             sf.assert_not_called()
+
+
+class TestZhihuSignAndContent(unittest.TestCase):
+    """v3.3 知乎官方 API 线：无头引导 cookie + 纯签名 HTTP。"""
+
+    def test_sign_headers_shape_and_determinism(self):
+        import zhihu_sign as zs
+        url = "https://www.zhihu.com/api/v4/questions/19550227"
+        h = zs.sign_headers(url, "FAKE|1|0|FAKE")
+        self.assertEqual(h["x-zse-93"], "101_3_3.0")
+        self.assertTrue(h["x-zse-96"].startswith("2.0_"))
+        # 密文字符必须全部落在自定义字母表内（注意 "=" 是表内合法字符，
+        # 不是 base64 填充——zse96.py 自检里那条 assert 是侥幸通过的坏断言）
+        body = h["x-zse-96"][4:]
+        self.assertTrue(body and set(body) <= set(zs.ALPHABET))
+        self.assertEqual(h["x-zse-96"],
+                         zs.sign_headers(url, "FAKE|1|0|FAKE")["x-zse-96"])
+        # 不同 d_c0 必须产出不同签名
+        self.assertNotEqual(h["x-zse-96"],
+                            zs.sign_headers(url, "OTHER")["x-zse-96"])
+
+    def test_missing_cookie_file_is_auth_error(self):
+        import zhihu_content as zc
+        from unittest import mock
+        with mock.patch.object(zc, "_cookie_path",
+                               return_value="Z:/no/such/file.json"):
+            with self.assertRaises(zc.ZhihuAuthExpired) as cm:
+                zc.fetch_question("19550227")
+        self.assertIn("zhihu_bootstrap", str(cm.exception))
+
+    def test_auth_error_maps_to_auth_expired(self):
+        # 401/403（cookie 过期）必须报 zhihu_auth_expired 并提示重跑引导，
+        # 不能伪装成真空或普通错误
+        import zhihu_content as zc
+        from unittest import mock
+        cookie_json = json.dumps(
+            {"cookies": {"d_c0": "fake", "__zse_ck": "fake"}})
+        fake_resp = mock.Mock(status_code=403, text='{"error":{"code":40353}}')
+        fake_resp.json.return_value = {"error": {"code": 40353}}
+        with mock.patch.object(zc, "_cookie_path",
+                               return_value="state/fake.json"), \
+             mock.patch.object(zc.os.path, "exists", return_value=True), \
+             mock.patch("builtins.open",
+                        mock.mock_open(read_data=cookie_json)), \
+             mock.patch.object(zc.requests, "get", return_value=fake_resp):
+            with self.assertRaises(zc.ZhihuAuthExpired) as cm:
+                zc.fetch_question("19550227")
+        self.assertIn("重跑 python zhihu_bootstrap.py", str(cm.exception))
 
 
 class TestGoogleBridgeImport(unittest.TestCase):

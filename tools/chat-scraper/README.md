@@ -13,6 +13,7 @@
 |---|---|---|---|
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
+| zhihu 内容读取（问题/回答） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON（含 answer_count）；answers 用 web 同款 /feeds 端点（/answers 子端点会被 40362 行为限制） |
 | general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
 | csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
 | 任意 `<域名>` | 百度 `site:<域名>` 透传 | ⚠️ best-effort | platforms 里传形如 `example.com` 的字符串即启用 |
@@ -42,6 +43,29 @@
 7. cn.bing.com 对纯 HTTP 客户端**会剥离 `site:` 操作符**（前序侦察 4 组对照全部复现），故 v3 不用 bing 做 `site:` 引擎；`format=rss` 备胎通道也未启用（百度可用时无必要）。
 8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。
 9. **降级链的最坏成本要心里有数**：zhihu 链（searxng→搜狗→百度双桶→再搜狗）最坏约 3-4 分钟/次；普通平台（百度双桶→搜狗）桌面故障场景最坏约 150 秒（3 次尝试 + 40s/80s 指数退避 + 移动端请求）。低频使用是所有中国平台路径的共同前提。
+
+## 知乎无头引导 + 官方 API 内容读取（v3.3）
+
+无头隐身浏览器在本工具箱的定位是**"凭证引导器"**而非爬虫引擎（选型实测：
+camoufox 无头一次通过知乎 zse-ck VMP 挑战；patchright 无头暴露
+HeadlessChrome 指纹直接死，弃用）。知乎官方 API 内容线：
+
+```bash
+pip install "camoufox[geoip]" && python -m camoufox fetch   # 一次性，可选依赖
+python zhihu_bootstrap.py                       # 无头领 d_c0/__zse_ck 存 state/
+python zhihu_content.py question 19550227        # 官方 API 读问题（含回答数）
+python zhihu_content.py answers 19550227 --num 5 # 读回答（web 同款 /feeds 端点）
+```
+
+边界与风险：
+- **搜索线不走官方 API**：search_v3 即便带有效 cookie 也强制登录
+  （401 ZERR_NOT_LOGIN）——上登录账号是用户决策，本工具不碰凭据；搜索继续
+  用 SearXNG→搜狗→百度 降级链，搜到 URL 后可用本模块读内容。
+- cookie 有效期未标定（过期报 `zhihu_auth_expired`，重跑引导十几秒即可）。
+- 引导页必须用知乎内容页；首页对无登录访客 302 到登录页（已内置默认）。
+- `/answers` 子端点会被 40362 行为限制，已固定用 `/feeds`。
+- 纯 HTTP（OpenSSL 指纹）今日可过，若未来被拦兜底方案是 curl_cffi 或浏览器
+  内 fetch。
 
 ## 安装
 

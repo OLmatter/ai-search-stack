@@ -25,7 +25,7 @@
 | [`tools/searxng/`](tools/searxng/) | 兜底聚合搜索；`tools/searxng/docker` 一条命令起本地实例（已启用 JSON，公网实例默认禁 JSON 勿用） | 默认主搜 |
 | [`tools/hackernews/`](tools/hackernews/) | 验证社区反应（高赞 = 真信号），零部署 | 中文 / 非技术 |
 | [`tools/github/`](tools/github/) | Release / Advisory / 仓库，零部署（匿名 60 req/h） | 非 GitHub |
-| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：bilibili 官方 API + 知乎专用引擎链（SearXNG→搜狗→百度）+ 百度双桶（桌面/移动端）+搜狗兜底路由 16 站（低频） | 国际主题 |
+| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：bilibili 官方 API + 知乎搜索链与无头引导官方 API 内容读取 + 百度双桶（桌面/移动端）+搜狗兜底路由 16 站（低频） | 国际主题 |
 
 **实测状态**（详见各 README 与 CHANGELOG）：hackernews / github / searxng(本地实例) / bilibili 引擎 / google-bridge（有代理时）均已端到端实测出真实结果；百度引擎因软风控按错误协议上报（`baidu_soft_blocked`），解析器经真实页面离线复验 19/19。
 
