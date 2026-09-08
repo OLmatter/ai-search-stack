@@ -15,11 +15,13 @@ agent 拿到一个"搜索 / 调研 / 验证"任务，不知道用哪个工具、
 
 | 工具 | 解决什么 | 何时**不**用 |
 |---|---|---|
-| `google-bridge` | WebSearch 100% CAPTCHA | 找中国平台 / GitHub release |
-| `searxng` | CAPCHA 兜底 / 不想装 Chrome | 默认（性能不如 google-bridge）|
+| `google-bridge` | WebSearch 100% CAPTCHA（真 Google，需代理） | 找中国平台 / GitHub release |
+| `searxng` | CAPTCHA 兜底 / 不想装 Chrome（`tools/searxng/docker` 一条命令起本地实例） | 默认主搜（聚合引擎，结果质量视后端）|
 | `hackernews` | 验证社区反应 | 中文内容 / 非技术 |
 | `github` | Release / CVE / 仓库 | 非 GitHub |
-| `chat-scraper` | 32+ 中国平台 | 国际主题（Google 索引更好）|
+| `chat-scraper` | 中国平台内容（bilibili 官方 API + 百度 site: 路由 16 站） | 国际主题（Google 索引更好）|
+
+> **模块名规则（v3）**：同一 Python 进程组合多工具时，import 真名 `hackernews_client` / `github_client` / `searxng_client`。旧的 `from client import ...` 是兼容 shim，**同进程禁止 import 两个不同工具的 `client`**（sys.modules 缓存会静默劫持第二个，v2 实测事故）。
 
 ### 4 个组合模式
 
@@ -35,10 +37,11 @@ candidates = json.loads(urlopen(
 
 # 2. hackernews 验证（points >= 50 = 真信号）
 import sys; sys.path.insert(0, "tools/hackernews")
-from client import search as hn
+from hackernews_client import search as hn
 for c in candidates[:3]:
     hn_results = hn(c["title"], since="7d", vendor="claude", role="verify")
-    if any(r["points"] >= 50 for r in hn_results):
+    hn_results = [r for r in hn_results if "error" not in r]   # 先滤故障记录
+    if any(r["points"] >= 50 for r in hn_results):              # points 恒为 int（v3 修复 null 崩溃）
         print(f"VERIFIED: {c['title']}")
 ```
 
@@ -69,18 +72,18 @@ import json
 from urllib.request import urlopen
 
 def robust_search(q, vendor, since="7d"):
-    # 1. google-bridge
+    # 1. google-bridge（timeout 要给足：服务端有冷却/反 CAPTCHA 路径，15s 会在重负载路径必超时）
     try:
-        r = json.loads(urlopen(f"http://127.0.0.1:18799/search?q={q}&num=10&since={since}&vendor={vendor}&role=primary", timeout=15).read())
+        r = json.loads(urlopen(f"http://127.0.0.1:18799/search?q={q}&num=10&since={since}&vendor={vendor}&role=primary", timeout=90).read())
         if r.get("results"):
             return r["results"]
     except Exception:
         pass
 
-    # 2. searxng 兜底
+    # 2. searxng 兜底（本地实例）
     time.sleep(1)
     import sys; sys.path.insert(0, "tools/searxng")
-    from client import search as searxng
+    from searxng_client import search as searxng
     return searxng(q, num=10, since=since, vendor=vendor, role="fallback")
 ```
 
@@ -96,10 +99,11 @@ fresh = [r for r in results if r["url"] not in known]
 
 # 3. 多源验证
 import sys; sys.path.insert(0, "tools/hackernews")
-from client import search as hn
+from hackernews_client import search as hn
 verified = []
 for f in fresh:
     hn_results = hn(f["title"], since="7d", vendor="claude", role="verify")
+    hn_results = [r for r in hn_results if "error" not in r]
     if any(r["points"] >= 20 for r in hn_results):
         verified.append(f)
 
@@ -122,7 +126,7 @@ curl "...search?q=test&num=10&since=7d&vendor=claude&role=primary"
 |---|---|---|
 | `vendor` | 主题分类（自定义）| 指标归 "?"，vendor coverage 失真 |
 | `role` | `primary` / `fallback` / `verify` | 主搜 / 验证混淆 |
-| `since` | `24h` / `7d` / `30d` | 默认无限，返陈旧 |
+| `since` | `24h` / `7d` / `30d` | 默认 `7d`（CLI 与库一致；传 None/"" 表示不过滤） |
 
 ### Query 设计（5 类模板 + 4 反模式）
 
@@ -137,7 +141,7 @@ curl "...search?q=test&num=10&since=7d&vendor=claude&role=primary"
 | 安全漏洞 | `<产品> CVE / RCE / 沙盒逃逸` | `<product> CVE / advisory / RCE` |
 
 **4 反模式**：
-- ❌ `site:...`（限制引擎去索引别的域）
+- ❌ `site:...`（**对 google-bridge**：限制引擎去索引别的域，效果差。注：chat-scraper 的中国平台搜索内部就是靠百度 `site:` 实现的，平台路由已自动处理，无需手写）
 - ❌ `site:x.com "exact phrase" 2026`（带引号 + 日期）
 - ❌ `<event> july 29 2026 specific incident`（具体日期）
 - ❌ 4+ token 组合
@@ -193,7 +197,7 @@ results = search(q="ChatGPT Plus 0 PHP", platforms=["zhihu", "v2ex"])
 ### 案例 3：找最新 claude-code release
 
 ```bash
-python3 tools/github/client.py releases "anthropics/claude-code"
+python tools/github/github_client.py releases "anthropics/claude-code" --num 5
 # 看 tag_name + body（changelog）判断是否真更新
 ```
 

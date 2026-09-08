@@ -3,20 +3,71 @@ name: test
 on: [push, pull_request]
 
 jobs:
-  syntax-check:
-    runs-on: ubuntu-latest
+  static-and-unit:
     strategy:
+      fail-fast: false
       matrix:
-        tool: [google-bridge, searxng, hackernews, github, chat-scraper]
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Python syntax check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile all tool sources（无 || true，语法错必红）
+        shell: bash
         run: |
-          for f in tools/${{ matrix.tool }}/*.py tools/${{ matrix.tool }}/scrapers/*.py 2>/dev/null; do
-            [ -f "$f" ] && python3 -m py_compile "$f" || true
-          done
-      - name: Bash syntax check
+          python -c "import compileall,sys; sys.exit(0 if compileall.compile_dir('tools', quiet=1, force=True) else 1)"
+      - name: NUL 空壳文件检测（v2 chat-scraper 事故防回归）
+        shell: bash
         run: |
-          for f in tools/${{ matrix.tool }}/*.sh; do
-            [ -f "$f" ] && bash -n "$f" || true
+          python -c "import pathlib,sys; bad=[str(p) for p in pathlib.Path('tools').rglob('*.py') if p.read_bytes() and p.read_bytes().replace(b'\x00',b'')==b'']; print('NUL files:',bad or 'none'); sys.exit(1 if bad else 0)"
+      - name: Bash syntax check（仅 Linux 有 bash 语义意义）
+        if: runner.os == 'Linux'
+        run: |
+          for f in tools/*/*.sh tools/*/*/*.sh; do
+            [ -f "$f" ] && bash -n "$f"
           done
+      - name: Offline unit tests（零网络依赖）
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+  google-bridge-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install google-bridge requirements
+        run: pip install -r tools/google-bridge/requirements.txt
+      - name: Service boots + /health + 失败可读（非静默 0 结果）
+        shell: bash
+        run: |
+          export SEARCH_HELPER_BIND=127.0.0.1 SEARCH_HELPER_PORT=18799
+          export NO1_CHROMEDRIVER_BIN=/nonexistent/chromedriver   # 强制走可读失败路径，避免 CI 里真下载 driver
+          python tools/google-bridge/search_helper.py > /tmp/gb.log 2>&1 &
+          GB_PID=$!
+          for i in $(seq 1 15); do
+            curl -sf http://127.0.0.1:18799/health > /tmp/health.json 2>/dev/null && break
+            sleep 1
+          done
+          cat /tmp/health.json
+          grep -q '"ok": *true' /tmp/health.json || { cat /tmp/gb.log; exit 1; }
+          CODE=$(curl -s -o /tmp/search.json -w '%{http_code}' "http://127.0.0.1:18799/search?q=test")
+          echo "search http_code=$CODE"; cat /tmp/search.json
+          case "$CODE" in
+            5*) grep -q '"error"' /tmp/search.json ;;
+            *) echo "期望 5xx 可读失败，实得 $CODE"; cat /tmp/gb.log; exit 1 ;;
+          esac
+          kill $GB_PID 2>/dev/null
+
+  live-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # 公网 API 抖动/匿名限额不应打断构建，但结果可见
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tests/smoke_live.py hn gh
