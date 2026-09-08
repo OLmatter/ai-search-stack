@@ -33,7 +33,6 @@
    - 首页预热 cookie **不解决** IP 级封禁（实测带全 cookie 照样 302）。
    - 移动端 m.baidu.com 是**独立风控桶**：桌面被锁时移动端照常出结果（v3.2 已做自动备选，engine=baidu-mobile）。注意此为单日观测，两桶随时可能合并风控，不承诺 SLA；移动端页面内联 JS 含 wappass 字样，桌面版 wappass 判据在移动端会全量误报（已隔离）。
    - `CHAT_SCRAPER_BAIDU_PROXY` 可显式走代理，但**仅在代理真的为 baidu.com 换出口时有效**——Clash 规则分流把国内域名判直连时换了等于没换（实测）。
-| `CHAT_SCRAPER_SOGOU_PROXY` | 空 | 搜狗引擎显式代理（默认直连） |
    - 软风控期降级语义：百度双桶穷尽后报错 → 门面自动切**搜狗第三环**（data-url 直链，免解跳转）→ 搜狗也挂才报错（保留 baidu slug 与双端结局信息）。
 2. **bilibili 风控可能升级**。当前裸调（带 buvid3 cookie）即通；一旦官方要求 wbi 签名，引擎收到 code=-403/-412 会自动签名重试一次（wbi 完整实现已内置，key 缓存 1h）。若签名后仍 -412/-403，说明风控再加码（如负一层数据加密），需重新逆向。
 3. **weixin（微信公众号）**：百度 `site:mp.weixin.qq.com` 只能搜到被百度收录的文章；公众号历史上有反爬更强的专门方案（sogou 微信搜索等），v3 **未实现**。
@@ -101,6 +100,9 @@ curl -G "http://127.0.0.1:8765/search" \
 | `CHAT_SCRAPER_BAIDU_MIN_INTERVAL` | `20` | 两次百度请求最小间隔（秒）。测试可调小，**生产 ≥15** |
 | `CHAT_SCRAPER_BILIBILI_MIN_INTERVAL` | `3` | 两次 bilibili 请求最小间隔（秒） |
 | `CHAT_SCRAPER_PORT` | `8765` | server 监听端口 |
+| `CHAT_SCRAPER_BAIDU_PROXY` | 空 | 百度引擎显式代理（默认直连；仅当代理真为 baidu.com 换出口时有效，Clash 规则分流下无效） |
+| `CHAT_SCRAPER_SOGOU_PROXY` | 空 | 搜狗引擎显式代理（默认直连） |
+| `CHAT_SCRAPER_SOGOU_RESOLVE` | `1` | 知乎链搜狗环是否解析 /link 跳转（0=关闭，保留搜狗跳转链） |
 
 ## 错误协议（与仓库 hackernews/searxng/github 工具一致）
 
