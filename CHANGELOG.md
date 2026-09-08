@@ -9,7 +9,7 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
 ### Added
 
 - **统一错误协议**：所有客户端库 `on_error="report"/"raise"/"empty"`（默认 report，返回带 `error` 字段的记录），CLI 出错 stderr + exit 1——故障不再伪装成"0 结果"（v2 的静默 `[]` 是设计病）
-- **tests/**：16 个离线单测（含 **NUL 空壳防回归**、**同进程 import 撞名防回归**、时区/解析契约测试）+ 真冒烟脚本（HN/GitHub 公网 API，限额时自动 SKIP）
+- **tests/**：18 个离线单测（含 **NUL 空壳防回归**、**同进程 import 撞名防回归**、时区/解析契约测试）+ 真冒烟脚本（HN/GitHub 公网 API，限额时自动 SKIP）
 - **CI 重写**（.github/workflows/test.yml）：v2 只做 py_compile 且带 `|| true`（NUL 文件也假绿）；v3 改为编译无豁免 + NUL 检测 + 离线单测（ubuntu/windows 双矩阵）+ google-bridge 服务健康与可读失败验证 + 公网冒烟（continue-on-error）
 - `tools/searxng/docker/`：docker-compose + settings.yml（`search.formats` 启用 JSON——公网实例默认禁 JSON，这是 v2 README 推荐公网实例却必然失败的根因），一条命令起本地实例（实测 JSON API 返回真实结果）
 - `tools/chat-scraper/` **从零重写 v3**（旧版 12 个 .py 中 11 个为纯 NUL 空壳、上游仓库已 404、代码不可恢复，自 v2.0.0 入库起即无代码）：
@@ -39,6 +39,13 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
 - **github**：CLI 补 `--num/--vendor/--role`（v2 缺失致输出恒 vendor="?"，与 SOP"必传"自相矛盾）；repo/ecosystem URL 编码
 - **searxng**：CLI 与库 `--since` 默认不一致（7d vs None）→ 统一 7d；未知 since 值静默忽略 → stderr 警告
 - **文档漂移**：SKILL.md「since 不传默认无限」实为 7d；`timeout=15` 在冷却/CAPTCHA 路径必超时 → 90s；4 个工具 README 引用 v2.1 已删除的 per-tool SOP/SKILL 断链 → 清理；全部命令 `python3` → `python`
+- **独立复审轮修复**（两路审查代理挑毛病后逐条落实，复审验收 PASS）：
+  - SKILL 兜底链示例 q 未编码，带空格 query 抛 InvalidURL 被裸 except 吞掉——google-bridge 被静默跳过（示例自身犯了 v3 要消灭的"故障伪装"）→ `quote(q)` + 降级日志可见
+  - tools/searxng/README.md 仍推荐裸 `docker run`（产出的实例 JSON 未启用，客户端必失败）→ compose 定为唯一推荐部署
+  - SOP google-bridge 部署缺 `source .env`（search_helper 自身不读 .env，改了不生效）→ 已补
+  - CAPTCHA 限速计数器永不衰减（进程生命周期内累计 2 次 CAPTCHA 即永久 503）→ 滚动 10 分钟窗口，出窗衰减（端点级实测）
+  - chat-scraper 三个 CLI 错误输出统一为 stderr + exit 1 + stdout 空，且按任一平台故障判
+  - /health 与启动横幅版本号 v23.8 → v23.9 对齐；hackernews null-points 兜底补 2 个回归测试（含 mock 端到端）；bilibili num<=0 边界、nav 非 JSON 包装、searxng 空 time_range 不再拼 URL；.gitignore 补 state/；compose 密钥标注示例值仅限本机；文档死链与 "32+ 平台" 残留清理；SKILL 案例 1 改为可运行纯 python
 
 ### Changed
 
