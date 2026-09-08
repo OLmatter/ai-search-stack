@@ -13,6 +13,11 @@
         zhihu_behavior_limited 行为风控临时限制（40362——cookie 是好的，
                               重跑引导无用，降频/稍后再试）
         zhihu_api_error       其他 API 错（含 200 包 error body 的形态）
+    - **免 cookie 兜底读法** read_via_browser()：无头 camoufox 带"百度搜索
+      来路"打开知乎页面——知乎对搜索引擎引流放行（主人 2026-09-09 提出并
+      实测证实：回答全文可见、无登录墙、无 VMP 挑战；Referer 的 query 用
+      目标 URL 本身即可泛化）。cookie 文件缺失/过期时仍可读内容，代价是
+      每次都要起浏览器（约 10s）。
 
 用法:
     python zhihu_bootstrap.py                 # 先引导（一次，十几秒）
@@ -33,8 +38,8 @@ import requests
 
 import zhihu_sign
 
-__all__ = ["fetch_question", "fetch_answers",
-           "ZhihuAuthExpired", "ZhihuBehaviorLimited"]
+__all__ = ["fetch_question", "fetch_answers", "read_via_browser",
+           "ZhihuAuthExpired", "ZhihuBehaviorLimited", "ZhihuApiError"]
 
 _TOOL = "chat-scraper"
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -201,6 +206,55 @@ def fetch_answers(question_id: str, num: int = 10,
     return out
 
 
+def read_via_browser(url: str, headless: bool = True,
+                     wait_ms: int = 6000) -> Dict:
+    """免 cookie 读知乎页面：无头 camoufox + 百度搜索来路（SEO 引流放行）。
+
+    实测（2026-09-09）：回答全文可见、无登录墙、无 VMP 挑战；Referer 的
+    query 用目标 URL 本身即可泛化。代价是每次起浏览器（约 10s）——
+    结构化读取请优先走 fetch_question/fetch_answers（cookie 线）。
+
+    Returns:
+        {title, content(纯文本, 截 8000 字), url, engine: "zhihu-seo-browser"}
+    """
+    if not re.fullmatch(r"https?://(www\.)?zhihu\.com/\S+", url or ""):
+        raise ZhihuApiError(f"not a zhihu page url: {url!r}")
+    try:
+        from camoufox.sync_api import Camoufox
+    except ImportError as e:
+        raise RuntimeError(
+            "camoufox 未安装。安装：pip install \"camoufox[geoip]\" "
+            "&& python -m camoufox fetch") from e
+    referer = "https://www.baidu.com/s?wd=" + urllib.parse.quote(url)
+    with Camoufox(headless=headless, geoip=True) as browser:
+        ctx = browser.new_context(locale="zh-CN", timezone_id="Asia/Shanghai")
+        page = ctx.new_page()
+        page.goto(url, referer=referer,
+                  wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(wait_ms)
+        if "signin" in (page.url or ""):
+            raise ZhihuAuthExpired(
+                f"被重定向到登录页（SEO 引流放行失效？）: {page.url!r}")
+        title = page.title()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(page.content(), "lxml")
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+        # 回答/文章正文节点优先，整页文本兜底
+        nodes = soup.select(".post-content, .RichContent-inner, "
+                            ".QuestionRichText, .QuestionDetail")
+        text = "\n".join(n.get_text("\n", strip=True)
+                         for n in nodes).strip()
+        if not text:
+            text = soup.get_text("\n", strip=True)
+        return {
+            "title": title,
+            "content": text[:8000],
+            "url": page.url,
+            "engine": "zhihu-seo-browser",
+        }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="知乎官方 API 内容读取（需先 zhihu_bootstrap.py 领 cookie）")
@@ -210,11 +264,15 @@ def main() -> int:
     pa = sub.add_parser("answers", help="回答列表")
     pa.add_argument("id")
     pa.add_argument("--num", type=int, default=10)
+    pp = sub.add_parser("page", help="免 cookie 读页面全文（无头浏览器+百度来路）")
+    pp.add_argument("url")
     args = parser.parse_args()
 
     try:
         if args.cmd == "question":
             out = fetch_question(args.id)
+        elif args.cmd == "page":
+            out = read_via_browser(args.url)
         else:
             out = fetch_answers(args.id, num=args.num)
     except Exception as e:

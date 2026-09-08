@@ -25,6 +25,10 @@
 - 测试 +3（32→35：签名形状/确定性、cookie 缺失与过期的错误映射；复审轮再 +4 至 39，见下）
 - 实测：引导十几秒；question 19550227 → 200（answer_count=13）；answers
   → 周源/极客公园真实回答（赞 61/38）
+- `read_via_browser()` + CLI `page <url>`：**免 cookie 兜底读取**——无头
+  camoufox 带百度搜索 Referer 打开知乎页（搜索引擎引流放行，主人提出并
+  实测证实：全文可见/无登录墙/Referer query 用 URL 本身可泛化；纯 HTTP
+  带同 Referer 无效，CDN 挑战在来路逻辑之前）
 
 ### 边界（如实声明）
 - **知乎搜索线不走官方 API**：search_v3 带有效 cookie 仍强制登录

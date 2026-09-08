@@ -55,7 +55,14 @@ pip install "camoufox[geoip]" && python -m camoufox fetch   # 一次性，可选
 python zhihu_bootstrap.py                       # 无头领 d_c0/__zse_ck 存 state/
 python zhihu_content.py question 19550227        # 官方 API 读问题（含回答数）
 python zhihu_content.py answers 19550227 --num 5 # 读回答（web 同款 /feeds 端点）
+python zhihu_content.py page <知乎URL>           # 免 cookie 读页面全文（无头浏览器+百度来路）
 ```
+
+**免 cookie 兜底读法（主人提出的机制，已实测证实）**：知乎对"搜索引擎引流"
+访客放行全文——无头浏览器带 `Referer: 百度搜索` 打开知乎页，回答全文可见、
+无登录墙、无 VMP 挑战（Referer 的 query 用目标 URL 本身即可泛化）。
+纯 HTTP 带同样 Referer 则无效（CDN zse-ck 挑战在来路逻辑之前）。
+适用：cookie 文件缺失/过期时的应急读取；代价是每次起浏览器约 10s。
 
 边界与风险：
 - **搜索线不走官方 API**：search_v3 即便带有效 cookie 也强制登录
