@@ -20,7 +20,7 @@
 
 **不知道怎么选**？默认 `google-bridge`（最广覆盖，需代理）。
 
-引擎实测备忘：cn.bing 对纯 HTTP 客户端剥离 `site:`（勿用作站内搜索）；百度尊重 `site:` 但有软风控（chat-scraper 已内置节流+检测）；bilibili 有官方搜索 API（chat-scraper 专用通道）。
+引擎实测备忘：cn.bing 对纯 HTTP 客户端剥离 `site:`（勿用作站内搜索）；百度尊重 `site:` 但有软风控（chat-scraper 已内置节流+检测）；bilibili 有官方搜索 API（chat-scraper 专用通道）。 知乎有专用引擎链（官方 API 纯 HTTP 不可用，SearXNG→搜狗→百度自动降级，报错带 chain 字段）。
 
 ## 步骤 1：部署工具
 

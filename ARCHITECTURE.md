@@ -85,6 +85,7 @@ tools/chat-scraper/     ← 依赖 requests + bs4
 
 - **cn.bing 对纯 HTTP 客户端剥离 `site:` 操作符**：4 组对照实验（zhihu/zhuanlan/bilibili/douban/v2ex）全部复现，换 cookie/参数/RSS 格式均无效 → 不能做站内搜索引擎。bing 的 `format=rss` 通道本身可用，仅可作无 site: 的备胎
 - **百度尊重 `site:`**：zhihu 组实测 19/19 真实直链（`div.result` 的 `mu` 属性即直链）；但有软风控——短间隔连发返回 1488 字节占位页 → 引擎内置会话复用 + ≥15s 节流 + 占位页检测 + 指数退避，风控时按错误协议上报 `baidu_soft_blocked`
+- **知乎官方 API 对纯 HTTP 访客不可用**（v3.1 实测）：x-zse-96（`101_3_3.0`）签名已移植且服务器验签通过（错误码 10003→40353 跃迁为证），但 search_v3 有边缘 WAF、访客 cookie 由 zse-ck VMP 浏览器挑战签发 → 知乎走专用降级链：本机 SearXNG（brave 尊重 site:、直链零验证码）→ 搜狗（尊重 site: 但 /link 跳转需二次解析）→ 百度 site: 保底
 - **bilibili 官方搜索 API**：buvid3 一个 cookie 裸调即 code=0，返回搜索引擎给不了的结构化字段（author/play/pubdate/bvid）；风控升级时自动带 wbi 签名重试（已内置完整实现）；必须过滤 bvid 为空的广告条目
 
 ## 复用边界

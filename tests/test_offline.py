@@ -195,6 +195,111 @@ class TestChatScraper(unittest.TestCase):
                       on_error="raise")
 
 
+class TestZhihuEngine(unittest.TestCase):
+    """v3.1 知乎专用引擎：降级链 SearXNG→搜狗→百度。"""
+
+    SOGOU_HTML = (
+        '<div class="vrwrap"><h3 class="vr-title"><a target="_blank" '
+        'href="/link?url=abc123">从零开始学<em><!--red_beg-->Python<!--red_end-->'
+        '</em> - 知乎</a></h3><div class="text-layout"><p>入门教程摘要。</p></div></div>'
+        '<div class="vrwrap"><h3 class="vr-title"><a href="/link?url=dup">重复</a></h3></div>'
+        '<div class="vrwrap"><h3 class="vr-title"><a href="/link?url=dup">重复</a></h3></div>'
+        '<div class="rb"><h3><a href="https://zhuanlan.zhihu.com/p/9">直链文章</a></h3>'
+        '<div class="space-txt">直链摘要</div></div>')
+
+    def test_sogou_parse(self):
+        import zhihu_engine as zg
+        rows = zg._sogou_parse(self.SOGOU_HTML)
+        self.assertEqual(len(rows), 3)  # 重复 href 去重掉一条
+        self.assertEqual(rows[0]["title"], "从零开始学Python - 知乎")
+        self.assertTrue(rows[0]["link_href"].startswith("https://www.sogou.com/link"))
+        self.assertEqual(rows[0]["snippet"], "入门教程摘要。")
+        self.assertTrue(rows[2]["link_href"].startswith("https://zhuanlan."))
+
+    def test_resolve_link_regex(self):
+        import zhihu_engine as zg
+        page = '<script>window.location.replace("https://zhuanlan.zhihu.com/p/1")</script>'
+        self.assertEqual(zg._LOCATION_RE.search(page).group(1),
+                         "https://zhuanlan.zhihu.com/p/1")
+
+    def test_searxng_filters_to_zhihu(self):
+        # 后端偶尔漏进无关域，引擎层二次过滤锁死
+        import zhihu_engine as zg
+        import types
+        fake_rows = {"results": [
+            {"title": "知乎问题", "url": "https://www.zhihu.com/question/1",
+             "content": "c1", "engine": "brave"},
+            {"title": "CSDN 文章", "url": "https://blog.csdn.net/x", "engine": "brave"},
+        ]}
+        class FakeResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return fake_rows
+        from unittest import mock
+        with mock.patch.object(zg.requests, "get", return_value=FakeResp()):
+            with mock.patch.object(zg, "_wait_turn"):
+                rows = zg._searxng_search("q", 10, None, "t", "verify")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("question/1", rows[0]["url"])
+        self.assertEqual(rows[0]["engine"], "searxng:brave")
+
+    def test_chain_degrades_on_engine_error(self):
+        import zhihu_engine as zg
+        from unittest import mock
+        good = [{"title": "t", "url": "https://www.zhihu.com/q/1",
+                 "snippet": "", "platform": "zhihu", "engine": "sogou",
+                 "vendor": "t", "role": "verify", "since": "all"}]
+        with mock.patch.object(zg, "_searxng_search",
+                               side_effect=zg.SearxngUnavailable("down")), \
+             mock.patch.object(zg, "_sogou_search", return_value=good), \
+             mock.patch.object(zg, "_baidu_fallback") as baidu:
+            rows = zg.search("q", on_error="raise")
+        self.assertEqual(rows[0]["engine"], "sogou")
+        baidu.assert_not_called()   # 前一环成功就不再降级
+
+    def test_chain_all_fail_reports_with_chain_log(self):
+        import zhihu_engine as zg
+        from unittest import mock
+        with mock.patch.object(zg, "_searxng_search",
+                               side_effect=zg.SearxngUnavailable("down")), \
+             mock.patch.object(zg, "_sogou_search",
+                               side_effect=zg.SogouBlocked("captcha")), \
+             mock.patch.object(zg, "_baidu_fallback",
+                               side_effect=ConnectionError("RST")):
+            rows = zg.search("q", on_error="report")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("ConnectionError", rows[0]["error"])
+        self.assertEqual(rows[0]["chain"], "searxng(失败:SearxngUnavailable)"
+                                          "→sogou(失败:SogouBlocked)"
+                                          "→baidu(失败:ConnectionError)")
+        with mock.patch.object(zg, "_searxng_search",
+                               side_effect=zg.SearxngUnavailable("down")), \
+             mock.patch.object(zg, "_sogou_search", return_value=[]), \
+             mock.patch.object(zg, "_baidu_fallback", return_value=[]):
+            # searxng 挂过一环：报错保留链条日志（诊断信息优先），
+            # 不允许伪装成真空 []
+            rows = zg.search("q", on_error="report")
+            self.assertEqual(len(rows), 1)
+            self.assertIn("chain", rows[0])
+            # 三环全部成功但都 0 结果 —— 这才是真真空
+            with mock.patch.object(zg, "_searxng_search", return_value=[]), \
+                 mock.patch.object(zg, "_sogou_search", return_value=[]), \
+                 mock.patch.object(zg, "_baidu_fallback", return_value=[]):
+                self.assertEqual(zg.search("q", on_error="report"), [])
+
+    def test_routing_intercepts_zhihu(self):
+        import search as cs
+        from unittest import mock
+        with mock.patch.object(cs.zhihu_engine, "search",
+                               return_value=[{"title": "x"}]) as zf:
+            cs.search("q", platforms=["zhihu"], on_error="raise")
+            self.assertEqual(
+                zf.call_args.kwargs.get("site"), "zhihu.com")
+            cs.search("q", platforms=["zhuanlan"], on_error="raise")
+            self.assertEqual(
+                zf.call_args.kwargs.get("site"), "zhuanlan.zhihu.com")
+
+
 class TestGoogleBridgeImport(unittest.TestCase):
     """v2 在 Windows import 即崩（SIGUSR1 无守卫）。能 import 本身就是回归测试。"""
 

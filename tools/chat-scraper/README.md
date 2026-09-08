@@ -12,10 +12,18 @@
 | 平台 | 引擎 | 状态 | 证据 |
 |---|---|---|---|
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
-| zhihu | 百度 `site:zhihu.com` | ✅ 实测 | 前序侦察首请求 19/19 命中 zhuanlan.zhihu.com 真实直链；v3 解析器对该真实页面离线复验 19/19 + 19/19 带摘要 |
+| zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
 | general（无 site:） | 百度通用 | ⚠️ 代码就绪，当日未验证成功（见风控段） | — |
-| csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 同一引擎同一解析法，未逐一实测 | — |
+| csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
 | 任意 `<域名>` | 百度 `site:<域名>` 透传 | ⚠️ best-effort | platforms 里传形如 `example.com` 的字符串即启用 |
+
+### zhihu 专用引擎链（v3.1）为什么长这样
+
+- **知乎官方 API 纯 HTTP 不可用**（2026-09-09 实测）：x-zse-96（`101_3_3.0`）签名算法已移植且**服务器验签通过**（非搜索端点错误码 10003→40353 跃迁为证），但 search_v3 入口有边缘 WAF（`400 {"HitLabels":null}`，与签名对错无关），且访客 cookie `d_c0`/`__zse_ck` 由 zse-ck VMP **浏览器挑战**签发，纯 HTTP 拿不到。除非加无头浏览器引导 cookie，否则此路不通——别再花时间。
+- **主路径 SearXNG**：`tools/searxng/docker` 起的本机实例，聚合后端里 brave 实测严格尊重 `site:zhihu.com` 且返回**直链**、零验证码。弱点：单引擎依赖（其他后端常年在验证码/超时），实例没起会报 `searxng_unavailable` 自动降级。
+- **搜狗**：尊重 `site:`（腾讯系收录知乎好），结果包在 `/link?url=` 跳转里——引擎默认解跳转（间隔 ≥2s 节流，`CHAT_SCRAPER_SOGOU_RESOLVE=0` 可关），解不开保留搜狗跳转链。风控页报 `sogou_blocked`。
+- **百度 site: 保底**：IP 软风控时好时坏（见下条），链里最后一环。
+- 降级语义：单引擎**报错或 0 结果都触发降级**（site: 限定下 0 结果常是引擎索引弱而非真空）；全链失败才报错（error 里带 `chain` 字段记录每环结局），全链成功但 0 结果才是真真空。
 
 ## 已知风险与限制（硬要求：诚实）
 
@@ -26,6 +34,7 @@
 5. **单页上限**：百度 rn=20（未登录稳定上限），bilibili 单页约 30 条；num 超出不做翻页。
 6. **本地代理会污染结果**：引擎强制直连（`trust_env=False`）。本机实测系统代理（如 Clash 7897 端口）半死不活时会伪造 ProxyError 或 timeout 页。如需经代理访问百度/bilibili，请自行改代码。
 7. cn.bing.com 对纯 HTTP 客户端**会剥离 `site:` 操作符**（前序侦察 4 组对照全部复现），故 v3 不用 bing 做 `site:` 引擎；`format=rss` 备胎通道也未启用（百度可用时无必要）。
+8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。
 
 ## 安装
 
@@ -58,6 +67,7 @@ results = search("q", platforms=["zhihu", "bilibili"])   # 多平台聚合
 ```bash
 python bilibili_engine.py "python 教程" --num 10
 python baidu_engine.py "claude" --site zhihu.com --num 10
+python zhihu_engine.py "claude 教程" --num 10   # 知乎降级链（SearXNG→搜狗→百度）
 python search.py "claude" --platforms zhihu,bilibili --num 10
 python search.py --list-platforms
 ```
@@ -88,7 +98,7 @@ curl -G "http://127.0.0.1:8765/search" \
 `search(..., on_error="report")`（默认）：出错返回
 `[{"error": "<slug>: <msg>", "tool": "chat-scraper", "query": q, "platform": p}]`，调用方检查 `result[0].get("error")` 区分「故障」与「真空（0 结果）」。
 `on_error="raise"` 抛出；`on_error="empty"` 兼容旧行为返回 []（故障平台静默跳过）。
-常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
+常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常）、`sogou_blocked`（搜狗验证码）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
 
 ## 本机实测记录（2026-09-09）
 

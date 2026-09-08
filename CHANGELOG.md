@@ -1,5 +1,31 @@
 # Changelog
 
+## [3.1.0] - 2026-09-09
+
+### 🎯 知乎专用搜索引擎链（chat-scraper）
+
+知乎是国内反爬最严的平台之一，五路路径全部实测后定架构（证据存档 .scratch/r2/）：
+
+### Added
+
+- `tools/chat-scraper/zhihu_engine.py`：降级链 **本机 SearXNG → 搜狗 → 百度 site:**
+  - 主路径 SearXNG：`site:zhihu.com` 交给聚合后端（实测 brave 严格尊重且返回直链、零验证码），支持 since→time_range
+  - 搜狗：尊重 site: 但结果包在 `/link?url=` 跳转里——默认解跳转（302 Location / `location.replace` 双模式，≥2s 节流，`CHAT_SCRAPER_SOGOU_RESOLVE=0` 可关，解不开保留跳转链）；验证码报 `sogou_blocked`
+  - 百度 site: 保底（复用 baidu_engine，IP 软风控时报 `baidu_soft_blocked`）
+  - 降级语义：单引擎**报错或 0 结果都降级**；全链失败报错带 `chain` 字段（每环结局可诊断），全链成功 0 结果才是真真空
+- `search.py` 门面：`platforms=["zhihu"/"zhuanlan"]` 路由到专用引擎链（不再裸走百度）
+- CLI：`python zhihu_engine.py "query" --num 10`（错误走 stderr + exit 1，与全仓协议一致）
+- 测试：+6 个知乎引擎离线测试（搜狗解析含高亮清理/去重/直链保留、跳转解析正则、searxng 域过滤、链条降级、全链失败 chain 日志、门面路由拦截），共 24 个
+
+### 实测结论（为什么不是直连知乎 API）
+
+- 知乎网页直爬：zse-ck VMP 风控盾，403（与登录无关）
+- 知乎官方 API：x-zse-96（`101_3_3.0`，SM4 变种+自定义 base64，算法来自开源 zhihu_sign_rs）**已移植且服务器验签通过**（非搜索端点错误码 10003→40353 跃迁为证），但 search_v3 入口有边缘 WAF（`400 {"HitLabels":null}`，与签名无关）、访客 cookie `d_c0/__zse_ck` 由 VMP 浏览器挑战签发纯 HTTP 拿不到 → 除非未来加无头浏览器引导 cookie，此路不通
+- cn.bing：剥离 `site:`（前序 4/4 对照复现），不可用
+- 最终：SearXNG 主路径实测 5 条知乎直链；SearXNG 单引擎依赖（brave）与搜狗跳转成本已写进 README 风险段
+
+[3.1.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.1.0
+
 ## [3.0.0] - 2026-09-09
 
 ### 🎯 全面审计驱动的大修（5 工具逐一代码审查 + 本机实测 + 独立复审）

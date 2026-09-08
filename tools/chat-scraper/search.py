@@ -33,10 +33,11 @@ import sys
 from typing import Dict, List, Optional
 
 try:
-    from . import baidu_engine, bilibili_engine  # 包内导入
+    from . import baidu_engine, bilibili_engine, zhihu_engine  # 包内导入
 except ImportError:  # 直接把本目录加进 sys.path 的扁平导入
     import baidu_engine  # type: ignore
     import bilibili_engine  # type: ignore
+    import zhihu_engine  # type: ignore
 
 __all__ = ["search", "list_platforms"]
 
@@ -127,6 +128,13 @@ def search(
                 results.extend(bilibili_engine.search(
                     q, num=num, since=since, vendor=vendor, role=role,
                     on_error="raise"))
+            elif name in ("zhihu", "zhuanlan"):
+                # 知乎走专用降级链（SearXNG→搜狗→百度 site:），不用裸百度：
+                # 知乎官方 API 纯 HTTP 不可用（见 zhihu_engine docstring），
+                # 单靠百度时 IP 软风控期直接没结果
+                results.extend(zhihu_engine.search(
+                    q, num=num, since=since, vendor=vendor, role=role,
+                    site=SITE_MAP.get(name, "zhihu.com"), on_error="raise"))
             elif name == GENERAL:
                 results.extend(baidu_engine.search(
                     q, num=num, since=since, vendor=vendor, role=role,
