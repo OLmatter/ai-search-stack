@@ -1,0 +1,9 @@
+# 关键：search.formats 必须含 json，否则 client 拿不到 JSON（公网实例默认禁 JSON 的原因）
+use_default_settings: true
+server:
+  limiter: false      # 本机实例，关闭 bot 检测，否则 urllib 客户端会被 429
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json
