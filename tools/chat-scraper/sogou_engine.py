@@ -138,11 +138,17 @@ def search(q: str, num: int = 10, since: Optional[str] = None,
         resp = session.get(_SEARCH_URL,
                            params={"query": query}, timeout=TIMEOUT)
         if resp.status_code != 200 or "antispider" in resp.url or \
-                "antispider" in resp.text.lower() or \
                 "验证码" in resp.text[:2000]:
             raise SogouBlocked(
                 f"HTTP {resp.status_code}, url={resp.url[:80]!r}")
-        rows = _parse_results(resp.text)[:num]
+        rows = _parse_results(resp.text)
+        if not rows:
+            # 结构正常却 0 条 + 全文有风控标记 → 软风控不是真空。
+            # antispider 只在 0 行时查全文：它可能出现在任意正常结果的
+            # 标题/摘要里（如搜"反爬虫"主题），无条件查会误杀真结果（审查 B2）
+            if "验证码" in resp.text or "antispider" in resp.text.lower():
+                raise SogouBlocked("soft-block page (0 parsed rows, "
+                                   "risk markers present)")
         return [{
             "title": r["title"],
             "url": r["url"],
@@ -152,7 +158,7 @@ def search(q: str, num: int = 10, since: Optional[str] = None,
             "vendor": vendor,
             "role": role,
             "since": since or "all",
-        } for r in rows]
+        } for r in rows[:num]]
     except Exception as e:
         if on_error == "raise":
             raise

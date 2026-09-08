@@ -281,7 +281,7 @@ def _parse_mobile_results(html: str) -> List[Dict[str, str]]:
         if not mu or mu in seen:
             continue
         netloc = urllib.parse.urlparse(mu).netloc
-        if netloc.endswith("baidu.com"):
+        if netloc == "baidu.com" or netloc.endswith(".baidu.com"):
             continue
         seen.add(mu)
         title_el = node.select_one("h3") or node
@@ -320,12 +320,22 @@ def _mobile_search_impl(q: str, num: int, since: Optional[str],
     return _parse_mobile_results(resp.text)[:num]
 
 
+def _reset_sessions() -> None:
+    """双桶都被风控后重置会话：带病 cookie 的会话只会继续挨风控。"""
+    global _session, _mobile_session
+    with _session_lock:
+        _session = None
+        _mobile_session = None
+
+
 def _search_impl(q: str, num: int, since: Optional[str],
                  site: Optional[str], name: str) -> Tuple[List[Dict[str, str]], str]:
-    """实际请求 + 占位页退避重试；桌面穷尽后切移动端桶。
+    """实际请求 + 占位页退避重试；桌面穷尽（或网络异常）后切移动端桶。
 
-    返回 (rows, engine)；失败抛 BaiduSoftBlocked（message 含桌面+移动双端
-    结局）/ requests 异常。
+    返回 (rows, engine)；双桶都失败抛 BaiduSoftBlocked（message 含桌面+
+    移动双端结局）/ requests 异常。审查修正（B1）：桌面 RST/ProxyError/
+    Timeout 等 requests 异常不能跳过移动桶——RST 恰是软风控形态之一，
+    移动独立桶正是为它准备的。
     """
     s = _get_session()
     params: Dict[str, object] = {
@@ -337,19 +347,32 @@ def _search_impl(q: str, num: int, since: Optional[str],
         params["gpc"] = gpc
 
     reason = ""
+    desktop_error: Optional[Exception] = None
     for attempt in range(MAX_SOFTBLOCK_RETRIES + 1):
         _wait_turn()
-        resp = s.get(_SEARCH_URL, params=params, timeout=TIMEOUT)
-        reason = _looks_soft_blocked(resp.text)
-        if reason is None:
-            return _parse_results(resp.text)[:num], "baidu"
+        try:
+            resp = s.get(_SEARCH_URL, params=params, timeout=TIMEOUT)
+        except requests.RequestException as e:
+            desktop_error = e        # RST/代理死/超时：记下，继续退避重试
+            reason = f"{type(e).__name__}: {e}"
+        else:
+            desktop_error = None
+            reason = _looks_soft_blocked(resp.text)
+            if reason is None:
+                return _parse_results(resp.text)[:num], "baidu"
         if attempt < MAX_SOFTBLOCK_RETRIES:
             # 指数退避: interval * 2, interval * 4
             time.sleep(_min_interval() * (BACKOFF_MULTIPLIER ** (attempt + 1)))
-    # 桌面桶穷尽 → 移动端桶（独立风控，实测桌面被锁时仍可用）
+    # 桌面桶穷尽（占位页/验证码/网络异常）→ 移动端桶（独立风控，实测桌面
+    # 被锁时仍可用）
     try:
         return _mobile_search_impl(q, num, since, site), "baidu-mobile"
     except BaiduSoftBlocked as me:
+        _reset_sessions()   # 双桶皆病，下次调用换新会话
+        if desktop_error is not None:
+            raise BaiduSoftBlocked(
+                f"desktop network error: {desktop_error}; "
+                f"mobile fallback also failed: {me}") from me
         raise BaiduSoftBlocked(
             f"desktop: {reason}; gave up after {MAX_SOFTBLOCK_RETRIES + 1} "
             f"attempts (min_interval={_min_interval():g}s); "

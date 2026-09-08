@@ -71,8 +71,8 @@ def _baidu_then_sogou(q: str, num: int, since: Optional[str],
     """百度 → 搜狗 降级：百度双桶（桌面/移动）被风控时第三环兜底。
 
     只在百度「异常」时降级；百度 0 结果不降——那是真空，多打一次搜狗
-    纯属浪费。两环都失败抛百度原异常（保留 baidu slug，message 里已含
-    桌面+移动双端结局）。
+    纯属浪费。两环都失败抛百度原异常（保留 baidu slug），搜狗失败信息
+    并入 message（不静默丢弃）。
     """
     try:
         return baidu_engine.search(q, num=num, since=since, vendor=vendor,
@@ -80,13 +80,13 @@ def _baidu_then_sogou(q: str, num: int, since: Optional[str],
                                    on_error="raise")
     except Exception as baidu_err:
         try:
-            rows = sogou_engine.search(q, num=num, since=since, vendor=vendor,
+            return sogou_engine.search(q, num=num, since=since, vendor=vendor,
                                        role=role, site=site, platform=name,
                                        on_error="raise")
-            for r in rows:
-                r.setdefault("engine", "sogou")
-            return rows
-        except Exception:
+        except Exception as sogou_err:
+            baidu_err.args = (
+                f"{baidu_err}; sogou fallback also failed: "
+                f"{type(sogou_err).__name__}: {sogou_err}",)
             raise baidu_err
 
 

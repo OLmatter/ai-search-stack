@@ -16,6 +16,7 @@
 - **移动端备选桶**：m.baidu.com 与桌面端是独立风控桶（桌面被锁时移动端实测照常出结果）。桌面双退避穷尽后自动切换：iPhone UA + `div.c-result` → `data-log` JSON → `mu` 直链解析，丢弃 *.baidu.com 自家内容卡；移动端页内联 JS 含 wappass 字样，桌面版 wappass 判据已在移动路径隔离（防全量误报）；结果 engine=baidu-mobile
 - **搜狗第三环**（`tools/chat-scraper/sogou_engine.py`）：百度双桶穷尽后门面自动降级搜狗（`div.vrwrap` 的 `data-url` 属性即直链，免解跳转）；搜狗 web 无时间参数，since 仅透传；CLI `python sogou_engine.py "q" --site csdn.net`
 - `CHAT_SCRAPER_BAIDU_PROXY`：显式代理支持（默认空=直连；**仅在代理真的为 baidu.com 换出口时有效，Clash 规则分流国内域名时无效——实测**）
+- `CHAT_SCRAPER_SOGOU_PROXY`：搜狗引擎显式代理（默认直连）
 - 测试 +5（Accept 头指纹、移动端 data-log 解析、搜狗 data-url 解析、门面"百度故障→搜狗、百度真空→不降级"语义），共 30 个
 
 [3.2.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.2.0

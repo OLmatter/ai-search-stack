@@ -365,6 +365,33 @@ class TestBaiduResilience(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "知乎专栏文章")
 
 
+    def test_desktop_network_error_still_tries_mobile(self):
+        # 审查 B1：桌面 RST（软风控形态之一）不得跳过移动桶
+        import baidu_engine as bd
+        from unittest import mock
+        mobile_rows = [{"title": "m", "url": "https://zhuanlan.zhihu.com/p/1",
+                        "snippet": ""}]
+        calls = {"n": 0}
+
+        def flaky_desktop(self, url, **kw):
+            calls["n"] += 1
+            raise requests.exceptions.ConnectionError(
+                "RemoteDisconnected('RST')")
+
+        with mock.patch.object(bd, "_get_session",
+                               side_effect=lambda mobile=False: requests.Session()), \
+             mock.patch.object(bd, "_min_interval", return_value=0.0), \
+             mock.patch.object(requests.Session, "get", flaky_desktop), \
+             mock.patch.object(bd, "_mobile_search_impl",
+                               return_value=mobile_rows) as mobile_mock, \
+             mock.patch.object(bd, "_reset_sessions"):
+            rows, engine = bd._search_impl("q", 5, None, None, "test")
+        self.assertEqual(engine, "baidu-mobile")
+        self.assertEqual(rows, mobile_rows)
+        self.assertEqual(calls["n"], bd.MAX_SOFTBLOCK_RETRIES + 1)  # 桌面 3 次全 RST
+        mobile_mock.assert_called_once()   # 移动桶必须被触达
+
+
 class TestSogouEngine(unittest.TestCase):
     FIXTURE = (
         '<div class="vrwrap" data-url="https://blog.csdn.net/a/1">'
@@ -385,7 +412,32 @@ class TestSogouEngine(unittest.TestCase):
 
     def test_blocked_raises_with_slug(self):
         import sogou_engine as se
+        from unittest import mock
         self.assertEqual(se.SogouBlocked.slug, "sogou_blocked")
+        # 软风控页（0 解析行 + 风控标记）→ SogouBlocked 而非静默 []
+        blocked = ("<html><title>搜狗反爬拦截</title>antispider 页面"
+                   "验证码</html>")
+        fake = mock.Mock(status_code=200, url="https://www.sogou.com/web",
+                         text=blocked)
+        with mock.patch.object(requests.Session, "get", return_value=fake):
+            out = se.search("q", on_error="report")
+        self.assertIn("sogou_blocked", out[0]["error"])
+
+    def test_antispider_in_results_not_blocked(self):
+        # 审查 B2：antispider 出现在正常结果标题里，不得误杀（0 行才查全文）
+        import sogou_engine as se
+        from unittest import mock
+        page = ('<div class="vrwrap" data-url="https://blog.csdn.net/a">'
+                '<h3><a href="/link?url=x">网站反爬虫 antispider 实战</a></h3>'
+                '<div class="text-layout">讲 antispider 策略的文章</div></div>'
+                '<div class="vrwrap" data-url="https://blog.csdn.net/b">'
+                '<h3><a href="/link?url=y">另一篇</a></h3></div>')
+        fake = mock.Mock(status_code=200, url="https://www.sogou.com/web",
+                         text=page + "antispider")
+        with mock.patch.object(requests.Session, "get", return_value=fake):
+            rows = se.search("antispider", on_error="raise")
+        self.assertEqual(len(rows), 2)
+        self.assertIn("antispider", rows[0]["title"])
 
     def test_facade_falls_back_to_sogou_on_baidu_failure(self):
         import search as cs
