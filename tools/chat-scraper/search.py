@@ -33,10 +33,11 @@ import sys
 from typing import Dict, List, Optional
 
 try:
-    from . import baidu_engine, bilibili_engine, zhihu_engine  # 包内导入
+    from . import baidu_engine, bilibili_engine, sogou_engine, zhihu_engine  # 包内导入
 except ImportError:  # 直接把本目录加进 sys.path 的扁平导入
     import baidu_engine  # type: ignore
     import bilibili_engine  # type: ignore
+    import sogou_engine  # type: ignore
     import zhihu_engine  # type: ignore
 
 __all__ = ["search", "list_platforms"]
@@ -63,6 +64,30 @@ SITE_MAP: Dict[str, str] = {
     "toutiao": "toutiao.com",
     "baidu_tieba": "tieba.baidu.com",
 }
+
+
+def _baidu_then_sogou(q: str, num: int, since: Optional[str],
+                      vendor: str, role: str, site: Optional[str], name: str):
+    """百度 → 搜狗 降级：百度双桶（桌面/移动）被风控时第三环兜底。
+
+    只在百度「异常」时降级；百度 0 结果不降——那是真空，多打一次搜狗
+    纯属浪费。两环都失败抛百度原异常（保留 baidu slug，message 里已含
+    桌面+移动双端结局）。
+    """
+    try:
+        return baidu_engine.search(q, num=num, since=since, vendor=vendor,
+                                   role=role, site=site, platform=name,
+                                   on_error="raise")
+    except Exception as baidu_err:
+        try:
+            rows = sogou_engine.search(q, num=num, since=since, vendor=vendor,
+                                       role=role, site=site, platform=name,
+                                       on_error="raise")
+            for r in rows:
+                r.setdefault("engine", "sogou")
+            return rows
+        except Exception:
+            raise baidu_err
 
 
 def list_platforms() -> Dict[str, str]:
@@ -147,9 +172,9 @@ def search(
                     q, num=num, since=since, vendor=vendor, role=role,
                     site=SITE_MAP.get(name, "zhihu.com"), on_error="raise"))
             elif name == GENERAL:
-                results.extend(baidu_engine.search(
+                results.extend(_baidu_then_sogou(
                     q, num=num, since=since, vendor=vendor, role=role,
-                    site=None, platform=GENERAL, on_error="raise"))
+                    site=None, name=GENERAL))
             else:
                 site = SITE_MAP.get(name)
                 if site is None:
@@ -158,9 +183,9 @@ def search(
                     else:
                         raise ValueError(
                             f"unknown platform {name!r}; see list_platforms()")
-                results.extend(baidu_engine.search(
+                results.extend(_baidu_then_sogou(
                     q, num=num, since=since, vendor=vendor, role=role,
-                    site=site, platform=name, on_error="raise"))
+                    site=site, name=name))
         except Exception as e:
             if on_error == "raise":
                 raise

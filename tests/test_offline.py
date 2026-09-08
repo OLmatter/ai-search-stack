@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import unittest
+import requests
 from contextlib import redirect_stderr
 from io import StringIO
 
@@ -332,6 +333,79 @@ class TestZhihuEngine(unittest.TestCase):
             cs.search("q", platforms=["zhuanlan"], on_error="raise")
             self.assertEqual(
                 zf.call_args.kwargs.get("site"), "zhuanlan.zhihu.com")
+
+
+class TestBaiduResilience(unittest.TestCase):
+    """v3.2 头指纹 + 移动端桶 + 搜狗第三环（审查/侦察驱动的防回归）。"""
+
+    def test_accept_header_fingerprint(self):
+        # 头指纹是软风控的直接开关：三件套（缺完整 Accept）是实测被封组合
+        import baidu_engine as bd
+        from unittest import mock
+        with mock.patch.object(requests.Session, "get", return_value=mock.Mock()):
+            s = bd._get_session()
+        self.assertNotEqual(s.headers.get("Accept", "").strip(), "")
+        self.assertNotEqual(s.headers.get("Accept"), "*/*")  # requests 默认值=机器人指纹
+        self.assertIn("text/html", s.headers["Accept"])
+
+    def test_mobile_parse_uses_datalog_mu(self):
+        # 移动端真 URL 在 data-log 属性 JSON 里（无 mu DOM 属性）；
+        # *.baidu.com 自家内容卡是噪音必须丢弃
+        import baidu_engine as bd
+        html = (
+            '<div class="c-result" data-log=\'{"fm":"alop","mu":'
+            '"https://zhuanlan.zhihu.com/p/18589357376"}\'><h3>知乎专栏文章</h3>'
+            '<div class="c-abstract">摘要A</div></div>'
+            '<div class="c-result" data-log=\'{"mu":"https://mbd.baidu.com/x"}\'>'
+            '<h3>百度自家卡应丢弃</h3></div>'
+            '<div class="c-result" data-log=\'not-json\'><h3>坏json跳过</h3></div>')
+        rows = bd._parse_mobile_results(html)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["url"], "https://zhuanlan.zhihu.com/p/18589357376")
+        self.assertEqual(rows[0]["title"], "知乎专栏文章")
+
+
+class TestSogouEngine(unittest.TestCase):
+    FIXTURE = (
+        '<div class="vrwrap" data-url="https://blog.csdn.net/a/1">'
+        '<h3><a href="/link?url=x">CSDN<em><!--red_beg-->Python<!--red_end--></em>教程</a></h3>'
+        '<div class="text-layout">摘要一</div></div>'
+        '<div class="vrwrap"><h3><a href="/link?url=y">无data-url回退href</a></h3></div>'
+        '<div class="vrwrap" data-url="https://blog.csdn.net/a/1">'
+        '<h3><a href="/link?url=z">重复应去重</a></h3></div>')
+
+    def test_sogou_parse_data_url_direct_link(self):
+        import sogou_engine as se
+        rows = se._parse_results(self.FIXTURE)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://blog.csdn.net/a/1")
+        self.assertEqual(rows[0]["title"], "CSDNPython教程")
+        # 无 data-url 时回退 /link 绝对化，不解析不丢条目
+        self.assertTrue(rows[1]["url"].startswith("https://www.sogou.com/link"))
+
+    def test_blocked_raises_with_slug(self):
+        import sogou_engine as se
+        self.assertEqual(se.SogouBlocked.slug, "sogou_blocked")
+
+    def test_facade_falls_back_to_sogou_on_baidu_failure(self):
+        import search as cs
+        from unittest import mock
+        sogou_rows = [{"title": "t", "url": "https://blog.csdn.net/a",
+                       "snippet": "", "platform": "csdn", "engine": "sogou"}]
+        with mock.patch.object(cs.baidu_engine, "search",
+                               side_effect=cs.baidu_engine.BaiduSoftBlocked("blocked")), \
+             mock.patch.object(cs.sogou_engine, "search",
+                               return_value=sogou_rows) as sf:
+            rows = cs.search("q", platforms=["csdn"], on_error="raise")
+            self.assertEqual(rows[0]["engine"], "sogou")
+            # site 限定透传给搜狗环
+            self.assertEqual(sf.call_args.kwargs.get("site"), "csdn.net")
+        # 百度真空(0条)不触发降级——那是真空不是故障
+        with mock.patch.object(cs.baidu_engine, "search", return_value=[]), \
+             mock.patch.object(cs.sogou_engine, "search") as sf:
+            self.assertEqual(cs.search("q", platforms=["csdn"],
+                                       on_error="raise"), [])
+            sf.assert_not_called()
 
 
 class TestGoogleBridgeImport(unittest.TestCase):

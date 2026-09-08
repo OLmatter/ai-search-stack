@@ -13,7 +13,7 @@
 |---|---|---|---|
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
-| general（无 site:） | 百度通用 | ⚠️ 代码就绪，当日未验证成功（见风控段） | — |
+| general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
 | csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
 | 任意 `<域名>` | 百度 `site:<域名>` 透传 | ⚠️ best-effort | platforms 里传形如 `example.com` 的字符串即启用 |
 
@@ -27,7 +27,13 @@
 
 ## 已知风险与限制（硬要求：诚实）
 
-1. **百度软风控是现实约束，不是理论**。实测（2026-09-09）：当日第一次百度搜索成功（19/19），之后同 IP 的请求**全部**返回 HTTP 200 占位页（1488 字节、含 `timeout`），持续数小时未解封。v3 的行为：占位页 ≠ 0 结果，而是报错 `baidu_soft_blocked`（默认重试 2 次带指数退避，仍败走错误协议）。**缓解**：requests.Session 复用、请求间隔默认 20s（生产建议 ≥15s）、低频使用。风控触发后的冷却时间未知，请换 IP 或等待。
+1. **百度软风控的两个现实形态与真正的开关变量**（2026-09-09 同 IP 对照实测）：
+   - 形态一：HTTP 200 占位页（1488B 含 timeout）；形态二：302 → wappass 图形验证码页。现有 len+timeout 判据两档都能抓（别用「安全验证」中文标记——验证码页编码错乱时匹配不上）。
+   - **头指纹是直接开关**：Chrome UA 配 requests 默认 `Accept: */*` 是机器人指纹，实测被封；补完整 Chrome Accept 四件套后 2/2 直连过审。v3.2 已内置，别改回三件套。
+   - 首页预热 cookie **不解决** IP 级封禁（实测带全 cookie 照样 302）。
+   - 移动端 m.baidu.com 是**独立风控桶**：桌面被锁时移动端照常出结果（v3.2 已做自动备选，engine=baidu-mobile）。注意此为单日观测，两桶随时可能合并风控，不承诺 SLA；移动端页面内联 JS 含 wappass 字样，桌面版 wappass 判据在移动端会全量误报（已隔离）。
+   - `CHAT_SCRAPER_BAIDU_PROXY` 可显式走代理，但**仅在代理真的为 baidu.com 换出口时有效**——Clash 规则分流把国内域名判直连时换了等于没换（实测）。
+   - 软风控期降级语义：百度双桶穷尽后报错 → 门面自动切**搜狗第三环**（data-url 直链，免解跳转）→ 搜狗也挂才报错（保留 baidu slug 与双端结局信息）。
 2. **bilibili 风控可能升级**。当前裸调（带 buvid3 cookie）即通；一旦官方要求 wbi 签名，引擎收到 code=-403/-412 会自动签名重试一次（wbi 完整实现已内置，key 缓存 1h）。若签名后仍 -412/-403，说明风控再加码（如负一层数据加密），需重新逆向。
 3. **weixin（微信公众号）**：百度 `site:mp.weixin.qq.com` 只能搜到被百度收录的文章；公众号历史上有反爬更强的专门方案（sogou 微信搜索等），v3 **未实现**。
 4. **百度时间过滤是 best-effort**：`since=24h/7d/30d` 映射为 `gpc=stf`（stftype 1/2/3，滚动窗口），百度对它的执行并不严格；其他取值不生效（stderr 告警）。bilibili 的 `since` 是客户端按 pubdate 过滤（API 不支持服务端过滤），过滤后可能少于 num 条。
@@ -69,6 +75,7 @@ results = search("q", platforms=["zhihu", "bilibili"])   # 多平台聚合
 python bilibili_engine.py "python 教程" --num 10
 python baidu_engine.py "claude" --site zhihu.com --num 10
 python zhihu_engine.py "claude 教程" --num 10   # 知乎降级链（SearXNG→搜狗→百度）
+python sogou_engine.py "claude" --site csdn.net --num 10   # 搜狗（百度不可用时的第三环）
 python search.py "claude" --platforms zhihu,bilibili --num 10
 python search.py --list-platforms
 ```

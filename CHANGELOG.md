@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.2.0] - 2026-09-09
+
+### 🎯 百度引擎稳定化（头指纹 + 移动端桶 + 搜狗第三环）
+
+百度是 14 个中国平台的主力引擎，软风控曾把整个工具箱打瘫（当日首请求 19/19、之后全占位页/RST）。五组对照实验（同 IP、间隔 ≥8s，证据存档 .scratch/r3/）找到了真正的开关变量：
+
+### Fixed
+
+- **头指纹修复（决定性）**：Chrome UA 配 requests 默认 `Accept: */*` 是机器人指纹——实测三件套组合被封、补完整 Chrome Accept 后同 IP 直连 2/2 过审（无需 cookie 无需预热）。桌面/移动会话均已内置，实测百度直连复活（csdn 查询 5 条真实结果）
+- 预热 cookie 不解决 IP 级封禁（带全 cookie 照样 302 验证码）——文档如实更正
+
+### Added
+
+- **移动端备选桶**：m.baidu.com 与桌面端是独立风控桶（桌面被锁时移动端实测照常出结果）。桌面双退避穷尽后自动切换：iPhone UA + `div.c-result` → `data-log` JSON → `mu` 直链解析，丢弃 *.baidu.com 自家内容卡；移动端页内联 JS 含 wappass 字样，桌面版 wappass 判据已在移动路径隔离（防全量误报）；结果 engine=baidu-mobile
+- **搜狗第三环**（`tools/chat-scraper/sogou_engine.py`）：百度双桶穷尽后门面自动降级搜狗（`div.vrwrap` 的 `data-url` 属性即直链，免解跳转）；搜狗 web 无时间参数，since 仅透传；CLI `python sogou_engine.py "q" --site csdn.net`
+- `CHAT_SCRAPER_BAIDU_PROXY`：显式代理支持（默认空=直连；**仅在代理真的为 baidu.com 换出口时有效，Clash 规则分流国内域名时无效——实测**）
+- 测试 +5（Accept 头指纹、移动端 data-log 解析、搜狗 data-url 解析、门面"百度故障→搜狗、百度真空→不降级"语义），共 30 个
+
+[3.2.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.2.0
+
 ## [3.1.0] - 2026-09-09
 
 ### 🎯 知乎专用搜索引擎链（chat-scraper）

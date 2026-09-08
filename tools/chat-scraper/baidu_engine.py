@@ -31,7 +31,8 @@ import os
 import sys
 import threading
 import time
-from typing import Dict, List, Optional
+import urllib.parse
+from typing import Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -43,9 +44,18 @@ _HOME_URL = "https://www.baidu.com/"
 _SEARCH_URL = "https://www.baidu.com/s"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
+_MOBILE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
+              "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+              "Version/17.5 Mobile/15E148 Safari/604.1")
+# 完整 Chrome 文档导航 Accept。requests 默认 `Accept: */*` 配 Chrome UA 是
+# 机器人指纹——同 IP 对照实测：三件套被封、补上此头 2/2 过审（缺一不可）。
+_ACCEPT_FULL = ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,image/apng,*/*;q=0.8,"
+                "application/signed-exchange;v=b3;q=0.7")
 
 # 环境变量：两次百度请求的最小间隔秒数。生产建议 >=15（README 有说明）。
 ENV_MIN_INTERVAL = "CHAT_SCRAPER_BAIDU_MIN_INTERVAL"
+ENV_PROXY = "CHAT_SCRAPER_BAIDU_PROXY"    # 默认空=直连；显式设置才走代理
 DEFAULT_MIN_INTERVAL = 20.0
 TIMEOUT = 20                      # 单请求超时（秒）
 RESULTS_PER_PAGE = 20             # rn 参数；未登录状态下 20 是稳定单页上限
@@ -72,6 +82,7 @@ class BaiduSoftBlocked(Exception):
 
 
 _session: Optional[requests.Session] = None
+_mobile_session: Optional[requests.Session] = None
 _session_lock = threading.Lock()
 _throttle_lock = threading.Lock()
 _last_request_ts = 0.0
@@ -100,25 +111,50 @@ def _wait_turn() -> None:
         _last_request_ts = time.monotonic()
 
 
-def _get_session() -> requests.Session:
-    """懒加载进程级会话: 先访问首页拿 cookie（BAIDUID 等），降低触发风控概率。"""
-    global _session
+def _get_session(mobile: bool = False) -> requests.Session:
+    """懒加载进程级会话（桌面/移动各一个，UA 与 Referer 分开）。
+
+    头指纹是软风控的直接开关（2026-09-09 同 IP 对照实测）：Chrome UA 配
+    requests 默认 `Accept: */*` 是典型机器人指纹——三件套（UA+Referer+
+    Accept-Language）组合被封，补上完整 Chrome Accept 四件套后 2/2 直连
+    过审。所以 Accept 四件套一个都不能省。
+    """
+    global _session, _mobile_session
     with _session_lock:
-        if _session is None:
-            _wait_turn()
-            s = requests.Session()
-            # trust_env=False: 本工具面向中国平台直连场景。本机实测系统代理
-            # （如 Clash 127.0.0.1:7897）半死不活时会返回 ProxyError 或
-            # 1488 字节的 "timeout" 页——与百度占位页特征相同，会污染判定。
-            s.trust_env = False
+        if (mobile and _mobile_session is not None) or \
+                (not mobile and _session is not None):
+            return _mobile_session if mobile else _session
+        _wait_turn()
+        s = requests.Session()
+        # trust_env=False: 本工具面向中国平台直连场景。本机实测系统代理
+        # （如 Clash 127.0.0.1:7897）半死不活时会返回 ProxyError 或
+        # 1488 字节的 "timeout" 页——与百度占位页特征相同，会污染判定。
+        # 需要代理时用 CHAT_SCRAPER_BAIDU_PROXY 显式指定（且仅当代理真的
+        # 为 baidu.com 换出口时有效——Clash 规则分流国内域名仍走直连）。
+        s.trust_env = False
+        proxy = os.environ.get(ENV_PROXY, "")
+        if proxy:
+            s.proxies.update({"http": proxy, "https": proxy})
+        if mobile:
+            s.headers.update({
+                "User-Agent": _MOBILE_UA,
+                "Referer": "https://m.baidu.com/",
+                "Accept": _ACCEPT_FULL,
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            })
+        else:
             s.headers.update({
                 "User-Agent": _UA,
                 "Referer": "https://www.baidu.com/",
+                "Accept": _ACCEPT_FULL,
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             })
             s.get(_HOME_URL, timeout=TIMEOUT)
+        if mobile:
+            _mobile_session = s
+        else:
             _session = s
-        return _session
+        return s
 
 
 def _looks_soft_blocked(html: str) -> Optional[str]:
@@ -174,14 +210,14 @@ def _since_to_gpc(since: Optional[str]) -> str:
 
 
 def _record(row: Dict[str, str], platform: str, since: Optional[str],
-            vendor: str, role: str) -> Dict:
+            vendor: str, role: str, engine: str = "baidu") -> Dict:
     """补齐统一结果字段。"""
     return {
         "title": row["title"],
         "url": row["url"],
         "snippet": row["snippet"],
         "platform": platform,
-        "engine": "baidu",
+        "engine": engine,
         "vendor": vendor,
         "role": role,
         "since": since or "all",
@@ -216,8 +252,8 @@ def search(
     """
     name = platform or site or "general"
     try:
-        rows = _search_impl(q, num, since, site, name)
-        return [_record(r, name, since, vendor, role) for r in rows]
+        rows, engine = _search_impl(q, num, since, site, name)
+        return [_record(r, name, since, vendor, role, engine) for r in rows]
     except Exception as e:
         if on_error == "raise":
             raise
@@ -228,9 +264,69 @@ def search(
         return []  # on_error == "empty": 兼容旧行为
 
 
+def _parse_mobile_results(html: str) -> List[Dict[str, str]]:
+    """移动端结果页解析：真 URL 在 div.c-result 的 data-log 属性 JSON 里
+    （{"fm":"alop",...,"mu":"https://..."}），页面无 mu DOM 属性。
+
+    百度自家内容卡（mu 指向 *.baidu.com）对站内搜索是噪音，丢弃。
+    """
+    soup = BeautifulSoup(html, "lxml")
+    out: List[Dict[str, str]] = []
+    seen = set()
+    for node in soup.select("div.c-result"):
+        try:
+            mu = (json.loads(node.get("data-log") or "{}").get("mu") or "").strip()
+        except ValueError:
+            continue
+        if not mu or mu in seen:
+            continue
+        netloc = urllib.parse.urlparse(mu).netloc
+        if netloc.endswith("baidu.com"):
+            continue
+        seen.add(mu)
+        title_el = node.select_one("h3") or node
+        title = title_el.get_text(" ", strip=True)[:120]
+        snippet_el = node.select_one("[class*='content'], .c-abstract")
+        snippet = snippet_el.get_text(" ", strip=True)[:300] if snippet_el else ""
+        out.append({"title": title, "url": mu, "snippet": snippet})
+    return out
+
+
+def _mobile_search_impl(q: str, num: int, since: Optional[str],
+                        site: Optional[str]) -> List[Dict[str, str]]:
+    """移动端备选子路径：m.baidu.com 与桌面端是独立风控桶——实测同一被锁
+    IP 上桌面 302 验证码、移动端照常出真实结果页。
+
+    判据与桌面不同：真页 = 页面大且含 c-result；被封 = 小页/跳 wappass。
+    移动端页面的内联 JS 本身含 wappass 字样，桌面版的 wappass html 标记
+    在这里会全量误报，严禁复用。
+    """
+    s = _get_session(mobile=True)
+    params: Dict[str, object] = {
+        "word": f"{q} site:{site}" if site else q,
+    }
+    gpc = _since_to_gpc(since)
+    if gpc:
+        params["gpc"] = gpc
+    _wait_turn()
+    resp = s.get("https://m.baidu.com/s", params=params, timeout=TIMEOUT)
+    if "wappass" in resp.url:
+        raise BaiduSoftBlocked(
+            f"mobile redirected to captcha ({resp.url[:80]!r})")
+    if "c-result" not in resp.text:
+        raise BaiduSoftBlocked(
+            f"mobile page lacks results (len={len(resp.text)}, "
+            f"url={resp.url[:80]!r})")
+    return _parse_mobile_results(resp.text)[:num]
+
+
 def _search_impl(q: str, num: int, since: Optional[str],
-                 site: Optional[str], name: str) -> List[Dict[str, str]]:
-    """实际请求 + 占位页退避重试。失败抛 BaiduSoftBlocked / requests 异常。"""
+                 site: Optional[str], name: str) -> Tuple[List[Dict[str, str]], str]:
+    """实际请求 + 占位页退避重试；桌面穷尽后切移动端桶。
+
+    返回 (rows, engine)；失败抛 BaiduSoftBlocked（message 含桌面+移动双端
+    结局）/ requests 异常。
+    """
     s = _get_session()
     params: Dict[str, object] = {
         "wd": f"{q} site:{site}" if site else q,
@@ -246,13 +342,18 @@ def _search_impl(q: str, num: int, since: Optional[str],
         resp = s.get(_SEARCH_URL, params=params, timeout=TIMEOUT)
         reason = _looks_soft_blocked(resp.text)
         if reason is None:
-            return _parse_results(resp.text)[:num]
+            return _parse_results(resp.text)[:num], "baidu"
         if attempt < MAX_SOFTBLOCK_RETRIES:
             # 指数退避: interval * 2, interval * 4
             time.sleep(_min_interval() * (BACKOFF_MULTIPLIER ** (attempt + 1)))
-    raise BaiduSoftBlocked(
-        f"{reason}; gave up after {MAX_SOFTBLOCK_RETRIES + 1} attempts "
-        f"(min_interval={_min_interval():g}s)")
+    # 桌面桶穷尽 → 移动端桶（独立风控，实测桌面被锁时仍可用）
+    try:
+        return _mobile_search_impl(q, num, since, site), "baidu-mobile"
+    except BaiduSoftBlocked as me:
+        raise BaiduSoftBlocked(
+            f"desktop: {reason}; gave up after {MAX_SOFTBLOCK_RETRIES + 1} "
+            f"attempts (min_interval={_min_interval():g}s); "
+            f"mobile fallback also failed: {me}") from me
 
 
 def _main() -> int:
