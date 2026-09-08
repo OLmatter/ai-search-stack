@@ -1,4 +1,4 @@
-"""search_helper v23.8 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export.
+"""search_helper v23.9 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export. v23.9: CAPTCHA/lockout answers HTTP 503 (never disguised as 200/0-results) + zero-result page dump for diagnosis.
 
 Endpoints:
   GET /search?q=...&num=10&since=24h
@@ -253,6 +253,15 @@ def get_driver():
     return _driver
 
 
+class CaptchaBlocked(RuntimeError):
+    """v23.9: Google CAPTCHA/consent page persisted after backoff.
+
+    Raised instead of silently returning [] — a CAPTCHA block must be
+    distinguishable (HTTP 503) from genuinely zero results (HTTP 200).
+    """
+    pass
+
+
 class PageLoadError(RuntimeError):
     """v23.8: Google page failed to LOAD at all (network dead / Chrome dead).
 
@@ -295,11 +304,13 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
                 skip_s = int(COOLDOWN_POST_CAPTCHA - (now - _last_captcha_ts[0]))
                 print(f'[cooldown] post-CAPTCHA lockout, {skip_s}s remaining, skip', flush=True)
                 _honeypot_skip(query, num, since, f'post_captcha_lockout_{skip_s}s')
-                return []
+                raise CaptchaBlocked(
+                    f'post-CAPTCHA lockout, {skip_s}s remaining (cooldown gate)')
             if _captcha_count_10m[0] >= CAPTCHA_LIMIT_10M:
                 print(f'[cooldown] CAPTCHA limit ({CAPTCHA_LIMIT_10M}/10min) hit, skip', flush=True)
                 _honeypot_skip(query, num, since, 'captcha_limit_10m')
-                return []
+                raise CaptchaBlocked(
+                    f'CAPTCHA rate limit hit ({CAPTCHA_LIMIT_10M}/10min)')
             if _last_query_ts[0] > 0:
                 since_last = now - _last_query_ts[0]
                 if since_last < COOLDOWN_BETWEEN:
@@ -389,7 +400,9 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
             raise PageLoadError(f'Google page failed to load after CAPTCHA backoff, q={query!r}')
         if 'unusual traffic' in html.lower() or '/sorry/index' in driver.current_url:
             print('  CAPTCHA persists, giving up', flush=True)
-            return []
+            raise CaptchaBlocked(
+                f'Google CAPTCHA persisted after {CAPTCHA_SLEEP}s backoff '
+                f'(sorry page), q={query!r}')
 
     # If still showing consent / unusual, bail
     if 'consent.google.com' in driver.current_url or 'unusual traffic' in html.lower():
@@ -405,7 +418,8 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
                 }, ensure_ascii=False) + '\n')
         except Exception:
             pass
-        return []
+        raise CaptchaBlocked(
+            f'Google blocked the query (consent/unusual traffic), q={query!r}')
     # (v23.8: removed unreachable driver.get()/sleep() that used to follow the
     # return above)
 
@@ -475,6 +489,23 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
                         pass
             except Exception:
                 continue
+
+    # 0 结果诊断：把现场 HTML 落盘，供区分"真无结果 / Google 换布局 / 同意页 /
+    # CAPTCHA 变体"。页面加载失败已走 502，能到这里说明页面加载成功了。
+    if not results:
+        try:
+            import os as _os
+            diag_dir = _os.path.join(_os.path.dirname(__file__) or '.', 'state')
+            _os.makedirs(diag_dir, exist_ok=True)
+            diag_path = _os.path.join(diag_dir, 'last_zero_page.html')
+            html_src = driver.page_source or ''
+            with open(diag_path, 'w', encoding='utf-8') as _f:
+                _f.write(html_src[:2_000_000])
+            print(f'  [diag] 0 results; page html ({len(html_src)} bytes) '
+                  f'saved to {diag_path} — 检查是否同意页/新布局/CAPTCHA 变体',
+                  flush=True)
+        except Exception as _e:
+            print(f'  [diag] failed to dump zero-result page: {_e}', flush=True)
 
     print(f'  extracted {len(results)} results', flush=True)
 
@@ -612,6 +643,11 @@ class SearchHandler(BaseHTTPRequestHandler):
                     'vendor': vendor, 'role': query_role,
                     'results': results, 'engine': 'undetected-chromedriver'
                 })
+            except CaptchaBlocked as e:
+                # v23.9: CAPTCHA/consent block is NOT zero results — answer 503
+                # so callers can back off or switch tools (SOP 失败回滚表).
+                print(f'  CAPTCHA BLOCKED: {e}', flush=True)
+                return self._send_json({'error': str(e), 'kind': 'captcha_blocked'}, 503)
             except PageLoadError as e:
                 # v23.8: page did not LOAD — report 502 so callers can tell
                 # "network dead" apart from "genuinely zero results" (200).

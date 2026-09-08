@@ -74,7 +74,7 @@ ai-search-stack/
 ├── LICENSE
 ├── tests/                ← 离线单测（含 NUL 空壳/撞名防回归）+ 真冒烟
 ├── tools/
-│   ├── google-bridge/    # Chrome 桥（search_helper v23.8，Windows/Linux 可用）
+│   ├── google-bridge/    # Chrome 桥（search_helper v23.9，Windows/Linux 可用）
 │   │   ├── search_helper.py
 │   │   ├── start_*.sh
 │   │   ├── requirements.txt

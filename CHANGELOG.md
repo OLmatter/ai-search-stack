@@ -22,7 +22,7 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
 
 ### Fixed
 
-- **google-bridge（search_helper v23.7→v23.8，15 项）**：
+- **google-bridge（search_helper v23.7→v23.9，17 项）**：
   - Windows import 即崩：`faulthandler.register(signal.SIGUSR1)` 加平台守卫（高）
   - UDD 硬编码他人家目录 `C:\Users\520hh\` → `~/.no1_chrome_udd`（高）
   - query 未 URL 编码 + 双重解码 → urlencode 构造、删除二次 unquote（中）
@@ -33,7 +33,8 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
   - example_config.sh 三个幽灵变量（代码从不读）→ 换为代码真实读取的变量（中）
   - chromedriver 查找：仅环境变量 → env → state/bin/ → PATH → uc 自动下载 四级回退
   - 其余：CAPTCHA sleep 可配置（NO1_CAPTCHA_SLEEP）、CAPTCHA 启发式阈值可配（NO1_MIN_HTML_LEN）、honeypot client_ip 用真实客户端地址、删除不可达代码、Linux chrome 路径去硬编码
-  - 实测：本机端到端真 Google 搜索返回 14 条真实结果
+  - **CAPTCHA/锁定不再伪装成 0 结果（v23.9）**：CAPTCHA 持续、post-CAPTCHA 锁定、CAPTCHA 限速三种路径原 `return []` → 抛 `CaptchaBlocked`，HTTP 层答 503 + `{"kind": "captcha_blocked"}`；0 结果时自动落盘现场 HTML 到 `state/last_zero_page.html` 供诊断
+  - 实测：本机端到端真 Google 搜索返回 14 条真实结果（v23.8 时点）；随后测试出口 IP 被 Google 风控，503 行为按上述实测确认
 - **hackernews**：`utcnow()` 时区漂移（UTC+8 实测 -28800s）→ timezone-aware；comment 模式 points=null 导致调用方 `points >= 50` TypeError 崩溃 → `or 0` 兜底（实测会崩的 bug）
 - **github**：CLI 补 `--num/--vendor/--role`（v2 缺失致输出恒 vendor="?"，与 SOP"必传"自相矛盾）；repo/ecosystem URL 编码
 - **searxng**：CLI 与库 `--since` 默认不一致（7d vs None）→ 统一 7d；未知 since 值静默忽略 → stderr 警告
