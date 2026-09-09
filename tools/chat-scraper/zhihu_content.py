@@ -399,6 +399,21 @@ def _check_http_url(url: str) -> str:
     return url
 
 
+def _raise_if_error_page(text: str, url: str) -> None:
+    """短文本命中错误/验证页标记 → ReadError（绝不把验证页当正文返回）。
+
+    长文本（≥500 字）含同词视为正常讨论（技术文聊"环境异常"很常见），
+    不判；错误页实测 75B~数百字。
+    """
+    if len(text) >= _ERROR_PAGE_MAX_LEN:
+        return
+    for marker in _ERROR_PAGE_MARKERS:
+        if marker in text:
+            raise ReadError(
+                f"命中错误页标记 {marker!r}（正文仅 {len(text)} 字）: {url}——"
+                f"该站点对自动化环境返回了验证/错误页，如实报错")
+
+
 def read_via_browser(url: str, headless: bool = True,
                      wait_ms: int = 6000) -> Dict:
     """免 cookie 读知乎页面：无头 camoufox + 百度搜索来路（SEO 引流放行）。
@@ -565,13 +580,7 @@ def _generic_read_browser(url: str, headless: bool = True,
         if not text:
             raise ReadError(
                 f"浏览器线正文为空: {page.url}——如实报错，不伪装")
-        # 已知风控验证页标记：这类"内容"是验证提示不是正文（2026-09-10
-        # 微信实测：自动化环境即使无头浏览器也被要求验证），如实报错
-        for marker in ("环境异常", "完成验证后即可继续访问"):
-            if marker in text:
-                raise ReadError(
-                    f"命中风控验证页标记 {marker!r}: {page.url}——"
-                    f"该站点对自动化环境要求验证，如实报错")
+        _raise_if_error_page(text, page.url)
         # 审查 v3.4 #3：<200 字不再一票否决——浏览器线能过反爬说明页面
         # 是真的，短博文/短回答照实返回（HTTP 线的 <200 判据只服务反爬检测）
         return {
@@ -596,13 +605,31 @@ _QUESTION_RE = re.compile(r"zhihu\.com/question/(\d+)")
 _ANSWER_RE = re.compile(r"zhihu\.com/question/(\d+)/answer/(\d+)")
 _ZHUANLAN_RE = re.compile(r"zhuanlan\.zhihu\.com/p/(\d+)")
 
+# 浏览器线错误页标记（审查 v3.5 #3/#4）。仅在"短文本"时判定：长文含同词
+# 多为正常讨论（如技术文聊"环境异常"），不能误杀。错误页实测 75B~数百字。
+_ERROR_PAGE_MARKERS = ("完成验证后即可继续访问", "环境异常", "参数错误",
+                       "该内容已被发布者删除", "此内容因违规无法查看",
+                       "操作过于频繁", "当前环境异常", "内容审核中")
+_ERROR_PAGE_MAX_LEN = 500
+
+
+def _raise_if_error_page(text: str, url: str) -> None:
+    """短文本命中错误/验证页标记 → ReadError（绝不把验证页当正文返回）。"""
+    if len(text) >= _ERROR_PAGE_MAX_LEN:
+        return
+    for marker in _ERROR_PAGE_MARKERS:
+        if marker in text:
+            raise ReadError(
+                f"命中错误页标记 {marker!r}（正文仅 {len(text)} 字）: {url}——"
+                f"该站点对自动化环境返回了验证/错误页，如实报错")
+
 
 class _AnswerMiss(Exception):
     """目标回答不在返回的首页集合里（分流到浏览器线读取）。"""
 
 
 def read(url: str) -> Dict:
-    """通用阅读器（v3.4）：一个入口读任意 URL，返回统一
+    """通用阅读器（v3.5）：一个入口读任意 URL，返回统一
     {title, content, url, engine}。
 
     分流：
@@ -611,7 +638,12 @@ def read(url: str) -> Dict:
                                     API 线挂 → read_via_browser 兜底
         知乎专栏 /p/{id}          -> fetch_article
         其他知乎 URL              -> read_via_browser（SEO 引流线）
-        非知乎域名                -> HTTP 直连 + 选择器提取；403/网络异常/
+        bilibili /video/BVxx     -> fetch_video（官方 view API）；
+                                    非 /video 页或 API 线挂 → 通用线
+        微信公众号文章            -> HTTP 直连 + #js_content 选择器；
+                                    反爬/验证页 → 无头浏览器兜底（当前环境
+                                    实测会被要求验证，见 README 风险段）
+        其余域名                  -> HTTP 直连 + 选择器提取；403/网络异常/
                                     疑似反爬（正文<200字）→ 无头浏览器兜底
     """
     u = _check_http_url((url or "").strip())
@@ -632,13 +664,21 @@ def read(url: str) -> Dict:
             return read_via_browser(u)
 
     if host == "bilibili.com" or host.endswith(".bilibili.com"):
-        # BV 视频走官方 view API（结构化：标题/简介/UP主/播放赞投）
-        import bilibili_engine
-        return _api_or_browser(
-            lambda v: {k: v[k] for k in ("title", "desc", "owner", "view",
-                                         "danmaku", "like", "favorite",
-                                         "pubdate", "url", "engine")},
-            lambda: bilibili_engine.fetch_video(u, on_error="raise"))
+        # 仅 /video/BVxx 走官方 view API；空间页/搜索页/av 号页一律通用线
+        # （审查 v3.5 #1/#2：错误回通用线而非知乎浏览器线；任何异常不逃逸）
+        m = re.search(r"/video/(BV[0-9A-Za-z]{10})", u)
+        if m:
+            import bilibili_engine
+            try:
+                v = bilibili_engine.fetch_video(m.group(1), on_error="raise")
+                return {k: v[k] for k in ("title", "desc", "owner", "view",
+                                          "danmaku", "like", "favorite",
+                                          "pubdate", "url", "engine")}
+            except Exception as e:
+                print(f"[zhihu_content] bilibili API 线失败"
+                      f"（{getattr(e, 'slug', type(e).__name__)}）→ "
+                      f"通用线兜底", file=sys.stderr)
+        return _generic_read(u)
     if host == "zhihu.com" or host.endswith(".zhihu.com"):
         m = _ANSWER_RE.search(u)
         if m:

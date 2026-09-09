@@ -40,10 +40,14 @@ def _check(name, fn, optional=False):
         print(f"{'⚠️' if optional else '❌'} {name}: {str(e)[:120]}")
 
 
+_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}))   # 绕系统代理：代理半死会伪造全红（v3.4 注释同款）
+
+
 def _get(url, timeout=TIMEOUT, headers=None):
     req = urllib.request.Request(url, headers=headers or {"User-Agent":
-                                 "ai-search-stack-doctor/3.4"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+                                 "ai-search-stack-doctor"})
+    with _OPENER.open(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
 
@@ -52,20 +56,22 @@ def check_searxng():
     data = json.loads(body)
     dead = data.get("unresponsive_engines") or []
     n = len(data.get("results", []))
-    return (f"{n} 条结果, 5s 探活"
+    return (f"{n} 条结果, {TIMEOUT}s 探活"
             + (f", 不健康引擎: {dead}" if dead else ", 引擎全健康"))
 
 
 def check_cookie():
     if not os.path.exists(COOKIE_PATH):
-        return "cookie 文件不存在（首次 read 会自动引导自愈，或手动跑 zhihu_bootstrap.py）"
+        raise RuntimeError("cookie 文件不存在（read 会自动引导自愈，"
+                           "或手动跑 zhihu_bootstrap.py）")
     with open(COOKIE_PATH, encoding="utf-8") as f:
         meta = json.load(f)
     age_h = (time.time() - os.path.getmtime(COOKIE_PATH)) / 3600
     has = all(k in (meta.get("cookies") or {})
               for k in ("d_c0", "__zse_ck"))
-    return (f"存在, 龄 {age_h:.1f}h, d_c0/__zse_ck "
-            f"{'齐' if has else '缺'}"
+    if not has:
+        raise RuntimeError("cookie 缺少 d_c0/__zse_ck（重跑 zhihu_bootstrap.py）")
+    return (f"存在, 龄 {age_h:.1f}h"
             f"{'（>24h 建议跑一次 zhihu_bootstrap.py 续期）' if age_h > 24 else ''}")
 
 
@@ -106,10 +112,11 @@ def main() -> int:
     _check("百度直连", check_baidu)
     _check("google-bridge 服务", check_google_bridge, optional=True)
     _check("GitHub API", check_github)
-    core_fail = [r for r in _results if not r[1] and not r[3]]
+    core = [r for r in _results if not r[3]]
+    core_fail = [r for r in core if not r[1]]
     opt_fail = [r for r in _results if not r[1] and r[3]]
-    print(f"== 结果: 核心 {len(_results) - len(core_fail)}/{len(_results)} 正常"
-          f"，核心故障 {len(core_fail)}，可选未起 {len(opt_fail)} ==")
+    print(f"== 结果: 核心 {len(core) - len(core_fail)}/{len(core)} 正常"
+          f"，核心故障 {len(core_fail)}，可选异常 {len(opt_fail)} ==")
     return 1 if core_fail else 0
 
 

@@ -195,6 +195,8 @@ def _clean_title(s: str) -> str:
 
 
 def _fmt_pubdate(ts: int) -> str:
+    if not ts:      # 0 = 缺失/广告卡，伪造 "1970-01-01" 是撒谎
+        return ""
     return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
@@ -333,7 +335,7 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
         if on_error == "raise":
             raise err
         if on_error == "report":
-            return [{"error": f"ValueError: {err}", "tool": _PLATFORM,
+            return [{"error": f"ValueError: {err}", "tool": _TOOL,
                      "query": video, "platform": _PLATFORM}]
         return []
     try:
@@ -341,6 +343,7 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
         _wait_turn()
         resp = s.get("https://api.bilibili.com/x/web-interface/view",
                      params={"bvid": m.group(1)}, timeout=TIMEOUT)
+        resp.raise_for_status()   # 412/5xx HTML 页直接走 HTTPError，别假装 JSON
         data = resp.json()
         if data.get("code") != 0:
             raise BilibiliApiError(

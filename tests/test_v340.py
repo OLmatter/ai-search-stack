@@ -551,3 +551,69 @@ class TestV350(unittest.TestCase):
         import zhihu_content as zc
         self.assertIn("js_content", zc._GENERIC_SELECTORS)
         self.assertIn("rich_media_content", zc._GENERIC_SELECTORS)
+
+
+class TestAuditV350Round(unittest.TestCase):
+    """复审轮修复：bilibili 分支双失效、错误页守卫双向、doctor 诚实化。"""
+
+    def test_error_page_guard_short_hits_long_passes(self):
+        # #3/#4：短文本+标记 → ReadError；长文含同词是正常讨论不误杀
+        import zhihu_content as zc
+        short = "参数错误 当前环境异常 完成验证后即可继续访问"
+        with self.assertRaises(zc.ReadError):
+            zc._raise_if_error_page(short, "https://mp.weixin.qq.com/s/x")
+        long_body = "这是一篇讲监控系统的技术文章，" + "讨论了环境异常的检测方法。" * 40
+        zc._raise_if_error_page(long_body, "https://blog.csdn.net/a")  # 不抛
+
+    def test_bilibili_api_fail_falls_to_generic_not_zhihu_browser(self):
+        # 复审 #1/#2：API 失败要回通用线，且不得逃逸/不得调知乎浏览器线
+        import zhihu_content as zc
+        import bilibili_engine as be
+        generic_row = {"title": "g", "content": "c", "url": "u",
+                       "engine": "http"}
+        fake_be = mock.MagicMock()
+        fake_be.fetch_video.side_effect = be.BilibiliApiError("code=-404")
+        with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}),              mock.patch.object(zc, "_generic_read",
+                               return_value=generic_row) as gr,              mock.patch.object(zc, "read_via_browser") as rb:
+            out = zc.read("https://www.bilibili.com/video/BV1GJ411x7h7")
+        self.assertEqual(out["engine"], "http")
+        gr.assert_called_once()
+        rb.assert_not_called()   # 兜底是通用线不是知乎浏览器线
+
+    def test_bilibili_non_video_page_goes_generic(self):
+        import zhihu_content as zc
+        from unittest import mock
+        generic_row = {"title": "g", "content": "c", "url": "u",
+                       "engine": "http"}
+        fake_be = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}), \
+             mock.patch.object(zc, "_generic_read",
+                               return_value=generic_row) as gr:
+            out = zc.read("https://space.bilibili.com/123")
+        self.assertEqual(out["engine"], "http")
+        fake_be.fetch_video.assert_not_called()   # 非 /video 页不进 API
+
+    def test_fetch_video_api_error_report_uses_tool_field(self):
+        # 复审 #5：report 错误条目 tool 字段统一 chat-scraper（曾两制）
+        import bilibili_engine as be
+        from unittest import mock
+        fake = mock.Mock(status_code=200)
+        fake.json.return_value = {"code": -404, "message": "啥都木有"}
+        with mock.patch.object(be, "_wait_turn"), \
+             mock.patch.object(be.requests.Session, "get",
+                               return_value=fake):
+            out = be.fetch_video("BV1GJ411x7h7", on_error="report")
+        self.assertEqual(out[0]["tool"], "chat-scraper")
+        self.assertIn("bilibili_api_error", out[0]["error"])
+
+    def test_doctor_cookie_missing_is_optional_fail(self):
+        # 复审 #6：cookie 缺失必须 ⚠️（异常）而不是永绿
+        import pathlib
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve()
+                               .parent.parent / "tools"))
+        import doctor
+        from unittest import mock
+        with mock.patch.object(doctor, "COOKIE_PATH",
+                               "Z:/no/such/zhihu_cookies.json"):
+            with self.assertRaises(RuntimeError):
+                doctor.check_cookie()

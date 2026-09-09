@@ -19,8 +19,13 @@
   （unresponsive_engines）、知乎 cookie 存在性/年龄、bilibili API、百度直连、
   google-bridge /health（可选项未起不算故障）、GitHub API；核心故障退出码 1
 - 实测：B站视频 1.05 亿播放真实结构化数据；doctor 六项巡检全通过
-- 测试 +6（fetch_video bvid 提取/错误协议、read B站/微信分流、doctor cookie
-  年龄解析），共 76 个
+- 测试 +4（70→74：fetch_video bvid 提取/错误协议、read B站分流、微信选择器在列）
+
+- 复审轮（独立审计）修复：read() bilibili 分支错误逃逸+兜底目标错误双失效
+  （现仅 /video/BV 走 API，任何失败回通用线）；微信/B站错误页守卫改
+  「短文本 + 标记」判据（环境异常/参数错误/内容删除等家族，长文不误杀）；
+  fetch_video tool 字段统一、412/5xx raise_for_status、_fmt_pubdate(0)
+  不再伪造 1970；doctor cookie 缺失改 ⚠️ 不再永绿、绕系统代理、计数修正
 
 [3.5.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.5.0
 
