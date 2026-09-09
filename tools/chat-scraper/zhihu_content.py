@@ -450,7 +450,9 @@ def read_via_browser(url: str, headless: bool = True,
 # ---- 通用阅读器（v3.4，两评估员共识：阅读线服务所有搜索产出） ------------
 
 # 正文选择器优先级：语义标签 > 常见博客容器 > main > #content > body 兜底
+# （#js_content=微信公众号文章、.rich_media_content=微信正文容器）
 _GENERIC_SELECTORS = ("article, .post-content, .article-content, "
+                      "#js_content, .rich_media_content, "
                       "main, #content")
 _MIN_ARTICLE_CHARS = 200   # 低于此判疑似反爬/空壳页 → 换浏览器线
 
@@ -563,6 +565,13 @@ def _generic_read_browser(url: str, headless: bool = True,
         if not text:
             raise ReadError(
                 f"浏览器线正文为空: {page.url}——如实报错，不伪装")
+        # 已知风控验证页标记：这类"内容"是验证提示不是正文（2026-09-10
+        # 微信实测：自动化环境即使无头浏览器也被要求验证），如实报错
+        for marker in ("环境异常", "完成验证后即可继续访问"):
+            if marker in text:
+                raise ReadError(
+                    f"命中风控验证页标记 {marker!r}: {page.url}——"
+                    f"该站点对自动化环境要求验证，如实报错")
         # 审查 v3.4 #3：<200 字不再一票否决——浏览器线能过反爬说明页面
         # 是真的，短博文/短回答照实返回（HTTP 线的 <200 判据只服务反爬检测）
         return {
@@ -622,6 +631,14 @@ def read(url: str) -> Dict:
                   f"浏览器兜底", file=sys.stderr)
             return read_via_browser(u)
 
+    if host == "bilibili.com" or host.endswith(".bilibili.com"):
+        # BV 视频走官方 view API（结构化：标题/简介/UP主/播放赞投）
+        import bilibili_engine
+        return _api_or_browser(
+            lambda v: {k: v[k] for k in ("title", "desc", "owner", "view",
+                                         "danmaku", "like", "favorite",
+                                         "pubdate", "url", "engine")},
+            lambda: bilibili_engine.fetch_video(u, on_error="raise"))
     if host == "zhihu.com" or host.endswith(".zhihu.com"):
         m = _ANSWER_RE.search(u)
         if m:

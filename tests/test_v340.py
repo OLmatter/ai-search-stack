@@ -502,3 +502,52 @@ class TestAuditRoundV341(unittest.TestCase):
                 out = zc.read(url)
             self.assertEqual(out["engine"], "zhihu-seo-browser")
             rb.assert_called_once()
+
+
+class TestV350(unittest.TestCase):
+    """v3.5：微信/B站读取分流 + fetch_video。"""
+
+    def test_fetch_video_rejects_invalid_bvid(self):
+        import bilibili_engine as be
+        out = be.fetch_video("not-a-bvid", on_error="report")
+        self.assertIn("error", out[0])
+        with self.assertRaises(ValueError):
+            be.fetch_video("not-a-bvid", on_error="raise")
+
+    def test_fetch_video_success_shape(self):
+        import bilibili_engine as be
+        from unittest import mock
+        data = {"code": 0, "data": {
+            "title": "标题<em>清理</em>", "desc": "简介", "owner": {"name": "UP"},
+            "stat": {"view": 1, "danmaku": 2, "like": 3, "favorite": 4},
+            "pubdate": 1700000000}}
+        fake = mock.Mock(status_code=200)
+        fake.json.return_value = data
+        with mock.patch.object(be, "_wait_turn"), \
+             mock.patch.object(be.requests.Session, "get",
+                               return_value=fake):
+            out = be.fetch_video("BV1GJ411x7h7", on_error="raise")
+        self.assertEqual(out["title"], "标题清理")
+        self.assertEqual(out["owner"], "UP")
+        self.assertEqual(out["like"], 3)
+        self.assertIn("/video/BV1GJ411x7h7", out["url"])
+
+    def test_read_routes_bilibili(self):
+        import zhihu_content as zc
+        from unittest import mock
+        row = {"title": "t", "desc": "d", "owner": "o", "view": 1,
+               "danmaku": 0, "like": 0, "favorite": 0, "pubdate": "x",
+               "url": "u", "engine": "bilibili-api"}
+        fake_be = mock.MagicMock()
+        fake_be.fetch_video.return_value = row
+        with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}):
+            out = zc.read("https://www.bilibili.com/video/BV1GJ411x7h7")
+        self.assertEqual(out["engine"], "bilibili-api")
+        self.assertIn("BV1GJ411x7h7",
+                      fake_be.fetch_video.call_args.args[0])
+
+    def test_generic_selectors_cover_weixin(self):
+        # 公众号正文容器选择器在列（价值评估员：vendor 官宣主渠道）
+        import zhihu_content as zc
+        self.assertIn("js_content", zc._GENERIC_SELECTORS)
+        self.assertIn("rich_media_content", zc._GENERIC_SELECTORS)

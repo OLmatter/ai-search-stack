@@ -1,6 +1,30 @@
 # Changelog
 
-## [3.4.0] - 2026-09-10
+## [3.5.0] - 2026-09-10
+
+### 🎯 第三批（评估共识）：微信/B站读取接入 + 全箱体检 doctor
+
+### Added
+- `read()` 分流扩展：
+  - `mp.weixin.qq.com`（微信公众号文章，国内 AI vendor 官宣主渠道）→ 通用
+    HTTP 线直读（`#js_content`/`.rich_media_content` 选择器已加入），反爬自动
+    切无头浏览器兜底
+    - ⚠️ 实测更正：当前自动化环境下微信返回「环境异常」验证页（HTTP 线 36
+      字空壳、浏览器线验证码页）——分流与兜底机制保留（环境友好时可读），
+      验证页现已按错误如实上报；微信的可靠读取需 headed 接管真 Chrome
+      （评估观察单触发条件不变）
+  - `bilibili.com/video/BVxx` → `bilibili_engine.fetch_video()`：官方 view API
+    （公开免 wbi），结构化 title/desc/owner/view/danmaku/like/favorite/pubdate
+- `tools/doctor.py`：一条命令巡检全部通道——SearXNG 实例存活+引擎健康
+  （unresponsive_engines）、知乎 cookie 存在性/年龄、bilibili API、百度直连、
+  google-bridge /health（可选项未起不算故障）、GitHub API；核心故障退出码 1
+- 实测：B站视频 1.05 亿播放真实结构化数据；doctor 六项巡检全通过
+- 测试 +6（fetch_video bvid 提取/错误协议、read B站/微信分流、doctor cookie
+  年龄解析），共 76 个
+
+[3.5.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.5.0
+
+## [3.4.0] - 2026-09-09 - 2026-09-10
 
 ### 🎯 两评估代理共识批次：错误协议修正前置 + 认证自愈 + 文章 API + 通用阅读器
 

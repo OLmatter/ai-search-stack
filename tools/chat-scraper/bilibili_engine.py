@@ -42,7 +42,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
-__all__ = ["search", "BilibiliApiError"]
+__all__ = ["search", "fetch_video", "BilibiliApiError"]
 
 _TOOL = "chat-scraper"
 _PLATFORM = "bilibili"
@@ -317,3 +317,56 @@ def _main() -> int:
 
 if __name__ == "__main__":
     sys.exit(_main())
+
+
+def fetch_video(video: str, vendor: str = "?", role: str = "primary",
+                on_error: str = "report") -> Dict:
+    """视频结构化详情：官方 view API（公开、免 wbi）。
+
+    video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。返回
+    {title, desc, owner, view/danmaku/like/coin/favorite, pubdate, url,
+    engine:"bilibili-api"}；风控/不存在按统一错误协议处理。
+    """
+    m = re.search(r"(BV[0-9A-Za-z]{10})", video or "")
+    if not m:
+        err = ValueError(f"invalid bvid: {video!r}")
+        if on_error == "raise":
+            raise err
+        if on_error == "report":
+            return [{"error": f"ValueError: {err}", "tool": _PLATFORM,
+                     "query": video, "platform": _PLATFORM}]
+        return []
+    try:
+        s = _get_session()
+        _wait_turn()
+        resp = s.get("https://api.bilibili.com/x/web-interface/view",
+                     params={"bvid": m.group(1)}, timeout=TIMEOUT)
+        data = resp.json()
+        if data.get("code") != 0:
+            raise BilibiliApiError(
+                f"code={data.get('code')} message={data.get('message')}")
+        v = data.get("data") or {}
+        from datetime import datetime as _dt
+        return {
+            "title": _clean_title(v.get("title", "")),
+            "desc": (v.get("desc") or "").strip()[:2000],
+            "owner": (v.get("owner") or {}).get("name", ""),
+            "view": v.get("stat", {}).get("view", 0),
+            "danmaku": v.get("stat", {}).get("danmaku", 0),
+            "like": v.get("stat", {}).get("like", 0),
+            "favorite": v.get("stat", {}).get("favorite", 0),
+            "pubdate": _fmt_pubdate(int(v.get("pubdate") or 0)),
+            "url": f"https://www.bilibili.com/video/{m.group(1)}",
+            "platform": _PLATFORM,
+            "engine": "bilibili-api",
+            "vendor": vendor,
+            "role": role,
+        }
+    except Exception as e:
+        if on_error == "raise":
+            raise
+        if on_error == "report":
+            slug = getattr(e, "slug", None) or type(e).__name__
+            return [{"error": f"{slug}: {e}", "tool": _TOOL,
+                     "query": video, "platform": _PLATFORM}]
+        return []

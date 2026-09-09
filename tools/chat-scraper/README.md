@@ -58,6 +58,8 @@ python zhihu_content.py question 19550227        # 官方 API 读问题（含回
 python zhihu_content.py answers 19550227 --num 5 # 读回答（web 同款 /feeds 端点）
 python zhihu_content.py article 18589357376      # 读专栏文章（也可传完整 URL）
 python zhihu_content.py read <任意URL>           # 通用阅读器（推荐入口，见下）
+python zhihu_content.py read https://mp.weixin.qq.com/s/xxxx   # 公众号文章（⚠️ 实测：自动化环境会被微信要求验证——验证页按错误如实上报，需真人环境；机制保留供环境友好时使用）
+python zhihu_content.py read https://www.bilibili.com/video/BV1xx     # B站视频结构化
 python zhihu_content.py page <知乎URL>           # 免 cookie 读页面全文（无头浏览器+百度来路）
 ```
 
