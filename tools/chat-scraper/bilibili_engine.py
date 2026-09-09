@@ -325,9 +325,9 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
                 on_error: str = "report") -> Dict:
     """视频结构化详情：官方 view API（公开、免 wbi）。
 
-    video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。返回
-    {title, desc, owner, view/danmaku/like/coin/favorite, pubdate, url,
-    engine:"bilibili-api"}；风控/不存在按统一错误协议处理。
+    video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。成功返回 Dict；
+    on_error="report" 时错误返回 List（统一错误协议）——两种返回形态；
+    风控/不存在按统一错误协议处理。
     """
     m = re.search(r"(BV[0-9A-Za-z]{10})", video or "")
     if not m:
