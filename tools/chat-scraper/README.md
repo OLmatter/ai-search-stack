@@ -14,6 +14,7 @@
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
 | zhihu 内容读取（问题/回答/文章） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP + 认证自愈 v3.4） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON；answers 用 web 同款 /feeds 端点；articles 端点 2026-09-10 实测 200 |
+| zhihu 评论（v3.6，回答/问题） | 官方 comment_v5 API（签名 HTTP + paging.next 翻页 + 子评论展开） | ✅ 实测 | answers/12202014 与 questions 端点、child_comment 子评论端点 2026-09-10 实测 200（含翻页） |
 | 任意 URL（通用阅读器 v3.4） | `read()`：知乎分流 API 线；外域 HTTP 直连 → 无头浏览器兜底 | ✅/⚠️ | 知乎线实测见上；外域 HTTP 线与浏览器兜底见 v3.4 节 |
 | general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
 | csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
@@ -57,6 +58,8 @@ python zhihu_bootstrap.py                       # 无头领 d_c0/__zse_ck 存 st
 python zhihu_content.py question 19550227        # 官方 API 读问题（含回答数）
 python zhihu_content.py answers 19550227 --num 5 # 读回答（web 同款 /feeds 端点）
 python zhihu_content.py article 18589357376      # 读专栏文章（也可传完整 URL）
+python zhihu_content.py comments 12202014        # 读回答评论（v3.6，comment_v5）
+python zhihu_content.py comments "https://www.zhihu.com/question/19550227"   # 问题评论（URL 自动识别）
 python zhihu_content.py read <任意URL>           # 通用阅读器（推荐入口，见下）
 python zhihu_content.py read https://mp.weixin.qq.com/s/xxxx   # 公众号文章（⚠️ 实测：自动化环境会被微信要求验证——验证页按错误如实上报，需真人环境；机制保留供环境友好时使用）
 python zhihu_content.py read https://www.bilibili.com/video/BV1xx     # B站视频结构化
@@ -116,6 +119,37 @@ python zhihu_content.py read https://blog.csdn.net/xxx   # 外域走通用线
   内 fetch。
 - articles 端点的 include 逗号语法未静态保证真回 content：content 空回退
   excerpt，再空如实报字段缺失（不伪装正文为空）。
+
+### 评论读取 `fetch_comments(target)`（v3.6）
+
+官方 comment_v5 家族（2026-09-10 纯 HTTP + zhihu_sign 签名复现 200，含翻页）：
+
+| target | 端点 |
+|---|---|
+| 回答 ID / 回答 URL | `/api/v4/comment_v5/answers/{aid}/root_comment?order_by=score\|ts&limit=20&offset=`（offset 首跳留空但尾随 `&offset=` 必须保留在签名串里） |
+| 问题 ID（kind="question"）/ 问题 URL | `/api/v4/comment_v5/questions/{qid}/root_comment?...` |
+| 子评论（自动补拉） | `/api/v4/comment_v5/comment/{cid}/child_comment`（首跳无 query） |
+
+机制与纪律：
+- **翻页**沿响应 `paging.next`（服务端下发的完整 URL）——剥掉 scheme+host 后
+  **原样直调**，不重排/不重编码（签名 path?query 必须与实际请求字节一致）；
+  `is_end=true` 或 next 空即停，`max_pages=50` 护栏防失控（子评论补拉限 20 页）。
+- **子评论展开**按"内嵌 `child_comments` 够 `child_comment_count` 就不补拉"
+  原则省请求；端点回全量子评论，直接替换内嵌列表。
+- **输出**扁平列表 `[{id, author, content(纯文本≤500), like_count,
+  created_time, child_comment_count, child_comments(已展开扁平子列表),
+  reply_to, url}]`。
+- **602 语义**：部分评论端点对纯访客 cookie 回 401+code 602（"第三方应用无
+  此权限"）= **该端点需要登录态，访客不可读**——映射为 `zhihu_auth_expired`
+  但 message 明写"重跑引导无用"（引导只领访客 cookie），自愈跳过不浪费。
+
+```python
+from zhihu_content import fetch_comments
+comments = fetch_comments("12202014")                       # 回答评论（默认 on_error="report"）
+comments = fetch_comments("https://www.zhihu.com/question/19550227")   # 问题评论
+comments = fetch_comments("19550227", kind="question", order_by="ts")  # 纯数字问题 id 消歧 + 最新序
+if "error" in comments[0]: ...                              # 统一错误协议（zhihu_* slug）
+```
 
 ## 安装
 
@@ -183,7 +217,7 @@ curl -G "http://127.0.0.1:8765/search" \
 `search(..., on_error="report")`（默认）：出错返回
 `[{"error": "<slug>: <msg>", "tool": "chat-scraper", "query": q, "platform": p}]`，调用方检查 `result[0].get("error")` 区分「故障」与「真空（0 结果）」。
 `on_error="raise"` 抛出；`on_error="empty"` 兼容旧行为返回 []（故障平台静默跳过）。
-常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常；报错自带一条命令出路：`cd tools/searxng/docker && docker compose up -d`）、`sogou_blocked`（搜狗验证码）；zhihu 内容线的 `zhihu_auth_expired`（cookie 过期，v3.4 起自动自愈一次）/`zhihu_behavior_limited`（40362 行为限制，降频再试）/`zhihu_sign_rejected`（10003 签名被拒，非 cookie 问题）/`zhihu_not_found`（裸 404）/`read_failed`（通用阅读器硬失败）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
+常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常；报错自带一条命令出路：`cd tools/searxng/docker && docker compose up -d`）、`sogou_blocked`（搜狗验证码）；zhihu 内容线的 `zhihu_auth_expired`（cookie 过期，v3.4 起自动自愈一次；v3.6 起还覆盖 401+code 602"端点需登录态"形态——message 注明访客不可读、重跑引导无用，自愈跳过）/`zhihu_behavior_limited`（40362 行为限制，降频再试）/`zhihu_sign_rejected`（10003 签名被拒，非 cookie 问题）/`zhihu_not_found`（裸 404）/`read_failed`（通用阅读器硬失败）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
 
 ## 本机实测记录（2026-09-09）
 

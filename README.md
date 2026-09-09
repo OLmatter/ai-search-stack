@@ -41,6 +41,67 @@
 
 **不会选？** 默认 `google-bridge`（最广覆盖，需代理）。
 
+**不想写代码、让 agent 直接调？** 把工具箱挂成 MCP server——见下方 [MCP 接入](#mcp-接入)。
+
+## MCP 接入
+
+`tools/mcp_server.py` 把整个工具箱包装成一个 **stdio MCP server**：任何 MCP
+客户端（ZCode / Claude Desktop / 任何 agent 框架）无需写代码即可直接调用 13 个
+工具。它只是**接入层**——每个工具原样透传参数给现有模块函数，不做内部 API 统一。
+
+**启动（客户端里配置，无需手动跑）**：
+
+```json
+{
+  "mcpServers": {
+    "ai-search-stack": {
+      "command": "python",
+      "args": ["<仓库路径>/ai-search-stack/tools/mcp_server.py"]
+    }
+  }
+}
+```
+
+依赖：`pip install "mcp>=2.1"`（1.x SDK 亦兼容）。Windows 下 `command` 可用
+anaconda python 的绝对路径。
+
+**工具清单（13）**：
+
+| MCP 工具 | 委托的模块函数 | 用途 | 耗时预期 |
+|---|---|---|---|
+| `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/微信/百度16站） | bilibili 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
+| `read_page` | `zhihu_content.read` | 通用阅读器：知乎 API 线 + B站/微信特化 + 外域 HTTP/无头浏览器兜底 | 可能起无头浏览器 10-15s |
+| `zhihu_question` | `zhihu_content.fetch_question` | 知乎问题详情（官方 API） | 秒级 |
+| `zhihu_answers` | `zhihu_content.fetch_answers` | 知乎回答列表（官方 API） | 秒级 |
+| `zhihu_article` | `zhihu_content.fetch_article` | 知乎专栏文章（官方 API） | 秒级 |
+| `zhihu_comments` | `zhihu_content.fetch_comments` | 知乎评论（官方 comment_v5 API，含子评论展开、自动翻页） | 秒级~十秒级（评论多时翻页） |
+| `bilibili_video` | `bilibili_engine.fetch_video` | B站视频结构化数据（官方 view API） | 秒级 |
+| `hn_search` | `hackernews_client.search` | Hacker News 搜索 | 秒级 |
+| `github_releases` | `github_client.get_releases` | 项目 release 列表 | 秒级（匿名 60 req/h） |
+| `github_advisories` | `github_client.get_advisories` | 安全通告（按生态） | 秒级 |
+| `searxng_search` | `searxng_client.search` | SearXNG 聚合搜索（默认本地 8888） | 秒级；实例未起返回可读错误 |
+| `googlebridge_search` | HTTP 转发 `127.0.0.1:18799/search` | 真 Google（需先起 search_helper + Chrome 代理） | 数十秒级；服务未起返回可读错误 |
+| `doctor` | `tools/doctor.py` check 体系 | 全通道体检，文本报告 | 5-10s |
+
+**GitHub 为何拆两个工具**：MCP 的工具描述就是模型的路由提示。两个正交参数集
+（`repo` vs `ecosystem`）合成一个带 `kind` 判别参数的工具，模型更容易填错参数；
+分开后各自 schema 单一、描述聚焦，且与模块函数 1:1（零胶水）。
+
+**耗时与超时（如实评估）**：
+- 请给 `read_page` / `googlebridge_search` 设 **read_timeout ≥ 120s**（无头
+  浏览器 / 隐身 Chrome 真搜 Google 都在这个量级）。
+- **read_page 慢会不会卡死其他调用？不会。** stdio 是单连接，但 MCP JSON-RPC
+  支持按 id 并发请求；mcp 2.x 对同步工具经 `anyio.to_thread.run_sync` 跑在
+  工作线程（并发上限 = anyio 默认线程池 40），`tools/list`、其他工具调用不被
+  阻塞。若客户端串行 await（多数简单客户端如此），卡顿感知在客户端侧，与
+  server 无关。
+- 客户端超时取消请求时，server 侧的浏览器进程可能残留（camoufox/chrome 孤儿
+  进程，Windows 常见）；重启 server 进程即可回收。
+
+**错误协议**：错误不抛异常——作为 `{"error": "<slug>: <详情>", "tool": ...,
+"query": ...}` 嵌在返回 JSON 里，与「真空（0 结果）」可区分；未预期异常也被
+server 兜底成同形态，不会炸连接。
+
 ## 设计哲学
 
 **toolbox，不是 monolith**。5 工具独立 + 1 SOP + 1 SKILL：
@@ -74,6 +135,8 @@ ai-search-stack/
 ├── LICENSE
 ├── tests/                ← 离线单测（含 NUL 空壳/撞名防回归）+ 真冒烟
 ├── tools/
+│   ├── mcp_server.py     # MCP stdio server（v3.6，全工具箱暴露成 13 个 MCP tools）
+│   ├── doctor.py         # 工具箱体检（一条命令巡检全部通道）
 │   ├── google-bridge/    # Chrome 桥（search_helper v23.9，Windows/Linux 可用）
 │   │   ├── search_helper.py
 │   │   ├── start_*.sh

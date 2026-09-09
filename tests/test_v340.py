@@ -617,3 +617,245 @@ class TestAuditV350Round(unittest.TestCase):
                                "Z:/no/such/zhihu_cookies.json"):
             with self.assertRaises(RuntimeError):
                 doctor.check_cookie()
+
+
+# ---- v3.6.0 知乎评论读取（comment_v5 家族） --------------------------------
+
+def _raw_comment(cid, **kw):
+    """comment_v5 响应 data[] 里的原始评论形态（测试相关字段）。"""
+    return {
+        "id": cid,
+        "content": kw.get("content", f"<p>评论{cid}</p>"),
+        "like_count": kw.get("likes", 1),
+        "created_time": kw.get("created_time", 1700000000),
+        "author": {"name": kw.get("author", "甲"), "url_token": "user-a"},
+        "child_comment_count": kw.get("child_count", 0),
+        "child_comments": kw.get("children", []),
+        "reply_comment_id": kw.get("reply_to"),
+    }
+
+
+def _comment_page(comments, is_end=True, next_url=""):
+    return ok_resp({"data": comments,
+                    "paging": {"is_end": is_end, "next": next_url},
+                    "counts": {"total_counts": len(comments)}})
+
+
+_ROOT_URL = ("https://www.zhihu.com/api/v4/comment_v5/answers/12202014/"
+             "root_comment?order_by=score&limit=20&offset=")
+
+
+class TestZhihuComments(unittest.TestCase):
+    """v3.6 评论线：comment_v5 端点/参数（offset 首跳留空）、沿 paging.next
+    翻页、子评论展开条件、602 需登录映射、target URL 提取。
+
+    requests.get 全 mock（顺带断言「签名字节 = 请求字节」纪律），cookie 文件
+    走 fake_cookie_file：零真实网络、零浏览器。
+    """
+
+    def _fetch(self, responses, *args, **kwargs):
+        """mock requests.get 按序回响应并记录每次请求的完整 URL。"""
+        calls = []
+
+        def fake_get(url, **kw):
+            calls.append(url)
+            return responses[min(len(calls) - 1, len(responses) - 1)]
+
+        kwargs.setdefault("on_error", "raise")
+        with fake_cookie_file(), \
+             mock.patch.object(zc.requests, "get", side_effect=fake_get):
+            out = zc.fetch_comments(*args, **kwargs)
+        return out, calls
+
+    def test_first_hop_path_and_output_shape(self):
+        out, calls = self._fetch(
+            [_comment_page([_raw_comment("c1")])], "12202014")
+        # offset 首次留空但尾随 &offset= 必须保留在签名串里（字节级一致）
+        self.assertEqual(calls, [_ROOT_URL])
+        self.assertEqual(len(out), 1)
+        item = out[0]
+        self.assertEqual(item["id"], "c1")
+        self.assertEqual(item["content"], "评论c1")     # HTML 剥净
+        self.assertEqual(item["author"], "甲")
+        self.assertEqual(item["like_count"], 1)
+        self.assertEqual(item["created_time"], zc._fmt_epoch(1700000000))
+        self.assertEqual(item["url"], "")   # 纯回答 id 无 qid：不伪造死链（v3.6 #4）
+
+    def test_target_url_extraction_answer_and_question(self):
+        resp = _comment_page([_raw_comment("c1")])
+        # 回答 URL → answers 端点（问题 id 顺带提取不进端点）
+        _, calls = self._fetch(
+            [resp], "https://www.zhihu.com/question/111/answer/12202014")
+        self.assertEqual(calls[0], _ROOT_URL)
+        q_url = ("https://www.zhihu.com/api/v4/comment_v5/questions/19550227/"
+                 "root_comment?order_by=score&limit=20&offset=")
+        # 问题 URL → questions 端点
+        _, calls = self._fetch(
+            [resp], "https://www.zhihu.com/question/19550227/")
+        self.assertEqual(calls[0], q_url)
+        # 纯数字问题 id 需 kind="question" 消歧（纯数字默认按回答）
+        _, calls = self._fetch([resp], "19550227", kind="question")
+        self.assertEqual(calls[0], q_url)
+
+    def test_pagination_follows_paging_next_verbatim(self):
+        # paging.next 是服务端下发的完整 URL——剥壳后必须原样直调（不重排）
+        next_url = ("https://www.zhihu.com/api/v4/comment_v5/answers/12202014/"
+                    "root_comment?order_by=score&limit=20"
+                    "&offset=99_78247946_open")
+        out, calls = self._fetch([
+            _comment_page([_raw_comment("c1")], is_end=False,
+                          next_url=next_url),
+            _comment_page([_raw_comment("c2")], is_end=True),
+        ], "12202014", num=40)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1], next_url)
+        self.assertEqual([i["id"] for i in out], ["c1", "c2"])
+
+    def test_pagination_stops_on_is_end_or_empty_next(self):
+        # is_end=true：即便 next 非空也停
+        _, calls = self._fetch([
+            _comment_page([_raw_comment("c1")], is_end=True,
+                          next_url="https://www.zhihu.com/api/v4/x?offset=1"),
+        ], "12202014", num=40)
+        self.assertEqual(len(calls), 1)
+        # next 空：也停（防御形态）
+        _, calls = self._fetch([
+            _comment_page([_raw_comment("c1")], is_end=False, next_url=""),
+        ], "12202014", num=40)
+        self.assertEqual(len(calls), 1)
+
+    def test_num_limit_stops_without_extra_requests(self):
+        out, calls = self._fetch([
+            _comment_page([_raw_comment("c1"), _raw_comment("c2")],
+                          is_end=False,
+                          next_url="https://www.zhihu.com/api/v4/x?offset=1"),
+        ], "12202014", num=2)
+        self.assertEqual(len(calls), 1, "num 够了不再发翻页请求")
+        self.assertEqual(len(out), 2)
+
+    def test_children_embedded_sufficient_no_extra_call(self):
+        resp = _comment_page([
+            _raw_comment("c1", child_count=1,
+                         children=[_raw_comment("c1a")]),
+        ])
+        out, calls = self._fetch([resp], "12202014")
+        self.assertEqual(len(calls), 1, "内嵌够 child_comment_count 不补拉")
+        kids = out[0]["child_comments"]
+        self.assertEqual([k["id"] for k in kids], ["c1a"])
+        self.assertEqual(kids[0]["content"], "评论c1a")
+
+    def test_children_fetch_when_count_exceeds_embedded(self):
+        root = _comment_page([
+            _raw_comment("c1", child_count=3, children=[_raw_comment("c1a")]),
+        ])
+        child_next = ("https://www.zhihu.com/api/v4/comment_v5/comment/c1/"
+                      "child_comment?limit=10&offset=1")
+        out, calls = self._fetch([
+            root,
+            _comment_page([_raw_comment("c1a"), _raw_comment("c1b")],
+                          is_end=False, next_url=child_next),
+            _comment_page([_raw_comment("c1c")], is_end=True),
+        ], "12202014")
+        # 子评论首跳无 query（实测形态）；child_comment 端点回全量，替换内嵌
+        self.assertEqual(calls[1], "https://www.zhihu.com/api/v4/"
+                                   "comment_v5/comment/c1/child_comment")
+        self.assertEqual(calls[2], child_next)
+        self.assertEqual([k["id"] for k in out[0]["child_comments"]],
+                         ["c1a", "c1b", "c1c"])
+
+    def test_602_maps_to_auth_semantics_without_self_heal(self):
+        # 401+code 602"第三方应用无此权限"=该端点需登录态：归
+        # ZhihuAuthExpired 语义，但 message 明写"需登录/访客不可读"，
+        # 且自愈跳过（引导只领访客 cookie，刷不出登录态）
+        fake = auth_fail_resp(status=401, code=602, message="第三方应用无此权限")
+        boot = fake_bootstrap_module()
+        with fake_cookie_file(), \
+             mock.patch.object(zc.requests, "get", return_value=fake), \
+             mock.patch.dict(sys.modules, {"zhihu_bootstrap": boot}):
+            with self.assertRaises(zc.ZhihuAuthExpired) as cm:
+                zc.fetch_comments("12202014", on_error="raise")
+        msg = str(cm.exception)
+        self.assertIn("602", msg)
+        self.assertIn("需要登录态", msg)
+        self.assertIn("访客不可读", msg)
+        self.assertIn("重跑引导无用", msg)
+        boot.bootstrap.assert_not_called()   # 引导刷不出登录态——不碰引导
+        # report 形态：统一错误协议，slug 保留 zhihu_auth_expired
+        with fake_cookie_file(), \
+             mock.patch.object(zc.requests, "get", return_value=fake), \
+             mock.patch.dict(sys.modules, {"zhihu_bootstrap": boot}):
+            out = zc.fetch_comments("12202014")
+        self.assertIn("zhihu_auth_expired", out[0]["error"])
+        self.assertEqual(out[0]["tool"], "chat-scraper")
+        self.assertEqual(out[0]["query"], "12202014")
+
+    def test_max_pages_guard_reports_runaway(self):
+        runaway = _comment_page(
+            [_raw_comment("c1")], is_end=False,
+            next_url=("https://www.zhihu.com/api/v4/comment_v5/answers/"
+                      "12202014/root_comment?offset=loop"))
+        out, calls = self._fetch([runaway], "12202014", num=100, max_pages=3,
+                                 on_error="report")
+        self.assertEqual(len(calls), 3)
+        self.assertIn("zhihu_api_error", out[0]["error"])
+        self.assertIn("max_pages=3", out[0]["error"])
+
+    def test_invalid_target_and_order_by_rejected(self):
+        with self.assertRaises(zc.ZhihuApiError):
+            zc.fetch_comments("not-a-target", on_error="raise")
+        # 专栏 URL 不是评论 target（评论线只收回答/问题）
+        with self.assertRaises(zc.ZhihuApiError):
+            zc.fetch_comments("https://zhuanlan.zhihu.com/p/123",
+                              on_error="raise")
+        with self.assertRaises(zc.ZhihuApiError):
+            zc.fetch_comments("12202014", order_by="hot", on_error="raise")
+
+
+
+class TestV36Audit(unittest.TestCase):
+    """v3.6 复审：评论请求预算 / question-0 死链 / _strip_api_base 边界。"""
+
+    def test_comment_budget_exhausts_honestly(self):
+        # 复审 #1：全局请求预算护栏——耗尽时诚实报错（确定性单元测试）
+        import zhihu_content as zc
+        from unittest import mock
+        page_body = {"data": [{"id": "1", "author": {"name": "a"},
+                               "content": "c", "like_count": 0,
+                               "created_time": 0, "child_comment_count": 0,
+                               "child_comments": []}],
+                     "paging": {"is_end": False,
+                                "next": "/api/v4/comment_v5/x?offset=next"}}
+        with mock.patch.object(zc, "_api_get", return_value=page_body):
+            gen = zc._comment_paged("/api/v4/comment_v5/x", "ref", 50,
+                                    {"used": 0, "total": 3})
+            got = []
+            with self.assertRaises(zc.ZhihuApiError) as cm:
+                for item in gen:
+                    got.append(item)   # 预算 3 < max_pages 50 → 耗尽即抛
+        self.assertEqual(len(got), 3)
+        self.assertIn("请求预算耗尽", str(cm.exception))
+        with mock.patch.object(zc, "_api_get", return_value=page_body):
+            with self.assertRaises(zc.ZhihuApiError) as cm:
+                list(zc._comment_paged("/api/v4/comment_v5/x", "ref", 50,
+                                       {"used": 0, "total": 2}))
+        self.assertIn("请求预算耗尽", str(cm.exception))
+
+    def test_answer_without_qid_no_dead_link(self):
+        import zhihu_content as zc
+        c = {"id": "78247946", "author": {"name": "a"}, "content": "c",
+             "like_count": 9, "created_time": 0, "child_comment_count": 0,
+             "child_comments": []}
+        out = zc._comment_item(c, "answer", None, "12202014")
+        self.assertEqual(out["url"], "")   # 不伪造 /question/0/ 死链
+
+    def test_strip_api_base_boundaries(self):
+        import zhihu_content as zc
+        self.assertEqual(zc._strip_api_base("/api/v4/x?offset="),
+                         "/api/v4/x?offset=")
+        self.assertEqual(zc._strip_api_base(
+            "https://www.zhihu.com/api/v4/x?a=1"), "/api/v4/x?a=1")
+        for bad in ("https://evil.com/api/v4/x",
+                    "https://zhihu.com.evil.com/api/v4/x",
+                    "https://www.zhihu.com/web/x", "javascript:x"):
+            with self.assertRaises(zc.ZhihuApiError):
+                zc._strip_api_base(bad)

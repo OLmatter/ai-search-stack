@@ -1,5 +1,66 @@
 # Changelog
 
+## [3.6.0] - 2026-09-10
+
+### 🎯 MCP 接入层：整个工具箱挂成 stdio MCP server，任何 MCP 客户端直接调用
+
+### Added
+- **知乎评论读取（comment_v5 家族，2026-09-10 实测 200 全链路含翻页）**：
+  - `zhihu_content.fetch_comments(target, num, order_by, expand_children,
+    on_error, kind, max_pages)`：回答/问题根评论 + `/comment/{id}/child_comment`
+    子评论端点；target 接受回答 ID/问题 ID/对应 URL（正则提取，纯数字按
+    kind 消歧默认回答）；沿响应 paging.next 翻页（完整 URL 剥壳原样直调——
+    签名字节与请求字节必须一致，offset 首跳留空但尾随 `&offset=` 保留）；
+    子评论按"内嵌够 child_comment_count 就不补拉"展开，补拉也限页；
+    输出扁平列表（content 纯文本≤500）
+  - 602 错误语义：401+code 602（"第三方应用无此权限"）=该端点需要登录态
+    ——映射 ZhihuAuthExpired 子类（slug 同 zhihu_auth_expired），message
+    注明"访客不可读、重跑引导无用"，自愈跳过（引导只领访客 cookie）
+  - CLI `comments <target>` 子命令（--num/--order-by/--kind/--on-error）
+  - MCP `zhihu_comments` 工具（透传 fetch_comments）
+- `tools/mcp_server.py`：stdio transport 的 MCP server（单文件，零业务逻辑），
+  把工具箱暴露成 **13 个 MCP tools**——每个工具原样透传参数给现有模块函数，
+  不做内部 API 统一（toolbox「路由层统一，内部各留特色」理念不变）：
+  - `china_search`（chat-scraper search 门面）/ `read_page`（通用阅读器）/
+    `zhihu_question` / `zhihu_answers` / `zhihu_article` / `zhihu_comments`
+    （官方 API 结构化读取，评论走 comment_v5）/ `bilibili_video`（官方 view API）
+  - `hn_search` / `github_releases` / `github_advisories`（GitHub 拆两工具：
+    工具描述就是模型的路由提示，正交参数集分开比 `kind` 判别参数更不易填错，
+    且与模块函数 1:1）/ `searxng_search` / `googlebridge_search`（转发
+    18799 HTTP，服务未启动报可读错误含启动指引）/ `doctor`（复用 check 体系
+    捕获 stdout 出文本报告，非 subprocess）
+- 协议保命细节：
+  - **stdout 卫兵**：工具执行期间 stdout 重定向 stderr（MCP stdio 下 stdout
+    只归 JSON-RPC 协议；知乎自愈引导等库代码会往 stdout 打进度）
+  - **错误协议映射**：模块 on_error 固定 "report"，错误作为正常返回内容嵌在
+    JSON（`{"error": "<slug>: ...", "tool", "query"}`）；未预期异常由 server
+    层兜底成同形态，绝不炸连接；zhihu_* slug（auth_expired 等）原样保留
+- 耗时预期写进每个工具描述（read_page 无头浏览器 10-15s；百度 ~20s 强制间隔
+  多平台串行放大；googlebridge 数十秒），建议客户端 read_timeout ≥ 120s
+- 并发模型实测：mcp 2.x 同步工具经 `anyio.to_thread.run_sync` 跑工作线程，
+  read_page 慢调用不阻塞 `tools/list` 与其他调用（评估结论已写入 README）
+- README 新增「MCP 接入」节：客户端配置示例（ZCode / Claude Desktop）、
+  13 工具清单表（名称→委托函数→用途→耗时）、超时与并发如实评估
+- 测试 +18（79→97，全部离线零网络）：注册表完整性（13 工具+schema）、参数
+  透传 mock 验证（含 on_error="report" 固定）、异常兜底错误形态（含
+  zhihu slug 保留）、stdout 卫兵、googlebridge 死端口可读错误；
+  知乎评论线 10 项（comment_v5 首跳 path/offset 字节、target URL 提取、
+  沿 paging.next 原样翻页、is_end/空 next 终止、num 够数即停、子评论
+  展开条件与补拉翻页、602 映射+自愈跳过、max_pages 护栏、非法 target）
+- `zhihu_content._api_get`/`_api_request` 增 referer 参数（comment_v5 用
+  问题页 Referer；默认值不变，原调用零影响）
+- 协议级自测（仓库外 .scratch，不入库）：真 stdio spawn → initialize →
+  tools/list（13 工具 schema 合法）→ 实调 doctor / hn_search（真实网络）/
+  read_page + zhihu_answers（知乎 cookie 线，正文非空）/ searxng_search
+  （实例未起→可读错误），10/10 PASS
+
+### Changed
+- `tools/chat-scraper/__init__.py` 版本号 3.5.0 → 3.6.0
+- 依赖：server 需 `mcp>=2.1`（本机实测 2.1.1，FastMCP 已改名 MCPServer；
+  文件内双版本导入兼容 1.x `mcp.server.fastmcp`）
+
+[3.6.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.6.0
+
 ## [3.5.0] - 2026-09-10
 
 ### 🎯 第三批（评估共识）：微信/B站读取接入 + 全箱体检 doctor

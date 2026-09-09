@@ -26,11 +26,20 @@
       跑一次无头引导刷新 cookie 并重试原请求一次；进程内 ≥600s 冷却 +
       模块级锁，绝不形成重试风暴。本地 cookie 文件缺失不触发（引导保持
       显式，也保证离线单测零浏览器）。
+    - **评论（v3.6）fetch_comments()**：comment_v5 家族（回答/问题根评论 +
+      /comment/{id}/child_comment 子评论端点，2026-09-10 实测 200 全链路
+      含翻页）。翻页沿响应 paging.next（服务端下发的完整 URL，剥壳后
+      原样直调——签名字节与请求字节必须一致）；子评论按"内嵌够
+      child_comment_count 就不补拉"展开。部分端点对纯访客 cookie 回
+      401+code 602（"第三方应用无此权限"）=需要登录态：映射为
+      ZhihuAuthExpired 子类，message 注明"访客不可读、重跑引导无用"，
+      自愈跳过（引导只领访客 cookie，刷不出登录态）。
 
 用法:
     python zhihu_bootstrap.py                 # 先引导（一次，十几秒）
     python zhihu_content.py question 19550227
     python zhihu_content.py answers 19550227
+    python zhihu_content.py comments 12202014 # 读回答评论（v3.6；问题传 URL）
     python zhihu_content.py read <任意URL>    # 通用阅读器（v3.4）：
                                               #   知乎问题/回答/文章走 API 线，
                                               #   外域 HTTP 直连→浏览器兜底
@@ -52,9 +61,10 @@ import requests
 
 import zhihu_sign
 
-__all__ = ["fetch_question", "fetch_answers", "fetch_article", "read",
-           "read_via_browser", "ZhihuAuthExpired", "ZhihuBehaviorLimited",
-           "ZhihuSignRejected", "ZhihuNotFound", "ZhihuApiError", "ReadError"]
+__all__ = ["fetch_question", "fetch_answers", "fetch_article", "fetch_comments",
+           "read", "read_via_browser", "ZhihuAuthExpired",
+           "ZhihuBehaviorLimited", "ZhihuSignRejected", "ZhihuNotFound",
+           "ZhihuApiError", "ReadError"]
 
 _TOOL = "chat-scraper"
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -66,6 +76,7 @@ TIMEOUT = 20
 _AUTH_CODES = {401, 403}
 _BEHAVIOR_CODE = 40362        # "您当前请求存在异常，暂时限制本次访问"
 _SIGN_REJECTED_CODE = 10003   # 签名/参数被拒（≠ cookie 过期，见模块 docstring）
+_LOGIN_REQUIRED_CODE = 602    # "第三方应用无此权限"=该端点需登录态（访客读不了）
 
 # ---- 自愈闸门（v3.4）：模块级时间戳 + 锁，≥600s 冷却 --------------------
 _SELFHEAL_COOLDOWN_S = 600.0
@@ -85,6 +96,16 @@ class _CookieStateMissing(ZhihuAuthExpired):
 
     单独子类化：自愈只针对服务端认证拒绝；本地文件缺失保持显式引导，
     且离线单测不会因此意外起浏览器。
+    """
+
+
+class _ZhihuLoginRequired(ZhihuAuthExpired):
+    """该端点需要登录态、纯访客 cookie 读不了（401+code 602"第三方应用无
+    此权限"，2026-09-10 comment_v5 实测形态）。
+
+    归 ZhihuAuthExpired 语义（isinstance 成立、slug 同为 zhihu_auth_expired），
+    但自愈跳过：无头引导只领访客 cookie，刷不出登录态——重试纯属浪费。
+    message 里明写"需登录、访客不可读、重跑引导无用"，不误导用户。
     """
 
 
@@ -167,6 +188,13 @@ def _raise_for_api_error(resp: requests.Response, body: dict) -> None:
             f"HTTP {resp.status_code} code={code}: {message}。"
             f"签名被拒/参数异常——非 cookie 问题，勿重跑引导，"
             f"检查签名算法/URL 参数")
+    if code == _LOGIN_REQUIRED_CODE:
+        # 必须先于认证检查：401+602 = 该端点需要登录态（comment_v5 部分端点
+        # 实测），不是"cookie 过期"。归认证语义（子类）但自愈跳过——引导只
+        # 领访客 cookie，刷不出登录态；message 明写防误导用户重跑引导。
+        raise _ZhihuLoginRequired(
+            f"HTTP {resp.status_code} code={code}: {message}。"
+            f"该端点需要登录态，访客不可读——重跑引导无用（引导只领访客 cookie）")
     if resp.status_code == 404 or code == 404:
         # 裸 404（无 error body）此前以无 slug 的 HTTPError 穿透——协议缺口
         raise ZhihuNotFound(
@@ -214,9 +242,11 @@ def _try_self_heal() -> bool:
     return True
 
 
-def _api_request(path_query: str) -> dict:
+def _api_request(path_query: str,
+                 referer: str = "https://www.zhihu.com/") -> dict:
     """签名 GET 官方 API（单次，不含自愈）。path_query 形如
-    /api/v4/questions/19550227。"""
+    /api/v4/questions/19550227。签名的 path?query 与实际请求是同一字符串
+    （字节一致，勿拆参重排——comment_v5 翻页靠这个纪律）。"""
     payload = _load_session_state()
     d_c0 = payload["cookies"]["d_c0"]
     url = _API_BASE + path_query
@@ -225,7 +255,7 @@ def _api_request(path_query: str) -> dict:
         "User-Agent": payload.get("user_agent") or
         (f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
          f"(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"),
-        "Referer": "https://www.zhihu.com/",
+        "Referer": referer,
         # UA 用签发 cookie 的浏览器原 UA（审查 #6：跨指纹是现成把柄）
         "Cookie": "; ".join(f"{k}={v}"
                             for k, v in payload["cookies"].items()),
@@ -246,21 +276,23 @@ def _api_request(path_query: str) -> dict:
     return body
 
 
-def _api_get(path_query: str) -> dict:
+def _api_get(path_query: str,
+             referer: str = "https://www.zhihu.com/") -> dict:
     """签名 GET 官方 API；服务端认证拒绝时自动自愈一次后重试（v3.4）。
 
     防递归：重试直接调 _api_request，天然不再触发自愈——重试仍失败就把
-    该次异常如实抛出。本地 cookie 文件缺失（_CookieStateMissing）不触发
-    自愈，保持引导显式。
+    该次异常如实抛出。本地 cookie 文件缺失（_CookieStateMissing）与
+    "端点需登录态"（_ZhihuLoginRequired，引导刷不出登录态）不触发自愈，
+    保持引导显式/不浪费。
     """
     try:
-        return _api_request(path_query)
+        return _api_request(path_query, referer=referer)
     except ZhihuAuthExpired as exc:
-        if isinstance(exc, _CookieStateMissing):
+        if isinstance(exc, (_CookieStateMissing, _ZhihuLoginRequired)):
             raise
         if not _try_self_heal():
             raise
-        return _api_request(path_query)
+        return _api_request(path_query, referer=referer)
 
 
 def _check_question_id(question_id: str) -> str:
@@ -380,6 +412,217 @@ def fetch_article(article_or_url) -> Dict:
         "url": f"https://zhuanlan.zhihu.com/p/{aid}",
         "engine": "zhihu-api",
     }
+
+
+# ---- 评论读取（v3.6，comment_v5 家族，2026-09-10 实测） --------------------
+#
+# 端点（GET，签名 + cookie + Referer 问题页 + UA 即 200）：
+#   回答根评论 /api/v4/comment_v5/answers/{aid}/root_comment
+#       ?order_by=score|ts&limit=20&offset=   （offset 首跳留空但尾随 &offset=
+#                                              必须保留在签名串里）
+#   问题根评论 /api/v4/comment_v5/questions/{qid}/root_comment?...
+#   子评论     /api/v4/comment_v5/comment/{cid}/child_comment（首跳可不带 query）
+# 翻页：响应 paging.next 是服务端下发的完整 URL（cursor 形 offset），原样直调；
+#   签名 path?query 必须与实际请求字节一致——剥壳可以，重排/重编码不行。
+# 终止：is_end=true 或 next 空即停；max_pages 护栏防失控。
+# 错误：404=资源不存在；401+code 602=该端点需登录态（访客不可读，见
+#   _ZhihuLoginRequired）；10003=签名被拒；200 包 error body 也要查。
+
+_COMMENT_ORDER_BY = ("score", "ts")     # score=热门（默认）/ ts=最新
+_COMMENT_CONTENT_MAX = 500
+_COMMENT_ROOT_MAX_PAGES = 50
+_COMMENT_CHILD_MAX_PAGES = 20
+
+
+def _comment_target(target, kind: str = "answer"):
+    """target → (kind, resource_id, question_id|None)。
+
+    URL 自动正则提取（回答 URL 里的问题 id 顺便提取，供 Referer/评论
+    permalink 拼接）；纯数字按 kind 消歧（默认回答——回答 id 是评论区
+    最高频入口，问题建议直接传 URL 或 kind="question"）。
+    """
+    s = str(target or "").strip()
+    m = _ANSWER_RE.search(s)
+    if m:
+        return "answer", m.group(2), m.group(1)
+    m = _QUESTION_RE.search(s)
+    if m:
+        return "question", m.group(1), m.group(1)
+    if kind == "answer" and re.fullmatch(r"\d+", s):
+        return "answer", s, None
+    if kind == "question" and re.fullmatch(r"\d+", s):
+        return "question", s, s
+    raise ZhihuApiError(
+        f"invalid comment target: {target!r}（接受回答 ID/问题 ID/对应 URL；"
+        f"纯数字问题 id 用 kind='question' 指定）")
+
+
+def _strip_api_base(url: str) -> str:
+    """服务端 paging.next（完整 URL）→ path?query 原样。
+
+    纪律：不重排 query、不重编码（签名字节 = 请求字节）；仅接受知乎域的
+    /api/ 路径（防跟着服务端异常输出打到别处）。
+    """
+    s = str(url or "")
+    if s.startswith("/api/"):
+        return s
+    p = urllib.parse.urlsplit(s)
+    if (p.hostname or "").lower() not in ("www.zhihu.com", "zhihu.com"):
+        raise ZhihuApiError(f"paging.next 指向非知乎域，拒绝跟随: {url!r}")
+    path_query = p.path + (f"?{p.query}" if p.query else "")
+    if not path_query.startswith("/api/"):
+        raise ZhihuApiError(f"paging.next 非 /api/ 路径: {url!r}")
+    return path_query
+
+
+def _comment_paged(path_query: str, referer: str, max_pages: int,
+                   budget: dict):
+    """沿 paging.next 翻页，逐条产出原始评论 dict。
+
+    首跳 path?query 直接签名直发；后续跳用响应 paging.next（完整 URL）
+    剥壳后原样直发。is_end=true 或 next 空即停；超过 max_pages 或全局
+    请求预算耗尽抛 ZhihuApiError（防失控护栏——审查 v3.6：num 无上限时
+    根翻页×子评论补拉可聚合出上千次签名请求）。
+    """
+    for _ in range(max_pages):
+        budget["used"] += 1
+        if budget["used"] > budget["total"]:
+            raise ZhihuApiError(
+                f"comment 请求预算耗尽（>{budget['total']} 次签名请求）——"
+                f"num 过大或子评论过多，请调小 num/关闭 expand_children")
+        body = _api_get(path_query, referer=referer)
+        yield from body.get("data") or []
+        paging = body.get("paging") or {}
+        if paging.get("is_end") or not paging.get("next"):
+            return
+        path_query = _strip_api_base(paging["next"])
+    raise ZhihuApiError(
+        f"comment 翻页超过 max_pages={max_pages}（防失控护栏，疑似分页异常）")
+
+
+def _comment_item(c: dict, ckind: str, qid, rid) -> dict:
+    """原始评论 dict → 输出形态。content 剥 HTML 截 500 字；内嵌子评论
+    递归同构映射（不补拉——补拉由 _expand_children 按需做）。"""
+    a = c.get("author") or {}
+    cid = str(c.get("id", ""))
+    if ckind == "question":
+        url = f"{_API_BASE}/question/{qid or rid}/comment/{cid}"
+    elif qid:
+        url = f"{_API_BASE}/question/{qid}/answer/{rid}/comment/{cid}"
+    else:
+        # 纯回答 id 无 qid：不伪造 /question/0/ 死链（审查 v3.6 #4）
+        url = ""
+    return {
+        "id": cid,
+        "author": a.get("name", ""),
+        "content": _strip_html(c.get("content", ""))[:_COMMENT_CONTENT_MAX],
+        "like_count": c.get("like_count", 0),
+        "created_time": _fmt_epoch(c.get("created_time")),
+        "child_comment_count": c.get("child_comment_count", 0),
+        "child_comments": [_comment_item(k, ckind, qid, rid)
+                           for k in (c.get("child_comments") or [])],
+        "reply_to": c.get("reply_comment_id"),
+        "url": url,
+    }
+
+
+def _expand_children(item: dict, ckind: str, qid, rid,
+                     referer: str, budget: dict):
+    """子评论展开：内嵌 child_comments 够 child_comment_count 就不补拉
+    （省请求）；不够才调 /comment/{id}/child_comment（首跳无 query，实测
+    200；端点回全量子评论，直接替换内嵌列表）。补拉同样沿 next 翻页限页，
+    且计入同一请求预算。"""
+    embedded = item["child_comments"]
+    if item["child_comment_count"] <= len(embedded):
+        return embedded
+    kids = _comment_paged(
+        f"/api/v4/comment_v5/comment/{item['id']}/child_comment",
+        referer, _COMMENT_CHILD_MAX_PAGES, budget)
+    return [_comment_item(k, ckind, qid, rid) for k in kids]
+
+
+def fetch_comments(target, num: int = 20, order_by: str = "score",
+                   expand_children: bool = True, on_error: str = "report",
+                   kind: str = "answer",
+                   max_pages: int = _COMMENT_ROOT_MAX_PAGES) -> list:
+    """知乎评论读取（comment_v5 家族）：根评论 + 子评论展开，扁平列表。
+
+    Args:
+        target: 回答 ID / 问题 ID / 对应 URL（如
+            https://www.zhihu.com/question/111/answer/12202014 或
+            https://www.zhihu.com/question/19550227）。URL 自动提取；
+            纯数字按 kind 消歧（默认按回答）。
+        num: 根评论条数上限（首跳 limit=min(num, 20)，够数即停不发翻页）。
+        order_by: "score"（默认/热门）| "ts"（最新）。
+        expand_children: 内嵌子评论不够 child_comment_count 时自动补拉
+            child_comment 端点（补拉也限页）。
+        on_error: "report"（默认，错误按统一协议返回
+            [{"error": "<slug>: ...", "tool", "query"}]）/ "raise" / "empty"。
+        kind: 纯数字 target 消歧（"answer"|"question"；URL target 忽略本参）。
+        max_pages: 根评论翻页护栏（防失控）。
+
+    请求预算：根翻页 + 子评论补拉共用（40 + num 次签名请求硬上限），
+    耗尽抛 zhihu_api_error——num 再大也不会聚合出失控的请求量。
+
+    Returns:
+        [{id, author, content(纯文本≤500), like_count,
+          created_time(本地可读串), child_comment_count,
+          child_comments(已展开扁平子列表, 同构), reply_to, url}]
+
+    错误语义：
+        zhihu_not_found     资源不存在（404）
+        zhihu_auth_expired  含 401+code 602 形态 = 该端点需要登录态
+                            （message 注明访客不可读、重跑引导无用；
+                            自愈跳过——引导只领访客 cookie）
+        zhihu_sign_rejected 10003 签名/参数被拒
+        zhihu_behavior_limited 40362 行为风控，降频再试
+    """
+    try:
+        return _fetch_comments(target, num, order_by, expand_children,
+                               kind, max_pages)
+    except Exception as e:
+        if on_error == "raise":
+            raise
+        if on_error == "report":
+            slug = getattr(e, "slug", None) or type(e).__name__
+            return [{"error": f"{slug}: {e}", "tool": _TOOL,
+                     "query": str(target)}]
+        return []
+
+
+def _fetch_comments(target, num, order_by, expand_children, kind,
+                    max_pages) -> list:
+    num = min(int(num), 500)   # 审查 v3.6 #1：聚合请求量硬上限的输入侧
+    if num <= 0:
+        return []
+    if order_by not in _COMMENT_ORDER_BY:
+        raise ZhihuApiError(
+            f"invalid order_by: {order_by!r}"
+            f"（可选 {'/'.join(_COMMENT_ORDER_BY)}）")
+    ckind, rid, qid = _comment_target(target, kind)
+    # Referer 用问题页形态（实测放行；纯数字回答 id 无 qid 时用占位 0，
+    # 与实测参考实现一致——服务端验签名，Referer 是常规伪装件）
+    if ckind == "answer":
+        referer = f"{_API_BASE}/question/{qid or 0}/answer/{rid}"
+    else:
+        referer = f"{_API_BASE}/question/{rid}"
+    # 首跳 query 形态照抄浏览器：offset 留空但尾随 &offset= 保留在签名串里
+    root_path = (f"/api/v4/comment_v5/{ckind}s/{rid}/root_comment"
+                 f"?order_by={order_by}&limit={min(num, 20)}&offset=")
+
+    roots: list = []
+    # 全局请求预算（审查 v3.6 #1）：根翻页 + 子评论补拉共用，防 num 无上限
+    # 时聚合出上千次签名请求。预算 = 40（分页与补拉余量）+ num。
+    budget = {"used": 0, "total": 40 + num}
+    for c in _comment_paged(root_path, referer, max_pages, budget):
+        item = _comment_item(c, ckind, qid, rid)
+        if expand_children:
+            item["child_comments"] = _expand_children(
+                item, ckind, qid, rid, referer, budget)
+        roots.append(item)
+        if len(roots) >= num:
+            break
+    return roots
 
 
 def _check_page_url(url: str) -> str:
@@ -734,6 +977,16 @@ def main() -> int:
     pa.add_argument("--num", type=int, default=10)
     pa_ = sub.add_parser("article", help="专栏文章（官方 API 线，v3.4）")
     pa_.add_argument("id_or_url")
+    pc = sub.add_parser("comments",
+                        help="评论读取（comment_v5 家族，v3.6，含子评论展开）")
+    pc.add_argument("target", help="回答 ID/问题 ID/对应 URL（纯数字默认按回答）")
+    pc.add_argument("--num", type=int, default=20)
+    pc.add_argument("--order-by", choices=list(_COMMENT_ORDER_BY),
+                    default="score", help="score=热门（默认）/ ts=最新")
+    pc.add_argument("--kind", choices=["answer", "question"], default="answer",
+                    help="纯数字 target 消歧（URL 自动识别，忽略本参数）")
+    pc.add_argument("--on-error", choices=["report", "raise", "empty"],
+                    default="report")
     pp = sub.add_parser("page", help="免 cookie 读页面全文（无头浏览器+百度来路）")
     pp.add_argument("url")
     pr = sub.add_parser("read", help="通用阅读器（v3.4）：知乎问题/回答/文章"
@@ -748,6 +1001,16 @@ def main() -> int:
             out = read_via_browser(args.url)
         elif args.cmd == "article":
             out = fetch_article(args.id_or_url)
+        elif args.cmd == "comments":
+            out = fetch_comments(args.target, num=args.num,
+                                 order_by=args.order_by, kind=args.kind,
+                                 on_error=args.on_error)
+            # on_error="report" 形态：错误条目转 stderr + exit 1（CLI 语义，
+            # 与 bilibili CLI 一致）；纯数据条目照常出 stdout JSON
+            if isinstance(out, list) and out and "error" in out[0]:
+                print(f"[zhihu_content] error {out[0]['error']}",
+                      file=sys.stderr)
+                return 1
         elif args.cmd == "read":
             out = read(args.url)
         else:
