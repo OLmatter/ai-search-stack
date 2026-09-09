@@ -120,7 +120,9 @@ def _searxng_search(q: str, num: int, since: Optional[str],
         data = resp.json()
     except Exception as e:
         raise SearxngUnavailable(
-            f"instance {instance}: {type(e).__name__}: {e}") from e
+            f"instance {instance}: {type(e).__name__}: {e}；"
+            f"本机实例未起？cd tools/searxng/docker && docker compose up -d"
+        ) from e
     out: List[Dict] = []
     for item in data.get("results", [])[:num]:
         url = item.get("url", "")

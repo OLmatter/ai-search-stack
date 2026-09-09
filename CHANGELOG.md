@@ -1,5 +1,66 @@
 # Changelog
 
+## [3.4.0] - 2026-09-10
+
+### 🎯 两评估代理共识批次：错误协议修正前置 + 认证自愈 + 文章 API + 通用阅读器
+
+### Fixed（必修前置：错误协议，不修会诱发自愈风暴）
+
+- **10003 误诊修正**：`zhihu_content.py::_raise_for_api_error` 此前把
+  403+任意 code 判成 auth_expired——实测 cookie 有效时 members/answers
+  返回 403+code 10003（签名被拒）也被误诊。现 `error.code==10003` →
+  新异常 `ZhihuSignRejected`（slug `zhihu_sign_rejected`，提示"签名被拒/
+  参数异常——非 cookie 问题，勿重跑引导"），且**先于认证检查分流**
+- **404 协议缺口**：死端点返回裸 404（无 error body）此前以无 slug 的
+  HTTPError 穿透。现 404 → `ZhihuNotFound`（slug `zhihu_not_found`），
+  在 JSON 解析前判定（裸 404 常进不了 json()）
+
+### Added
+
+- **认证过期自愈**：`_api_get` 捕获 `ZhihuAuthExpired`（仅服务端拒绝：
+  401/40353/ZERR_NOT_LOGIN 形态）→ 进程级闸门（模块级时间戳+锁，
+  ≥600s 冷却，冷却内置位防并发重复引导）→ import `zhihu_bootstrap` →
+  `bootstrap(headless=True)` 无人值守刷新 cookie → 重试原请求**一次**；
+  重试直接调 `_api_request` 天然防递归。引导失败打印 stderr 后抛原异常，
+  绝不吞错。本地 cookie 文件缺失**不**触发自愈（引导保持显式，也保证
+  离线单测零浏览器）
+- **cookie 原子落盘**（`zhihu_bootstrap.py`）：临时文件 + fsync +
+  `os.replace`——半截 cookie 文件比没有更坑（自愈会拿它重试到死）
+- **专栏文章 API** `fetch_article(id_or_url)`：`GET /api/v4/articles/{id}
+  ?include=title,created,updated,voteup_count,comment_count,content`
+  （端点 2026-09-10 实测 HTTP 200 存在）；接受纯数字 id 或
+  `zhuanlan.zhihu.com/p/{id}` URL；content 空回退 excerpt，再空**如实报
+  字段缺失**不伪装正文为空（include 逗号语法是否真回 content 以实测为准）
+- **通用阅读器 `read(url)`**（价值评估员共识：搜索线覆盖 16 站但阅读线
+  只有知乎，通用阅读器服务所有搜索产出）：知乎问题→fetch_question；
+  question/{id}/answer/{aid}→fetch_answers 过滤该 aid，过滤不到或 API 线
+  挂→read_via_browser；zhuanlan /p/{id}→fetch_article；其他知乎 URL→
+  read_via_browser；**非知乎域名**→`_generic_read_http`（requests 直连
+  trust_env=False + 完整 Chrome Accept 四件套 + 20s 超时 + bs4 选择器
+  article/.post-content/.article-content/main/#content 提取、body 兜底、
+  ≤8000 字）；403/网络异常/疑似反爬（正文<200 字）→ `_generic_read_browser`
+  （无头 camoufox 直开，无需 Referer 技巧，engine="browser"）；404/5xx
+  硬失败直接抛 `ReadError`（slug `read_failed`）不烧浏览器。统一返回
+  {title, content, url, engine}
+- CLI：`python zhihu_content.py read <url>`（另有 `article <id_or_url>`）
+- `zhihu_engine.py` 的 searxng_unavailable 报错追加一条出路：
+  「本机实例未起？cd tools/searxng/docker && docker compose up -d」
+- 测试 41→66（+25：10003/404 映射、自愈触发/失败/防递归/冷却/缺失不触发、
+  article id 提取与字段兜底、read 分流路由、_generic_read_http 解析
+  fixture 与反爬短正文判定、searxng 提示行）
+
+### 搁置清单（如实记录，两评估员共识未做项）
+
+- **知乎登录线**：等主人的 z_c0 实验结论，本工具不主动碰登录凭据
+- **微信/小红书专门方案**：搜狗微信搜索、小红书反爬均未实现，继续搁置
+- **MCP 触发条件**：read/search 何时机被 MCP 调用未定义，搁置
+- **组件化（YAGNI）**：引擎/阅读器抽象基类暂不抽取，等第三条阅读线出现
+  再说
+
+- 复审轮（独立审计）修复：read() 三分支浏览器兜底一致化（question/zhuanlan API 失败不再逃逸）；_generic_read_http 增 Content-Type 护栏（>200 字 JSON/二进制不再假成功）；浏览器线短正文如实返回（<200 字一票否决仅限 HTTP 反爬检测线）；403 无结构化错误体不再误诊 auth 并白烧引导；article title URL 解码；并发自愈单次性 + 上述各项测试锁死（测试 66→70）
+
+[3.4.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.4.0
+
 ## [3.3.0] - 2026-09-09
 
 ### 🎯 知乎无头引导 + 官方 API 内容读取（定制浏览器组件落地）

@@ -1,19 +1,20 @@
 # chat-scraper (v3)
 
-中国平台聚合搜索：**bilibili 官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）。
+中国平台聚合搜索：**bilibili 官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）。
 
 ## 版本与诚实声明（先读这段）
 
 - **v3.0.0 是从零重写**。旧版（宣称 "32+ 平台"）的代码已损失为纯 NUL 字节空壳，不可考；旧 README 的平台覆盖表全部作废。本文件只承诺下表实测过或明确标注 best-effort 的内容。
 - 覆盖是**分层的**：`bilibili` 和 `zhihu` 有本机实测证据；其余平台走同一引擎路由，**未逐一实测**，标注 best-effort。不要按平台数量估算本工具能力。
 
-## 实测覆盖表（2026-09-09，本机 Windows + Git Bash + Python 3.12）
+## 实测覆盖表（2026-09-09/10，本机 Windows + Git Bash + Python 3.12）
 
 | 平台 | 引擎 | 状态 | 证据 |
 |---|---|---|---|
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
-| zhihu 内容读取（问题/回答） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON（含 answer_count）；answers 用 web 同款 /feeds 端点（/answers 子端点会被 40362 行为限制） |
+| zhihu 内容读取（问题/回答/文章） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP + 认证自愈 v3.4） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON；answers 用 web 同款 /feeds 端点；articles 端点 2026-09-10 实测 200 |
+| 任意 URL（通用阅读器 v3.4） | `read()`：知乎分流 API 线；外域 HTTP 直连 → 无头浏览器兜底 | ✅/⚠️ | 知乎线实测见上；外域 HTTP 线与浏览器兜底见 v3.4 节 |
 | general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
 | csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
 | 任意 `<域名>` | 百度 `site:<域名>` 透传 | ⚠️ best-effort | platforms 里传形如 `example.com` 的字符串即启用 |
@@ -44,7 +45,7 @@
 8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。
 9. **降级链的最坏成本要心里有数**：zhihu 链（searxng→搜狗→百度双桶→再搜狗）最坏约 3-4 分钟/次；普通平台（百度双桶→搜狗）桌面故障场景最坏约 150 秒（3 次尝试 + 40s/80s 指数退避 + 移动端请求）。低频使用是所有中国平台路径的共同前提。
 
-## 知乎无头引导 + 官方 API 内容读取（v3.3）
+## 知乎无头引导 + 官方 API 内容读取（v3.3）+ 自愈与通用阅读器（v3.4）
 
 无头隐身浏览器在本工具箱的定位是**"凭证引导器"**而非爬虫引擎（选型实测：
 camoufox 无头一次通过知乎 zse-ck VMP 挑战；patchright 无头暴露
@@ -55,8 +56,45 @@ pip install "camoufox[geoip]" && python -m camoufox fetch   # 一次性，可选
 python zhihu_bootstrap.py                       # 无头领 d_c0/__zse_ck 存 state/
 python zhihu_content.py question 19550227        # 官方 API 读问题（含回答数）
 python zhihu_content.py answers 19550227 --num 5 # 读回答（web 同款 /feeds 端点）
+python zhihu_content.py article 18589357376      # 读专栏文章（也可传完整 URL）
+python zhihu_content.py read <任意URL>           # 通用阅读器（推荐入口，见下）
 python zhihu_content.py page <知乎URL>           # 免 cookie 读页面全文（无头浏览器+百度来路）
 ```
+
+### 认证自愈（v3.4）
+
+服务端认证拒绝（`zhihu_auth_expired`：401/40353/ZERR_NOT_LOGIN 形态）时自动
+**无头引导刷新 cookie 并重试原请求一次**：进程级闸门 ≥600s 冷却 + 模块级锁
+（并发只放一个进引导），动作打印到 stderr，引导失败如实抛原异常。注意区分：
+
+- `zhihu_sign_rejected`（code 10003）= 签名/参数被拒，**cookie 是好的**——
+  2026-09-10 实测 cookie 有效时 members/answers 也可能 403+10003；v3.3 曾把它
+  误诊为 auth_expired（会诱发自愈风暴），v3.4 前置修正。
+- `zhihu_not_found` = 裸 404（死端点），此前无 slug 穿透，v3.4 补协议。
+- cookie 文件缺失不自动引导（跑 `zhihu_bootstrap.py`，保持显式）。
+- cookie 写盘为原子写（临时文件 + os.replace，v3.4）。
+
+### 通用阅读器 `read(url)`（v3.4，推荐的内容入口）
+
+一个入口读任意 URL，统一返回 `{title, content, url, engine}`：
+
+| URL | 路径 | engine |
+|---|---|---|
+| `www.zhihu.com/question/{id}` | fetch_question（cookie+签名 API） | `zhihu-api` |
+| `www.zhihu.com/question/{id}/answer/{aid}` | fetch_answers 过滤该 aid；过滤不到/API 线挂 → SEO 浏览器线 | `zhihu-api` / `zhihu-seo-browser` |
+| `zhuanlan.zhihu.com/p/{id}` | fetch_article（官方 articles API） | `zhihu-api` |
+| 其他知乎 URL | read_via_browser | `zhihu-seo-browser` |
+| 非知乎域名 | requests 直连（trust_env=False + Chrome Accept 四件套）+ bs4 选择器提取；**403/网络异常/疑似反爬（正文<200 字）→ 无头 camoufox 兜底** | `http` / `browser` |
+| 非知乎且 404/5xx | 直接抛 `read_failed`（换浏览器也一样死，不烧浏览器） | — |
+
+```bash
+python zhihu_content.py read https://zhuanlan.zhihu.com/p/18589357376
+python zhihu_content.py read https://www.zhihu.com/question/19550227
+python zhihu_content.py read https://blog.csdn.net/xxx   # 外域走通用线
+```
+
+正文提取选择器优先级：`article, .post-content, .article-content, main,
+#content`，body 纯文本兜底，去 script/style，截 8000 字。
 
 **免 cookie 兜底读法（主人提出的机制，已实测证实）**：知乎对"搜索引擎引流"
 访客放行全文——无头浏览器带 `Referer: 百度搜索` 打开知乎页，回答全文可见、
@@ -67,12 +105,15 @@ python zhihu_content.py page <知乎URL>           # 免 cookie 读页面全文�
 边界与风险：
 - **搜索线不走官方 API**：search_v3 即便带有效 cookie 也强制登录
   （401 ZERR_NOT_LOGIN）——上登录账号是用户决策，本工具不碰凭据；搜索继续
-  用 SearXNG→搜狗→百度 降级链，搜到 URL 后可用本模块读内容。
-- cookie 有效期未标定（过期报 `zhihu_auth_expired`，重跑引导十几秒即可）。
+  用 SearXNG→搜狗→百度 降级链，搜到 URL 后可用本模块读内容。登录线等
+  z_c0 实验结论，继续搁置。
+- cookie 有效期未标定（过期会自动自愈一次；自愈也失败报 `zhihu_auth_expired`）。
 - 引导页必须用知乎内容页；首页对无登录访客 302 到登录页（已内置默认）。
 - `/answers` 子端点会被 40362 行为限制，已固定用 `/feeds`。
 - 纯 HTTP（OpenSSL 指纹）今日可过，若未来被拦兜底方案是 curl_cffi 或浏览器
   内 fetch。
+- articles 端点的 include 逗号语法未静态保证真回 content：content 空回退
+  excerpt，再空如实报字段缺失（不伪装正文为空）。
 
 ## 安装
 
@@ -140,7 +181,7 @@ curl -G "http://127.0.0.1:8765/search" \
 `search(..., on_error="report")`（默认）：出错返回
 `[{"error": "<slug>: <msg>", "tool": "chat-scraper", "query": q, "platform": p}]`，调用方检查 `result[0].get("error")` 区分「故障」与「真空（0 结果）」。
 `on_error="raise"` 抛出；`on_error="empty"` 兼容旧行为返回 []（故障平台静默跳过）。
-常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常）、`sogou_blocked`（搜狗验证码）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
+常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常；报错自带一条命令出路：`cd tools/searxng/docker && docker compose up -d`）、`sogou_blocked`（搜狗验证码）；zhihu 内容线的 `zhihu_auth_expired`（cookie 过期，v3.4 起自动自愈一次）/`zhihu_behavior_limited`（40362 行为限制，降频再试）/`zhihu_sign_rejected`（10003 签名被拒，非 cookie 问题）/`zhihu_not_found`（裸 404）/`read_failed`（通用阅读器硬失败）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
 
 ## 本机实测记录（2026-09-09）
 

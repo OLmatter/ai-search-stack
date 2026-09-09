@@ -111,8 +111,21 @@ def bootstrap(url: str = DEFAULT_BOOTSTRAP_URL,
             "cookies": cookies,
         }
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        # 原子落盘（v3.4）：临时文件 + os.replace。半截 cookie 文件比没有
+        # 更坑——自愈流程会拿它去重试直到冷却耗尽，还难诊断。
+        tmp_path = f"{out_path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, out_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         # cookie 是能调官方 API 的凭证，收紧权限（Windows 上仅 best-effort）
         try:
             os.chmod(out_path, 0o600)
