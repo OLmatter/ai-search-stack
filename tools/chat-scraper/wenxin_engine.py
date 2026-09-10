@@ -58,6 +58,7 @@
 """
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -128,7 +129,6 @@ def _cooldown_seconds() -> float:
         hours = float(raw) if raw else DEFAULT_COOLDOWN_H
     except ValueError:
         return DEFAULT_COOLDOWN_H * 3600.0
-    import math
     if not math.isfinite(hours) or hours < 0:   # inf 会写出非 RFC JSON 且=永久熔断
         return DEFAULT_COOLDOWN_H * 3600.0
     return hours * 3600.0

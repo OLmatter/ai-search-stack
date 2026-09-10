@@ -396,3 +396,4 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
 - MIT License
 
 [1.0.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v1.0.0
+[3.7.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.7.0

@@ -586,6 +586,69 @@ class TestZhihuSignAndContent(unittest.TestCase):
         self.assertIn("重跑 python zhihu_bootstrap.py", str(cm.exception))
 
 
+class TestSsrfGuard(unittest.TestCase):
+    """v3.7 SSRF 护栏：read() 的私网/链路本地黑名单（纯函数离线可测）。
+
+    _check_http_url 的 hostname 解析进 127/8、10/8、172.16/12、192.168/16、
+    169.254/16、::1 一律 ReadError（slug=read_failed）；合法公网照常放行。
+    """
+
+    @staticmethod
+    def _fake_getaddrinfo(ip):
+        # 替身签名对齐 socket.getaddrinfo(host, port)；只按需返回单条四元组
+        import socket as _s
+        family = _s.AF_INET6 if ":" in ip else _s.AF_INET
+
+        def _h(host, port=None, family=0, type=0, proto=0, flags=0):
+            return [(family, _s.SOCK_STREAM, 6, "", (ip, 0))]
+        return _h
+
+    def test_private_and_linklocal_rejected(self):
+        import zhihu_content as zc
+        cases = [("127.0.0.1", "http://127.0.0.1:9/x"),
+                 ("10.1.2.3", "http://10.1.2.3/x"),
+                 ("172.16.0.1", "http://172.16.0.1/x"),
+                 ("172.31.255.255", "http://172.31.255.255/x"),
+                 ("192.168.1.1", "http://192.168.1.1:8080/x"),
+                 ("169.254.169.254", "http://169.254.169.254/latest/meta-data"),
+                 ("::1", "http://[::1]/x")]
+        for ip, url in cases:
+            with mock.patch.object(zc.socket, "getaddrinfo",
+                                   self._fake_getaddrinfo(ip)):
+                with self.assertRaises(zc.ReadError, msg=url):
+                    zc._check_http_url(url)
+
+    def test_public_ip_passes(self):
+        import zhihu_content as zc
+        with mock.patch.object(zc.socket, "getaddrinfo",
+                               self._fake_getaddrinfo("93.184.216.34")):
+            url = "http://93.184.216.34/x"
+            self.assertEqual(zc._check_http_url(url), url)
+
+    def test_legit_public_domain_passes(self):
+        import zhihu_content as zc
+        with mock.patch.object(zc.socket, "getaddrinfo",
+                               self._fake_getaddrinfo("142.250.196.100")):
+            url = "https://example.org/article"
+            self.assertEqual(zc._check_http_url(url), url)
+
+    def test_dns_failure_fails_closed(self):
+        # 解析失败按私网处理（fail-closed）：不给内网探测留旁路
+        import zhihu_content as zc
+        with mock.patch.object(zc.socket, "getaddrinfo",
+                               side_effect=zc.socket.gaierror("nx")):
+            with self.assertRaises(zc.ReadError):
+                zc._check_http_url("http://no-such-host.invalid/x")
+
+    def test_error_slug_is_read_failed(self):
+        import zhihu_content as zc
+        with mock.patch.object(zc.socket, "getaddrinfo",
+                               self._fake_getaddrinfo("127.0.0.1")):
+            with self.assertRaises(zc.ReadError) as cm:
+                zc._check_http_url("http://127.0.0.1/x")
+        self.assertEqual(type(cm.exception).slug, "read_failed")
+
+
 class TestWenxinEngine(unittest.TestCase):
     """v3.7 文心 AI 搜索引擎：SSE 解析 + 熔断器 + on_error 三态。
 

@@ -47,9 +47,11 @@
 cookie 文件: 环境变量 CHAT_SCRAPER_ZHIHU_COOKIES > state/zhihu_cookies.json
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -634,11 +636,51 @@ def _check_page_url(url: str) -> str:
     return url
 
 
+# 私网/链路本地段黑名单（v3.7 SSRF 护栏）：read() 可读任意 URL，hostname
+# 解析进这些段一律拒绝，防止把内网服务当"网页"读出来。
+_PRIVATE_NETS = tuple(
+    ipaddress.ip_network(n) for n in (
+        "127.0.0.0/8",      # loopback
+        "10.0.0.0/8",       # RFC1918
+        "172.16.0.0/12",    # RFC1918
+        "192.168.0.0/16",   # RFC1918
+        "169.254.0.0/16",   # link-local（含云元数据 169.254.169.254）
+        "::1/128",          # IPv6 loopback
+    ))
+
+
+def _is_private_host(hostname: str) -> bool:
+    """hostname 解析出的任一 IP 落在私网/链路本地段 → True。
+
+    DNS 解析失败按私网处理（fail-closed：解析不了的域名本来也连不上，
+    但不能给"解析失败→放行→直连内网字面 IP"留旁路）。
+    纯函数，可离线单测（mock socket.getaddrinfo）。
+    """
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except (socket.gaierror, OSError, UnicodeError):
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return True
+        if any(ip in net for net in _PRIVATE_NETS):
+            return True
+    return False
+
+
 def _check_http_url(url: str) -> str:
-    """任意 URL 的最低限度护栏：仅 http(s) 绝对 URL（防 javascript:/file:）。"""
+    """任意 URL 的最低限度护栏：仅 http(s) 绝对 URL（防 javascript:/file:）；
+    hostname 解析进私网/链路本地段一律拒绝（SSRF 护栏，slug 沿用
+    read_failed）。合法公网域名照常放行。"""
     p = urllib.parse.urlparse(url or "")
     if p.scheme not in ("http", "https") or not p.netloc:
         raise ReadError(f"not a http(s) url: {url!r}")
+    hostname = p.hostname
+    if hostname and _is_private_host(hostname):
+        raise ReadError(
+            f"私网/链路本地地址拒绝读取（SSRF 护栏）: {hostname!r} ({url})")
     return url
 
 

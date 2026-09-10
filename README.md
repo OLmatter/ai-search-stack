@@ -177,7 +177,7 @@ ai-search-stack/
 ├── LICENSE
 ├── tests/                ← 离线单测（含 NUL 空壳/撞名防回归）+ 真冒烟
 ├── tools/
-│   ├── mcp_server.py     # MCP stdio server（v3.6，全工具箱暴露成 13 个 MCP tools）
+│   ├── mcp_server.py     # MCP stdio server（全工具箱暴露成 13 个 MCP tools）
 │   ├── doctor.py         # 工具箱体检（一条命令巡检全部通道）
 │   ├── google-bridge/    # Chrome 桥（search_helper v23.9，Windows/Linux 可用）
 │   │   ├── search_helper.py

@@ -16,7 +16,8 @@
 git clone https://github.com/OLmatter/ai-search-stack
 cd ai-search-stack
 
-# 装依赖
+# 装依赖（google-bridge：真 Google 搜索，需 Chrome + 代理）
+cd tools/google-bridge
 pip install -r requirements.txt
 
 # 配环境
@@ -42,7 +43,7 @@ curl "http://localhost:18799/search?q=test&num=5&since=7d&vendor=test&role=prima
 ## 版本发布
 
 1. 改 `CHANGELOG.md` 加新版本
-2. `git tag v1.x.x && git push --tags`
+2. `git tag vX.Y.Z && git push --tags`
 3. GitHub Release 自动建
 4. 不发 PyPI / Docker Hub（项目目前用 git clone 即用）
 

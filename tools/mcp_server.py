@@ -332,21 +332,24 @@ def github_advisories(ecosystem: str = "npm",
 @mcp.tool(description=(
     "SearXNG 聚合搜索（元搜索引擎）：[{title, url, content, engine, "
     "category}]。\n"
-    "何时用：通用兜底搜索（CAPTCHA/主搜不可用时）。默认连本地实例 "
-    "http://127.0.0.1:8888（tools/searxng/docker 一条命令起）；公网自建实例"
-    "用 instance 参数传 URL（公网实例默认禁 JSON，会报错属预期）。\n"
+    "何时用：通用兜底搜索（CAPTCHA/主搜不可用时）。实例固定为本地 "
+    "127.0.0.1:8888（tools/searxng/docker 一条命令起），不接受调用方指定"
+    "其他实例（防数据外发到任意主机）。\n"
     "categories: general/it/news/science 等；since: 24h/7d/30d/90d（默认 7d，"
     "空串不过滤）。耗时：秒级。实例未启动时返回可读错误。"))
 def searxng_search(q: str,
                    num: int = 10,
                    since: str = "7d",
                    categories: str = "general",
-                   instance: str = "http://127.0.0.1:8888",
                    vendor: str = "?",
                    role: str = "fallback") -> str:
-    """委托 searxng_client.search。"""
+    """委托 searxng_client.search（实例固定本地，参数不暴露给 LLM）。"""
+    # v3.7 安全收权：instance 不再作为工具参数暴露（LLM 不应能指定数据
+    # 外发主机）；固定默认本地实例。底层 searxng_client 的 instance 参数
+    # 保留（库能力，不受影响）。
     return _run("searxng", q, _searxng.search, q, num=num, since=since,
-                vendor=vendor, role=role, instance=instance,
+                vendor=vendor, role=role,
+                instance="http://127.0.0.1:8888",
                 categories=categories, on_error="report")
 
 

@@ -561,7 +561,6 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
@@ -600,7 +599,6 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'text/csv; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
@@ -637,7 +635,6 @@ class SearchHandler(BaseHTTPRequestHandler):
             # v23.8: parse_qs already percent-decodes q — the extra unquote()
             # here double-decoded queries containing %25xx-style escapes.
             q = qs.get('q', [''])[0]
-            num = int(qs.get('num', ['10'])[0])
             since = qs.get('since', ['7d'])[0]  # default 7d (avoid filtering 2-3 day signals)
             # v23.3 (2026-07-31): accept vendor + query_role URL params so
             # the caller can label each search for v22 honeypot schema.
@@ -650,6 +647,10 @@ class SearchHandler(BaseHTTPRequestHandler):
             # http.server equivalent of flask's request.remote_addr
             client_ip = self.client_address[0] if self.client_address else '?'
             try:
+                # v23.9: parse num inside try — a non-numeric ?num= used to
+                # raise before the handler and kill the connection; now it
+                # answers 500 JSON like any other bad request.
+                num = int(qs.get('num', ['10'])[0])
                 results = search_google_stealth(q, num=num, since=since,
                                                   vendor=vendor, query_role=query_role,
                                                   client_ip=client_ip)
@@ -758,7 +759,6 @@ class SearchHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/x-ndjson; charset=utf-8')
                 self.send_header('Content-Length', str(len(body)))
                 self.send_header('Content-Disposition', f'attachment; filename="{base_name}.jsonl"')
-                self.send_header('Access-Control-Allow-Origin', '*')
                 self.send_header('Cache-Control', 'no-store')
                 self.end_headers()
                 self.wfile.write(body)

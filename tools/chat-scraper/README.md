@@ -100,8 +100,9 @@ python zhihu_content.py read https://www.zhihu.com/question/19550227
 python zhihu_content.py read https://blog.csdn.net/xxx   # 外域走通用线
 ```
 
-正文提取选择器优先级：`article, .post-content, .article-content, main,
-#content`，body 纯文本兜底，去 script/style，截 8000 字。
+正文提取选择器优先级：`article, .post-content, .article-content,
+#js_content, .rich_media_content, main, #content`，body 纯文本兜底，
+去 script/style，截 8000 字。
 
 **免 cookie 兜底读法（主人提出的机制，已实测证实）**：知乎对"搜索引擎引流"
 访客放行全文——无头浏览器带 `Referer: 百度搜索` 打开知乎页，回答全文可见、
@@ -265,6 +266,7 @@ curl -G "http://127.0.0.1:8765/search" \
 | `CHAT_SCRAPER_BAIDU_PROXY` | 空 | 百度引擎显式代理（默认直连；仅当代理真为 baidu.com 换出口时有效，Clash 规则分流下无效） |
 | `CHAT_SCRAPER_SOGOU_PROXY` | 空 | 搜狗引擎显式代理（默认直连） |
 | `CHAT_SCRAPER_SOGOU_RESOLVE` | `1` | 知乎链搜狗环是否解析 /link 跳转（0=关闭，保留搜狗跳转链） |
+| `CHAT_SCRAPER_SOGOU_RESOLVE_INTERVAL` | `2.0` | 知乎链搜狗跳转解析的额外节流（秒）：相邻两次解跳转至少间隔该时长 |
 | `CHAT_SCRAPER_WENXIN_COOLDOWN_H` | `6` | 文心 1005 熔断冷却时长（小时，可小数）；冷却期内直接报 `wenxin_quota` 不起浏览器 |
 
 ## 错误协议（与仓库 hackernews/searxng/github 工具一致）

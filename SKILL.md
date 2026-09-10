@@ -217,6 +217,10 @@ python tools/github/github_client.py releases "anthropics/claude-code" --num 5
 ### 案例 4：找 Qwen3.8-Max 发布（国内厂商 + 验证）
 
 ```python
+import sys; sys.path.insert(0, "tools/chat-scraper"); sys.path.insert(1, "tools/github")
+from search import search
+from github_client import get_releases
+
 # 1. chat-scraper 国内搜索
 china = search(q="Qwen3.8-Max 发布", platforms=["zhihu", "weibo"])
 
