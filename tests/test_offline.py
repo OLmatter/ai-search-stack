@@ -8,12 +8,14 @@
 运行：python -m unittest discover -s tests -p "test_*.py" -v
 """
 import pathlib
+import os
 import subprocess
 import sys
 import time
 import unittest
 import requests
 from contextlib import redirect_stderr
+from unittest import mock
 import json
 from io import StringIO
 
@@ -582,6 +584,174 @@ class TestZhihuSignAndContent(unittest.TestCase):
             with self.assertRaises(zc.ZhihuAuthExpired) as cm:
                 zc.fetch_question("19550227")
         self.assertIn("重跑 python zhihu_bootstrap.py", str(cm.exception))
+
+
+class TestWenxinEngine(unittest.TestCase):
+    """v3.7 文心 AI 搜索引擎：SSE 解析 + 熔断器 + on_error 三态。
+
+    测试边界（硬约束）：camoufox 浏览器交互（起浏览器/提交搜索/截获 SSE 流）
+    不进离线测试——真浏览器 + 真配额（每浏览器身份约 1 次）+ 时序不确定，
+    离线环境不可复现也不可负担；浏览器层只按侦察 p2 蓝本移植并在真实一发
+    自测中人工验证。离线覆盖的是纯函数：parse_sse（真实 SSE 切片 fixture）、
+    风控分类、熔断器状态机、env 解析、on_error 三态、门面路由。
+
+    fixture 来源（真实样本切片，勿删）:
+      - wenxin_sse_success.txt: cap_168.body（2026-09-10 成功搜索会话）切片——
+        basedata + 前两个 markdown-yiyan 增量 + thinkingSteps（引用截前 2 条、
+        摘要截 120 字）+ 末尾 endTurn 块；读取字段逐字节保真。
+      - wenxin_sse_quota_1005.txt: cap2_146.body 全文（1005+kunlun_popup 原样）。
+      - wenxin_sse_tokenfail_1001.txt: p3_repro1_sse.txt 前 1001/tokenFail 两块。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixtures = REPO / "tests" / "fixtures"
+
+    def _fixture(self, name):
+        return (self.fixtures / name).read_text(encoding="utf-8")
+
+    def setUp(self):
+        import wenxin_engine as we
+        import tempfile
+        self.we = we
+        # 熔断状态隔离：模块状态清零 + 落盘路径指到临时文件，
+        # 绝不能让测试把真实 state/wenxin_breaker.json 置成 6h 冷却
+        we._breaker_open_until = 0.0
+        self._tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        self._tmp.close()
+        tmp_path = self._tmp.name
+        patcher = mock.patch.object(we, "BREAKER_PATH", tmp_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(lambda: os.path.exists(tmp_path)
+                        and os.unlink(tmp_path))
+
+    def tearDown(self):
+        self.we._breaker_open_until = 0.0
+
+    def test_parse_success_fixture(self):
+        # 真实成功流切片：markdown 增量拼接、引用字段、结束标志全对上
+        we = self.we
+        out = we.parse_sse(self._fixture("wenxin_sse_success.txt"))
+        self.assertTrue(out["answer"].startswith("基于"),
+                        f"答案拼接错: {out['answer'][:50]!r}")
+        self.assertTrue(out["end_turn"])
+        self.assertFalse(out["kunlun"])
+        self.assertEqual(out["status_first"], 0)
+        self.assertFalse(out["token_fail"])
+        self.assertGreaterEqual(len(out["citations"]), 1)
+        c0 = out["citations"][0]
+        for key in ("url", "title", "abstract", "source"):
+            self.assertIn(key, c0)
+        self.assertTrue(c0["url"].startswith("http"))
+        urls = [c["url"] for c in out["citations"]]
+        self.assertEqual(len(urls), len(set(urls)))     # url 去重保序
+
+    def test_parse_quota_1005_trips_breaker(self):
+        # 真实 1005 样本：kunlun_popup + status 1005 → WenxinQuotaError + 熔断
+        we = self.we
+        out = we.parse_sse(self._fixture("wenxin_sse_quota_1005.txt"))
+        self.assertEqual(out["kunlun"], "kunlun_popup")
+        self.assertEqual(out["status_first"], 1005)
+        self.assertTrue(out["end_turn"])
+        with self.assertRaises(we.WenxinQuotaError) as cm:
+            we._raise_for_risk(out)
+        self.assertIn("熔断", str(cm.exception))
+        self.assertTrue(we._breaker_is_open())          # 熔断器已进入冷却
+        self.assertGreater(we._breaker_remaining_s(), 0)
+
+    def test_parse_tokenfail_1001_no_breaker(self):
+        # 真实 1001 样本：tokenFail → WenxinTokenError；不触发熔断
+        # （token 失败是前端版本漂移，不是 IP 风控，冷却没有意义）
+        we = self.we
+        out = we.parse_sse(self._fixture("wenxin_sse_tokenfail_1001.txt"))
+        self.assertEqual(out["status_first"], 1001)
+        self.assertTrue(out["token_fail"])
+        self.assertFalse(out["kunlun"])
+        with self.assertRaises(we.WenxinTokenError):
+            we._raise_for_risk(out)
+        self.assertFalse(we._breaker_is_open())
+
+    def test_wappass_page_url_trips_breaker(self):
+        # SSE 没截到但页面跳了 wappass 验证码 —— 同样是熔断信号
+        we = self.we
+        with self.assertRaises(we.WenxinQuotaError):
+            we._raise_for_risk({"kunlun": "", "status_first": 0},
+                               page_url="https://wappass.baidu.com/static/captcha")
+        self.assertTrue(we._breaker_is_open())
+
+    def test_breaker_blocks_browser_launch(self):
+        # 冷却期内直接报 wenxin_quota，绝不起浏览器（保护本 IP）
+        we = self.we
+        from unittest import mock
+        we._trip_breaker("unit-test")
+        with mock.patch.object(we, "_search_via_browser") as browser:
+            with self.assertRaises(we.WenxinQuotaError) as cm:
+                we.search("q", on_error="raise")
+            self.assertIn("冷却", str(cm.exception))
+            browser.assert_not_called()
+
+    def test_breaker_expires(self):
+        we = self.we
+        we._breaker_open_until = time.time() - 1
+        self.assertFalse(we._breaker_is_open())         # 过期即放行
+
+    def test_cooldown_env_parsing(self):
+        we = self.we
+        from unittest import mock
+        with mock.patch.dict(os.environ,
+                             {"CHAT_SCRAPER_WENXIN_COOLDOWN_H": "0.5"}):
+            self.assertEqual(we._cooldown_seconds(), 1800.0)
+        with mock.patch.dict(os.environ,
+                             {"CHAT_SCRAPER_WENXIN_COOLDOWN_H": "abc"}):
+            self.assertEqual(we._cooldown_seconds(), 6.0 * 3600.0)
+        with mock.patch.dict(os.environ, {}, clear=True):   # 防宿主残留变量
+            self.assertEqual(we._cooldown_seconds(), 6.0 * 3600.0)
+
+    def test_on_error_three_modes(self):
+        # 熔断开放时的三态：report=错误记录 / raise=抛 / empty={}
+        we = self.we
+        we._trip_breaker("unit-test")
+        row = we.search("q", on_error="report")
+        self.assertIn("wenxin_quota", row["error"])
+        self.assertEqual(row["tool"], "chat-scraper")
+        self.assertEqual(row["platform"], "wenxin")
+        self.assertEqual(row["query"], "q")
+        self.assertEqual(we.search("q", on_error="empty"), {})
+        with self.assertRaises(we.WenxinQuotaError):
+            we.search("q", on_error="raise")
+
+    def test_facade_routes_wenxin(self):
+        # 门面分流：platforms=["wenxin"] -> 引擎单条聚合行原样入列
+        import search as cs
+        from unittest import mock
+        row = {"q": "x", "answer": "a", "citations": [], "engine": "wenxin-ai",
+               "count": 0, "platform": "wenxin", "vendor": "t", "role": "p"}
+        with mock.patch.object(cs.wenxin_engine, "search",
+                               return_value=row) as wf:
+            out = cs.search("x", platforms=["wenxin"], vendor="t", role="p")
+        self.assertEqual(out, [row])
+        self.assertEqual(wf.call_args.kwargs.get("on_error"), "raise")
+        self.assertEqual(wf.call_args.kwargs.get("vendor"), "t")
+
+    def test_facade_wenxin_error_protocol(self):
+        # 门面兜错误：引擎 raise 时 slug（wenxin_quota）进错误记录
+        import search as cs
+        from unittest import mock
+        with mock.patch.object(cs.wenxin_engine, "search",
+                               side_effect=cs.wenxin_engine.WenxinQuotaError("x")):
+            out = cs.search("q", platforms=["wenxin"], on_error="report")
+            self.assertEqual(len(out), 1)
+            self.assertIn("wenxin_quota", out[0]["error"])
+            self.assertEqual(out[0]["platform"], "wenxin")
+            self.assertEqual(cs.search("q", platforms=["wenxin"],
+                                       on_error="empty"), [])
+            with self.assertRaises(cs.wenxin_engine.WenxinQuotaError):
+                cs.search("q", platforms=["wenxin"], on_error="raise")
+
+    def test_platform_registry_lists_wenxin(self):
+        import search as cs
+        self.assertIn("wenxin", cs.list_platforms())
 
 
 class TestGoogleBridgeImport(unittest.TestCase):

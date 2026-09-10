@@ -1,5 +1,55 @@
 # Changelog
 
+## [3.7.0] - 2026-09-10
+
+### 🎯 新增 wenxin 平台：文心 AI 搜索低频线（AI 认可度 + 引用发现信号）
+
+### Added
+- **`tools/chat-scraper/wenxin_engine.py`**：文心 AI 搜索引擎（wenxin.baidu.com /
+  chat.baidu.com），`search(q, timeout_s=90, on_error, vendor, role)` 返回**单条
+  聚合行**——`{q, answer(markdown≤4000), citations:[{url,title,abstract,source}],
+  engine:"wenxin-ai", count, platform:"wenxin"}`，两类信号：AI 认可度（答案
+  正文）+ 引用发现（百度后端 referenceList，常含常规搜索漏掉的直链）：
+  - 协议按 2026-09-10 侦察实测移植（证据 .scratch/r6/，p2 脚本为蓝本）：
+    camoufox 无头提交搜索 + 网络层截获 `POST chat.baidu.com/aichat/api/conversation`
+    的 SSE 全文；`markdown-yiyan` 的 `data.value` 顺序拼接=答案，
+    `thinkingSteps` 的 `referenceList[]`=引用（url 去重保序），`endTurn:true`
+    =结束。纯 HTTP 不可行（token 由页面 hector 反爬链现算并服务端校验，
+    侦察 5 连复现全败为证），本引擎不做纯 HTTP 通道
+  - **熔断器**：见 SSE 首块 `status:1005`/`chatHitKunlun`/页面跳 wappass 即
+    进入本 IP 长冷却（默认 6h，env `CHAT_SCRAPER_WENXIN_COOLDOWN_H` 可调），
+    冷却期内直接报 `wenxin_quota` 不再起浏览器；模块级状态 + 落盘
+    `state/wenxin_breaker.json`（CLI 一次性调用与 MCP 常驻进程共享冷却期）
+  - 错误 slug：`wenxin_quota`（配额/风控，已自动熔断）/`wenxin_token_fail`
+    （1001/tokenFail——文心 token 绑定浏览器运行时，此错=当前前端版本下
+    token 机制已变，需重新逆向，不触发熔断）/`wenxin_timeout`/
+    `wenxin_dependency_missing`（camoufox 未安装，报错带安装指引，与
+    zhihu_bootstrap 同款可选依赖）；on_error 三态与仓库协议一致
+  - 配额纪律写进 docstring：每浏览器身份约 1 次搜索（fresh context 用完即弃）、
+    两次调用间隔小时级、1005 即熔断——**本引擎不可当关键路径**
+- `search.py` 门面：`platforms=["wenxin"]` 分流（引擎 `on_error="raise"`，
+  门面统一兜错误记录）；`list_platforms()` 注册
+- 测试 +11（100→111，全部离线零网络）：SSE 分块解析（**真实样本切片
+  fixture**：cap_168 成功流切片 / cap2_146 的 1005+kunlun 原样 /
+  p3_repro1 的 1001+tokenFail 切片，存 `tests/fixtures/`）、1005 熔断触发、
+  wappass 页面 URL 兜底熔断、1001 不熔断、冷却期内不起浏览器（mock 断言）、
+  熔断过期放行、冷却 env 解析、on_error 三态、门面路由与错误协议；
+  camoufox 浏览器交互不进离线测试（真浏览器+真配额+时序不确定，
+  浏览器层按 p2 蓝本移植 + 真实一发人工验证）
+
+### Changed
+- 版本号 3.6.0 → 3.7.0（`tools/chat-scraper/__init__.py`、`tools/mcp_server.py`）
+- README：v3.7 节（定位/协议/配额纪律/三条风险：配额极紧、IP 热度持久、
+  SSE 格式随前端版本漂移）、安装节补 camoufox 可选依赖、环境变量表、
+  错误 slug 表、用法示例；实测覆盖表新增 wenxin 行
+
+### 实测
+- 真实一发（预算 ≤2 次实搜，用 1 次）：`python wenxin_engine.py
+  "智谱 GLM Coding Plan"` → **成功**：754 字 AI 答案 markdown（套餐价格/
+  计费规则/接入方式结构化输出）+ 23 条引用（z.ai、百度百科、爱企查、
+  腾讯云开发者社区、智源社区等），exit 0，熔断器未触发；证据
+  `.scratch/r7_wenxin_engine/selftest1_success.json`
+
 ## [3.6.0] - 2026-09-10
 
 ### 🎯 MCP 接入层：整个工具箱挂成 stdio MCP server，任何 MCP 客户端直接调用

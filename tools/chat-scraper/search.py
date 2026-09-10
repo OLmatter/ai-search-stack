@@ -4,6 +4,8 @@
 
 路由:
     "bilibili"                     -> bilibili 官方 API（结构化字段）
+    "wenxin"                       -> 文心 AI 搜索（camoufox 无头 + SSE；
+                                      低频 AI 信号源，单条聚合行）
     SITE_MAP 里的平台名（zhihu 等） -> 百度 + site: 站内过滤
     未知但形如域名的字符串          -> 百度 + site:<该域名>（透传）
     "general" / platforms=None     -> 百度无 site: 通用搜索
@@ -34,11 +36,13 @@ from typing import Dict, List, Optional
 
 try:
     from . import baidu_engine, bilibili_engine, sogou_engine, zhihu_engine  # 包内导入
+    from . import wenxin_engine
 except ImportError:  # 直接把本目录加进 sys.path 的扁平导入
     import baidu_engine  # type: ignore
     import bilibili_engine  # type: ignore
     import sogou_engine  # type: ignore
     import zhihu_engine  # type: ignore
+    import wenxin_engine  # type: ignore
 
 __all__ = ["search", "list_platforms"]
 
@@ -99,6 +103,9 @@ def list_platforms() -> Dict[str, str]:
         "zhihu": "dedicated chain: searxng -> sogou -> baidu site:zhihu.com",
         "zhuanlan": "dedicated chain: searxng -> sogou -> baidu "
                     "site:zhuanlan.zhihu.com",
+        # 低频 AI 信号源（camoufox 无头；配额极紧，1005 即熔断 6h）
+        "wenxin": "wenxin AI search (chat.baidu.com SSE via camoufox; "
+                  "low-frequency, quota-gated)",
     }
     for name, domain in sorted(SITE_MAP.items()):
         if name in ("zhihu", "zhuanlan"):
@@ -171,6 +178,13 @@ def search(
                 results.extend(zhihu_engine.search(
                     q, num=num, since=since, vendor=vendor, role=role,
                     site=SITE_MAP.get(name, "zhihu.com"), on_error="raise"))
+            elif name == "wenxin":
+                # 文心 AI 搜索：低频高质量 AI 信号源（AI 认可度 + 引用发现），
+                # 返回单条聚合行而非列表；配额极紧（每浏览器身份约 1 次），
+                # 引擎见 1005 即熔断本 IP 长冷却——冷却期内不起浏览器直接报
+                # wenxin_quota。不可当关键路径，见 wenxin_engine docstring。
+                results.append(wenxin_engine.search(
+                    q, vendor=vendor, role=role, on_error="raise"))
             elif name == GENERAL:
                 results.extend(_baidu_then_sogou(
                     q, num=num, since=since, vendor=vendor, role=role,

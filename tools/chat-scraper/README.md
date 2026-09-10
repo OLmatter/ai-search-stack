@@ -1,6 +1,6 @@
 # chat-scraper (v3)
 
-中国平台聚合搜索：**bilibili 官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）。
+中国平台聚合搜索：**bilibili 官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）。
 
 ## 版本与诚实声明（先读这段）
 
@@ -15,6 +15,7 @@
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
 | zhihu 内容读取（问题/回答/文章） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP + 认证自愈 v3.4） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON；answers 用 web 同款 /feeds 端点；articles 端点 2026-09-10 实测 200 |
 | zhihu 评论（v3.6，回答/问题） | 官方 comment_v5 API（签名 HTTP + paging.next 翻页 + 子评论展开） | ✅ 实测 | answers/12202014 与 questions 端点、child_comment 子评论端点 2026-09-10 实测 200（含翻页） |
+| wenxin（v3.7 文心 AI 搜索） | camoufox 无头提交 + 截获 chat.baidu.com conversation SSE | ✅ 实测（配额纪律下低频用） | 2026-09-10 真实一发成功：`"智谱 GLM Coding Plan"` → 754 字 AI 答案 markdown + 23 条引用（证据 .scratch/r7_wenxin_engine/）；协议级侦察存证 .scratch/r6/ |
 | 任意 URL（通用阅读器 v3.4） | `read()`：知乎分流 API 线；外域 HTTP 直连 → 无头浏览器兜底 | ✅/⚠️ | 知乎线实测见上；外域 HTTP 线与浏览器兜底见 v3.4 节 |
 | general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
 | csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
@@ -45,6 +46,7 @@
 7. cn.bing.com 对纯 HTTP 客户端**会剥离 `site:` 操作符**（前序侦察 4 组对照全部复现），故 v3 不用 bing 做 `site:` 引擎；`format=rss` 备胎通道也未启用（百度可用时无必要）。
 8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。
 9. **降级链的最坏成本要心里有数**：zhihu 链（searxng→搜狗→百度双桶→再搜狗）最坏约 3-4 分钟/次；普通平台（百度双桶→搜狗）桌面故障场景最坏约 150 秒（3 次尝试 + 40s/80s 指数退避 + 移动端请求）。低频使用是所有中国平台路径的共同前提。
+10. **wenxin（v3.7）不可当关键路径**：三条硬风险见下方 v3.7 节——配额极紧（每浏览器身份约 1 次）、IP 热度持久（触码后新身份首次即 1005）、SSE 格式随前端版本漂移。内置熔断器只能保护 IP，不能提升可用性。
 
 ## 知乎无头引导 + 官方 API 内容读取（v3.3）+ 自愈与通用阅读器（v3.4）
 
@@ -151,10 +153,60 @@ comments = fetch_comments("19550227", kind="question", order_by="ts")  # 纯数�
 if "error" in comments[0]: ...                              # 统一错误协议（zhihu_* slug）
 ```
 
+## 文心 AI 搜索（v3.7）——低频高质量 AI 信号源
+
+**定位**：`platforms=["wenxin"]` 返回的不是网页列表，而是**一条聚合行**——文心一言对 query 的 AI 回答（markdown，≤4000 字符）+ 它的引用来源列表。用于两类信号：
+
+- **AI 认可度**：百度自家 AI 搜索怎么评价/描述 query 主体（答案正文）；
+- **引用发现**：`referenceList` 是百度搜索后端给出的来源页（实测含 felloai、typingmind、智源社区等常规搜索引擎结果里靠后或漏掉的直链）。
+
+### 协议与实现（2026-09-10 侦察实测，证据 .scratch/r6/，p2 脚本为移植蓝本）
+
+- 页面是纯 SPA 壳；真正端点 `POST https://chat.baidu.com/aichat/api/conversation`，JSON 体，响应 SSE 流。
+- SSE 解析：`basedata`（lid/baiduid/chatHitKunlun）→ 增量块：`component=="markdown-yiyan"` 的 `data.value` 顺序拼接=答案；`component=="thinkingSteps"` 的 `data.referenceList[]`=引用（url/text=标题/abstract/source=站名）；`metaData.state=="generate-complete"` + `endTurn:true`=结束。
+- token 由页面内 JS（hector 反爬链）结合会话身份现算、服务端校验——**纯 HTTP 无法自造合法 token**（侦察 5 连复现全 `token check fail` 为证），必须 camoufox 无头提交搜索、浏览器内截获 SSE。
+
+### 配额纪律（硬约束，写进 wenxin_engine docstring）
+
+1. 游客配额极紧：**每浏览器身份约只够 1 次搜索**（实测新身份第 1 次成功、第 2 次起 1005）——每次调用全新 context，身份用完即弃；
+2. 两次调用间隔保持**小时级**，不要连续调用；
+3. 见 1005/kunlun_popup/wappass **立即熔断本 IP 全部文心调用**：长冷却默认 6 小时（`CHAT_SCRAPER_WENXIN_COOLDOWN_H` 可调），冷却期内直接报 `wenxin_quota` 不再起浏览器；熔断状态落盘 `state/wenxin_breaker.json`，进程重启也生效。
+
+### 三条风险（诚实声明）
+
+1. **配额极紧**：一次调用基本烧掉一个浏览器身份的配额，本引擎天生低频；
+2. **IP 热度持久**：实测触码后同 IP 新身份第 1 次搜索即 1005——热度会累积，冷却期是小时级起步；
+3. **SSE 格式随前端版本漂移**：`markdown-yiyan`/`thinkingSteps` 组件名、token 机制都是前端 bundle 的现状，百度改版即失效（`wenxin_token_fail`/空答案报错即此信号，需重新侦察）。
+
+**结论：内置熔断是保护措施不是可用性承诺，wenxin 不可当关键路径依赖。**
+
+### 用法
+
+```bash
+python wenxin_engine.py "智谱 GLM Coding Plan"     # 单条聚合行 JSON，exit 0/1
+```
+
+```python
+from wenxin_engine import search
+row = search("智谱 GLM Coding Plan")     # 默认 on_error="report"
+# 成功行: {q, answer(markdown≤4000), citations:[{url,title,abstract,source}],
+#          engine:"wenxin-ai", count, platform:"wenxin", vendor, role}
+# 出错行: {"error": "wenxin_quota: ...", "tool": "chat-scraper",
+#          "query": q, "platform": "wenxin"} —— 检查 row.get("error")
+```
+
+门面：`search(q, platforms=["wenxin"])` → 聚合列表里多一条 wenxin 行（走 `on_error="raise"` 由门面统一兜错误记录）。离线测试边界：camoufox 浏览器交互不进离线测试（真浏览器+真配额+时序不确定），离线覆盖 SSE 解析（真实样本切片 fixture）/熔断状态机/三态协议。
+
 ## 安装
 
 ```bash
 pip install -r requirements.txt   # requests, beautifulsoup4, lxml
+```
+
+可选依赖（wenxin 线的 camoufox，缺它不影响其余平台）:
+
+```bash
+pip install "camoufox[geoip]" && python -m camoufox fetch   # 约百余 MB，一次性
 ```
 
 本机注意：`python` 是 3.12（anaconda），没有 `python3`。
@@ -171,11 +223,12 @@ results = search("python 教程", platforms=["bilibili"], num=10)
 results = search("claude", platforms=["zhihu"], num=10)
 results = search("python 教程")                          # platforms=None -> 百度通用
 results = search("q", platforms=["zhihu", "bilibili"])   # 多平台聚合
+results = search("q", platforms=["wenxin"])              # 文心 AI 信号（单条聚合行，低频！）
 # 出错条目形如 {"error": "baidu_soft_blocked: ...", "tool": "chat-scraper",
 #              "query": q, "platform": "zhihu"} —— 检查 item.get("error")
 ```
 
-结果字段：`title / url / snippet / platform / engine / vendor / role / since`；bilibili 额外 `author / play / pubdate`。`vendor`、`role`、`since` 为透传参数（指标用）。
+结果字段：`title / url / snippet / platform / engine / vendor / role / since`；bilibili 额外 `author / play / pubdate`；wenxin 是单条聚合行（`q / answer / citations / engine / count`，见 v3.7 节）。`vendor`、`role`、`since` 为透传参数（指标用）。
 
 ### CLI（各引擎独立 + 门面）
 
@@ -184,6 +237,7 @@ python bilibili_engine.py "python 教程" --num 10
 python baidu_engine.py "claude" --site zhihu.com --num 10
 python zhihu_engine.py "claude 教程" --num 10   # 知乎降级链（SearXNG→搜狗→百度）
 python sogou_engine.py "claude" --site csdn.net --num 10   # 搜狗（百度不可用时的第三环）
+python wenxin_engine.py "智谱 GLM Coding Plan"  # 文心 AI 搜索（低频！1005 即熔断 6h）
 python search.py "claude" --platforms zhihu,bilibili --num 10
 python search.py --list-platforms
 ```
@@ -211,13 +265,14 @@ curl -G "http://127.0.0.1:8765/search" \
 | `CHAT_SCRAPER_BAIDU_PROXY` | 空 | 百度引擎显式代理（默认直连；仅当代理真为 baidu.com 换出口时有效，Clash 规则分流下无效） |
 | `CHAT_SCRAPER_SOGOU_PROXY` | 空 | 搜狗引擎显式代理（默认直连） |
 | `CHAT_SCRAPER_SOGOU_RESOLVE` | `1` | 知乎链搜狗环是否解析 /link 跳转（0=关闭，保留搜狗跳转链） |
+| `CHAT_SCRAPER_WENXIN_COOLDOWN_H` | `6` | 文心 1005 熔断冷却时长（小时，可小数）；冷却期内直接报 `wenxin_quota` 不起浏览器 |
 
 ## 错误协议（与仓库 hackernews/searxng/github 工具一致）
 
 `search(..., on_error="report")`（默认）：出错返回
 `[{"error": "<slug>: <msg>", "tool": "chat-scraper", "query": q, "platform": p}]`，调用方检查 `result[0].get("error")` 区分「故障」与「真空（0 结果）」。
 `on_error="raise"` 抛出；`on_error="empty"` 兼容旧行为返回 []（故障平台静默跳过）。
-常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常；报错自带一条命令出路：`cd tools/searxng/docker && docker compose up -d`）、`sogou_blocked`（搜狗验证码）；zhihu 内容线的 `zhihu_auth_expired`（cookie 过期，v3.4 起自动自愈一次；v3.6 起还覆盖 401+code 602"端点需登录态"形态——message 注明访客不可读、重跑引导无用，自愈跳过）/`zhihu_behavior_limited`（40362 行为限制，降频再试）/`zhihu_sign_rejected`（10003 签名被拒，非 cookie 问题）/`zhihu_not_found`（裸 404）/`read_failed`（通用阅读器硬失败）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
+常见 slug：`baidu_soft_blocked`（占位/验证页）、`bilibili_api_error`（非 0 code/非 JSON）、`searxng_unavailable`（本机实例没起/返回异常；报错自带一条命令出路：`cd tools/searxng/docker && docker compose up -d`）、`sogou_blocked`（搜狗验证码）；zhihu 内容线的 `zhihu_auth_expired`（cookie 过期，v3.4 起自动自愈一次；v3.6 起还覆盖 401+code 602"端点需登录态"形态——message 注明访客不可读、重跑引导无用，自愈跳过）/`zhihu_behavior_limited`（40362 行为限制，降频再试）/`zhihu_sign_rejected`（10003 签名被拒，非 cookie 问题）/`zhihu_not_found`（裸 404）/`read_failed`（通用阅读器硬失败）；wenxin 线（v3.7）的 `wenxin_quota`（1005/kunlun/wappass 配额风控熔断，**已自动进入本 IP 长冷却**，冷却期内不起浏览器直接报此错）/`wenxin_token_fail`（1001/tokenFail，文心 token 绑定浏览器运行时，此错=当前前端版本下 token 机制已变，需重新逆向，不触发熔断）/`wenxin_timeout`（流式回答超时）/`wenxin_dependency_missing`（camoufox 未安装，报错自带安装命令）。zhihu 引擎链的报错额外带 `chain` 字段（如 `searxng(失败:SearxngUnavailable)→sogou(0条)→baidu(失败:...)`）记录每一环结局。风控也会以其他形态出现——实测（2026-09-09）同 IP 长期风控期百度直接 RST 连接，此时上报的是 `ConnectionError: ...RemoteDisconnected...`，按同类故障处理（换 IP/等待/切工具）。
 
 ## 本机实测记录（2026-09-09）
 
