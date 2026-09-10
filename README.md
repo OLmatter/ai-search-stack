@@ -1,33 +1,90 @@
 # ai-search-stack
 
-> **AI agent 搜索工具箱**：5 个独立工具 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
+> **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
+[![Release: v3.7.0](https://img.shields.io/badge/release-v3.7.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.7.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tools: 5](https://img.shields.io/badge/tools-5-blue.svg)](tools/)
-[![v3.0.0](https://img.shields.io/badge/v3.0.0-audited%20%26%20rewritten-brightgreen.svg)](CHANGELOG.md)
+[![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![Tests: 111 passing](https://img.shields.io/badge/tests-111%20passing-success.svg)](tests/)
 
-> **v3.0.0（2026-09-09）**：经全面审计后大修——统一错误协议、跨平台修复（Windows 不再 import 即崩）、chat-scraper 从零重写（v2 代码以 NUL 空壳入库、不可恢复）、searxng 提供开箱即用的本地实例。本文档所有能力声明以实测为准。
+**v3.7.0（2026-09-10）**：v3.0 全面审计大修之后连续七轮迭代——错误协议统一、
+知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
+MCP stdio 接入层（13 工具）、文心 AI 搜索。本文档所有能力声明以实测为准
+（依据见 [CHANGELOG.md](CHANGELOG.md)）。
 
-## 30 秒上手
+## ✨ 特性
 
-1. **读 [SOP.md](SOP.md)** —— 唯一 SOP：怎么选工具 + 怎么用 + 错误协议
-2. **读 [SKILL.md](SKILL.md)** —— 唯一 SKILL：路由 + 组合模式 + 3 维信号过滤
-3. **按 SOP 选工具** → 看 `tools/<tool>/README.md` 部署
-4. **按 SKILL 调** → 选 1 个或组合多个
+- 🔍 **中国平台聚合搜索**：16 站一个门面——bilibili 官方 API、知乎专用降级链
+  （SearXNG → 搜狗 → 百度 site:）、百度桌面/移动双桶 + 搜狗第三环、
+  文心 AI 搜索（AI 认可度 + 引用发现，低频线）
+- 📖 **通用阅读器 `read(url)`**：知乎问题/回答/文章/评论走官方 API（含认证
+  过期自愈），B站视频结构化读取，外域 HTTP 直读 + 无头浏览器兜底
+- 🌐 **国际搜索双通道**：google-bridge 真 Google（需 Chrome + 代理）、
+  SearXNG 本地聚合（compose 一条命令起实例，JSON 已启用）
+- 🐙 **开发者信号**：GitHub Releases / 安全通告（Advisories）、Hacker News
+  社区反应验证，零部署
+- 🔌 **MCP 接入层**：整个工具箱挂成 stdio MCP server，13 个工具任何 MCP
+  客户端（ZCode / Claude Desktop）零代码直接调用
+- 🩺 **doctor 一条命令体检**：巡检全部通道健康（SearXNG / 知乎 cookie /
+  bilibili / 百度 / google-bridge / GitHub），故障退出码 1
+- 🛡️ **统一错误协议**：出错返回带 `error` 字段的记录（slug 可诊断），永远
+  不用静默 `[]` 把故障伪装成"没搜到"；模块名唯一，同进程组合不撞名
 
-命令用 `python`（Windows 常见发行版无 `python3`）。
+## 🚀 快速开始（3 步）
 
-## 5 个独立工具
+**第 1 步：克隆 + 装依赖**
+
+```bash
+git clone https://github.com/OLmatter/ai-search-stack.git
+cd ai-search-stack
+pip install "mcp>=2.1"        # MCP 接入层（只用 CLI 可跳过）
+```
+
+可选依赖按需装：知乎引导/文心/浏览器兜底线需 `pip install camoufox[geoip]`
+（缺失时报错带安装指引）。
+
+**第 2 步：挂进你的 MCP 客户端**（不想写代码，让 agent 直接调）
+
+```json
+{
+  "mcpServers": {
+    "ai-search-stack": {
+      "command": "python",
+      "args": ["<仓库路径>/ai-search-stack/tools/mcp_server.py"]
+    }
+  }
+}
+```
+
+> Windows 下 `command` 建议用 python 绝对路径。重启客户端会话生效。
+
+**第 3 步：体检 + 学路由**
+
+```bash
+python tools/doctor.py         # 全通道体检，确认环境就绪
+```
+
+然后读 [SOP.md](SOP.md)（怎么选工具）和 [SKILL.md](SKILL.md)（怎么组合）。
+命令行用法见各 `tools/<tool>/README.md`。命令用 `python`（Windows 常见发行版
+无 `python3`）。
+
+## 🧰 工具矩阵
 
 | 工具 | 解决什么 | 何时不用 |
 |---|---|---|
+| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：16 站搜索门面 + 知乎官方 API 读取（问题/回答/文章/评论）+ B站/微信读取 + 文心 AI 搜索 | 国际主题 |
 | [`tools/google-bridge/`](tools/google-bridge/) | 真 Google（WebSearch 100% CAPTCHA），需 Chrome + 代理 | 找中国平台 / GitHub release |
 | [`tools/searxng/`](tools/searxng/) | 兜底聚合搜索；`tools/searxng/docker` 一条命令起本地实例（已启用 JSON，公网实例默认禁 JSON 勿用） | 默认主搜 |
 | [`tools/hackernews/`](tools/hackernews/) | 验证社区反应（高赞 = 真信号），零部署 | 中文 / 非技术 |
 | [`tools/github/`](tools/github/) | Release / Advisory / 仓库，零部署（匿名 60 req/h） | 非 GitHub |
-| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：bilibili 官方 API + 知乎搜索链与无头引导官方 API 内容读取 + 百度双桶（桌面/移动端）+搜狗兜底路由 16 站（低频） | 国际主题 |
+| [`tools/mcp_server.py`](tools/mcp_server.py) | 全工具箱暴露成 13 个 MCP tools（stdio） | 不用 MCP 客户端时 |
+| [`tools/doctor.py`](tools/doctor.py) | 一条命令巡检全部通道健康 | — |
 
-**实测状态**（详见各 README 与 CHANGELOG）：hackernews / github / searxng(本地实例) / bilibili 引擎 / google-bridge（有代理时）均已端到端实测出真实结果；百度引擎因软风控按错误协议上报（`baidu_soft_blocked`），解析器经真实页面离线复验 19/19。
+**实测状态**（详见各 README 与 CHANGELOG）：hackernews / github /
+searxng(本地实例) / bilibili 引擎 / 知乎官方 API 读取线 / 文心引擎（1 发
+实测成功）/ google-bridge（有代理时）均端到端实测出真实结果；百度引擎因软
+风控按错误协议上报（`baidu_soft_blocked`），解析器经真实页面离线复验 19/19；
+微信读取当前自动化环境受限（验证页如实上报，环境友好时可读）。
 
 ## 路由速查（详细见 SOP.md）
 
@@ -41,26 +98,11 @@
 
 **不会选？** 默认 `google-bridge`（最广覆盖，需代理）。
 
-**不想写代码、让 agent 直接调？** 把工具箱挂成 MCP server——见下方 [MCP 接入](#mcp-接入)。
-
 ## MCP 接入
 
 `tools/mcp_server.py` 把整个工具箱包装成一个 **stdio MCP server**：任何 MCP
 客户端（ZCode / Claude Desktop / 任何 agent 框架）无需写代码即可直接调用 13 个
 工具。它只是**接入层**——每个工具原样透传参数给现有模块函数，不做内部 API 统一。
-
-**启动（客户端里配置，无需手动跑）**：
-
-```json
-{
-  "mcpServers": {
-    "ai-search-stack": {
-      "command": "python",
-      "args": ["<仓库路径>/ai-search-stack/tools/mcp_server.py"]
-    }
-  }
-}
-```
 
 依赖：`pip install "mcp>=2.1"`（1.x SDK 亦兼容）。Windows 下 `command` 可用
 anaconda python 的绝对路径。
@@ -145,7 +187,7 @@ ai-search-stack/
 │   ├── searxng/          # 客户端 + docker/（compose + settings，JSON 已启用）
 │   ├── hackernews/       # hackernews_client.py（+ client.py 兼容 shim）
 │   ├── github/           # github_client.py（+ client.py 兼容 shim）
-│   └── chat-scraper/     # v3 从零重写：baidu_engine + bilibili_engine + search 门面
+│   └── chat-scraper/     # v3 从零重写：baidu/bilibili/搜狗/知乎/文心引擎 + search 门面
 └── .github/workflows/test.yml   # 编译/NUL 检测/离线单测/服务健康/真冒烟
 ```
 
