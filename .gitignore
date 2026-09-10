@@ -25,3 +25,4 @@ Thumbs.db
 
 # runtime artifacts: google-bridge state/, chat-scraper state/ (zhihu_cookies.json 等)
 state/
+.scratch/
