@@ -187,9 +187,9 @@ def get_driver():
 
     # Persistent user-data-dir: keep cookies, fingerprint, trust between runs.
     # v23.8 (2026-09-09): portable default. Previously hardcoded per-machine
-    # paths (C:\Users\520hh\... on Windows, /home/yuliu/... on Linux) which
-    # broke on any other account/host. Now defaults to ~/.no1_chrome_udd on
-    # every platform; override with NO1_CHROME_UDD.
+    # paths (a former maintainer's home dir on Windows, /home/yuliu/... on
+    # Linux) which broke on any other account/host. Now defaults to
+    # ~/.no1_chrome_udd on every platform; override with NO1_CHROME_UDD.
     from pathlib import Path
     _default_udd = str(Path.home() / '.no1_chrome_udd')
     _user_data_dir = os.environ.get('NO1_CHROME_UDD', _default_udd)
