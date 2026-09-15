@@ -28,6 +28,9 @@ jobs:
           for f in tools/*/*.sh tools/*/*/*.sh; do
             [ -f "$f" ] && bash -n "$f"
           done
+      - name: Install test deps（requests 为 tests 顶层依赖，盲测抓出的 CI 红根因）
+        shell: bash
+        run: pip install requests
       - name: Offline unit tests（零网络依赖）
         shell: bash
         run: python -m unittest discover -s tests -p "test_*.py" -v

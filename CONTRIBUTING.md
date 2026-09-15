@@ -44,7 +44,7 @@ curl "http://localhost:18799/search?q=test&num=5&since=7d&vendor=test&role=prima
 
 1. 改 `CHANGELOG.md` 加新版本
 2. `git tag vX.Y.Z && git push --tags`
-3. GitHub Release 自动建
+Tag 推送即发布锚点；GitHub Release 需 gh token（失效时后补 `gh release create <tag>`）。
 4. 不发 PyPI / Docker Hub（项目目前用 git clone 即用）
 
 ## Issue 报告
