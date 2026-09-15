@@ -535,9 +535,9 @@ class TestV350(unittest.TestCase):
     def test_read_routes_bilibili(self):
         import zhihu_content as zc
         from unittest import mock
-        row = {"title": "t", "desc": "d", "owner": "o", "view": 1,
-               "danmaku": 0, "like": 0, "favorite": 0, "pubdate": "x",
-               "url": "u", "engine": "bilibili-api"}
+        row = {"title": "t", "desc": "d", "owner": "o", "cid": 137,
+               "view": 1, "danmaku": 0, "like": 0, "favorite": 0,
+               "pubdate": "x", "url": "u", "engine": "bilibili-api"}
         fake_be = mock.MagicMock()
         fake_be.fetch_video.return_value = row
         with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}):
