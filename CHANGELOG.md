@@ -1,5 +1,40 @@
 # Changelog
 
+## [3.8.2] - 2026-09-16
+
+### 🎯 小批次收尾优化：README 徽章修复 + cookie 寿命标定工具 + v3.8.1 审计确认
+
+### Added
+- `tools/doctor.py`：**`--cookie-probe` 寿命标定模式**——真实调用一次知乎
+  questions API（复用 `chat-scraper/zhihu_content.py` 的 `fetch_question`，
+  探 bootstrap 同款问题 19550227），把读数（valid / expired / missing /
+  error 四态 + 探活时间戳 + cookie 文件 `fetched_at` + cookie 龄小时数）
+  追加写入 `tools/chat-scraper/state/cookie_lifetime_log.jsonl`（state/ 已
+  gitignore，标定数据只留本地）。标定纪律：探活期间 monkeypatch 掉
+  `_try_self_heal`——标定要的是 cookie 真实寿命读数，若过期即自愈刷新，
+  每条 expired 都会被"续命"污染，寿命分布永远测不出来（评估员共识：
+  产出决定自愈策略）。本模式只观测不判故障：expired/valid 都算成功观测
+  （exit 0），日志写不进等本地故障才 exit 1。missing（cookie 文件缺/无
+  d_c0）与 expired 分开记——前者是"没戴表"，后者才是"表停了"
+- `tests/test_v382.py`（8 个测试，全离线零真实请求）：cookie_probe 四分支
+  mock + jsonl 日志格式/追加语义 + 探活期间自愈禁用与恢复断言 +
+  v3.8.1 Host 白名单边界复核补强（首尾空白 Host、前导零端口、空端口段、
+  裸 IPv6）+ README 徽章版本与 `__version__` 一致性锁
+
+### Fixed
+- `README.md`：版本徽章残留 v3.7.0（上一轮 v3.8.1 替换失败——实际文本
+  `Release: v3.7.0` 与预期模式不符）→ 更正为与 `__version__` 一致，badge
+  文本与链接同步；Tests 徽章 111 → 实际测试数。新增一致性锁测试，徽章
+  再滞后会直接红
+
+### Changed
+- 版本号 3.8.1 → 3.8.2（`tools/chat-scraper/__init__.py`、`tools/mcp_server.py`）
+
+### 测试
+- 全量 132 passed（v3.8.1 基线 124 + 本轮 8）；v3.8.1 Host 白名单审计确认：
+  test_v381 主干覆盖（合法/伪造/前缀伪装/端口不匹配/缺失 fail-closed + 双
+  服务真实 TCP 403）质量合格，本轮补 4 类刁钻边界全部符合 fail-closed 预期
+
 ## [3.8.1] - 2026-09-16
 
 ### 🎯 安全审计残留低危项收尾 + 运维优化（v3.8 安全加固的收尾轮）

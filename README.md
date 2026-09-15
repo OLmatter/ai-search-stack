@@ -2,12 +2,12 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.7.0](https://img.shields.io/badge/release-v3.7.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.7.0)
+[![Release: v3.8.2](https://img.shields.io/badge/release-v3.8.2-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.8.2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 111 passing](https://img.shields.io/badge/tests-111%20passing-success.svg)](tests/)
+[![Tests: 132 passing](https://img.shields.io/badge/tests-132%20passing-success.svg)](tests/)
 
-**v3.7.0（2026-09-10）**：v3.0 全面审计大修之后连续七轮迭代——错误协议统一、
+**v3.8.2（2026-09-16）**：v3.0 全面审计大修之后连续九轮迭代——错误协议统一、
 知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
 MCP stdio 接入层（13 工具）、文心 AI 搜索。本文档所有能力声明以实测为准
 （依据见 [CHANGELOG.md](CHANGELOG.md)）。
