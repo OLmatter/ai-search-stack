@@ -438,8 +438,17 @@ def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
                      params=_wbi_sign({"bvid": bvid, "cid": int(cid)},
                                       img_key, sub_key),
                      timeout=TIMEOUT)
-        resp.raise_for_status()
         pdata = resp.json()
+        if pdata.get("code") in RETRYABLE_CODES:
+            # 与 search() 同款对称健壮性：wbi 键过期(-403)/风控(-412)时
+            # 强制刷新密钥重试一次（审查 v3.9：原实现缺此路径）
+            img_key, sub_key = _get_wbi_keys(force_refresh=True)
+            _wait_turn()
+            resp = s.get(_API_PLAYER,
+                         params=_wbi_sign({"bvid": bvid, "cid": int(cid)},
+                                          img_key, sub_key),
+                         timeout=TIMEOUT)
+            pdata = resp.json()
         if pdata.get("code") != 0:
             raise BilibiliApiError(
                 f"player code={pdata.get('code')} "

@@ -956,9 +956,10 @@ def read(url: str) -> Dict:
             import bilibili_engine
             try:
                 v = bilibili_engine.fetch_video(m.group(1), on_error="raise")
-                return {k: v[k] for k in ("title", "desc", "owner", "view",
-                                          "danmaku", "like", "favorite",
-                                          "pubdate", "url", "engine")}
+                return {k: v[k] for k in ("title", "desc", "owner", "cid",
+                                          "view", "danmaku", "like",
+                                          "favorite", "pubdate", "url",
+                                          "engine")}
             except Exception as e:
                 print(f"[zhihu_content] bilibili API 线失败"
                       f"（{getattr(e, 'slug', type(e).__name__)}）→ "
