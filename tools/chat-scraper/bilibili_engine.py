@@ -15,8 +15,10 @@
       + mixin_key)）。收到 code=-403/-412 时自动带签名重试一次。
 
 用法:
-    from bilibili_engine import search
+    from bilibili_engine import search, fetch_video, fetch_subtitles
     results = search("python 教程", num=10)
+    info = fetch_video("BV1GJ411x7h7")            # 结构化详情（含 cid）
+    subs = fetch_subtitles("BV1GJ411x7h7")        # 字幕链路（未登录实测恒空列表，见下）
 
 CLI:
     python bilibili_engine.py "python 教程" --num 10
@@ -42,7 +44,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
-__all__ = ["search", "fetch_video", "BilibiliApiError"]
+__all__ = ["search", "fetch_video", "fetch_subtitles", "BilibiliApiError"]
 
 _TOOL = "chat-scraper"
 _PLATFORM = "bilibili"
@@ -321,16 +323,23 @@ if __name__ == "__main__":
     sys.exit(_main())
 
 
+def _extract_bvid(video: str) -> Optional[str]:
+    """从纯 BV 号或任意含 BV 号的 URL 里提取 bvid；不匹配返回 None。"""
+    m = re.search(r"(BV[0-9A-Za-z]{10})", video or "")
+    return m.group(1) if m else None
+
+
 def fetch_video(video: str, vendor: str = "?", role: str = "primary",
                 on_error: str = "report") -> Dict:
     """视频结构化详情：官方 view API（公开、免 wbi）。
 
     video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。成功返回 Dict；
     on_error="report" 时错误返回 List（统一错误协议）——两种返回形态；
-    风控/不存在按统一错误协议处理。
+    风控/不存在按统一错误协议处理。cid 为 P1 的 cid（多 P 视频各分 P 的
+    cid 见 view 原始响应 data.pages，本工具不展开）。
     """
-    m = re.search(r"(BV[0-9A-Za-z]{10})", video or "")
-    if not m:
+    bvid = _extract_bvid(video)
+    if not bvid:
         err = ValueError(f"invalid bvid: {video!r}")
         if on_error == "raise":
             raise err
@@ -342,7 +351,7 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
         s = _get_session()
         _wait_turn()
         resp = s.get("https://api.bilibili.com/x/web-interface/view",
-                     params={"bvid": m.group(1)}, timeout=TIMEOUT)
+                     params={"bvid": bvid}, timeout=TIMEOUT)
         resp.raise_for_status()   # 412/5xx HTML 页直接走 HTTPError，别假装 JSON
         data = resp.json()
         if data.get("code") != 0:
@@ -354,16 +363,132 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
             "title": _clean_title(v.get("title", "")),
             "desc": (v.get("desc") or "").strip()[:2000],
             "owner": (v.get("owner") or {}).get("name", ""),
+            "cid": v.get("cid"),
             "view": v.get("stat", {}).get("view", 0),
             "danmaku": v.get("stat", {}).get("danmaku", 0),
             "like": v.get("stat", {}).get("like", 0),
             "favorite": v.get("stat", {}).get("favorite", 0),
             "pubdate": _fmt_pubdate(int(v.get("pubdate") or 0)),
-            "url": f"https://www.bilibili.com/video/{m.group(1)}",
+            "url": f"https://www.bilibili.com/video/{bvid}",
             "platform": _PLATFORM,
             "engine": "bilibili-api",
             "vendor": vendor,
             "role": role,
+        }
+    except Exception as e:
+        if on_error == "raise":
+            raise
+        if on_error == "report":
+            slug = getattr(e, "slug", None) or type(e).__name__
+            return [{"error": f"{slug}: {e}", "tool": _TOOL,
+                     "query": video, "platform": _PLATFORM}]
+        return []
+
+
+_API_PLAYER = "https://api.bilibili.com/x/player/wbi/v2"
+
+
+def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
+    """B 站视频 CC 字幕读取（v3.9）：view API 拿 cid → player/wbi/v2（wbi
+    签名，密钥复用引擎内置缓存）拿 subtitle.subtitles 列表 → 字幕逐个
+    拉 JSON 正文（{"from","to","content"} 行列表）。
+
+    video 接受纯 bvid 或任意含 BV 号的 URL；取 P1（view 响应的 data.cid）。
+
+    **实测上限（2026-09-16，如实报告）**：未登录访客请求 subtitle 列表
+    **恒为空**——三个视频实测（含标题自带"CC字幕更新完毕"、确有 CC 字幕
+    的视频），B 站仅向登录态（SESSDATA）下发字幕列表，手动上传 CC 亦不
+    豁免；AI 识别字幕更需登录。本工具不带登录态，故当前 subtitles 恒为
+    空列表（has_subtitles=False）。这**不是故障**，是当前真实上限：请求
+    链路（cid→签名→列表→正文解析）已按登录态可用形态实现并全量 mock
+    测试，未来接入 SESSDATA 即可直接出数据。
+
+    on_error 协议同 fetch_video：成功返回 Dict；"report" 时错误返回 List
+    （统一错误协议）；"raise"/"empty" 同款。
+    """
+    bvid = _extract_bvid(video)
+    if not bvid:
+        err = ValueError(f"invalid bvid: {video!r}")
+        if on_error == "raise":
+            raise err
+        if on_error == "report":
+            return [{"error": f"ValueError: {err}", "tool": _TOOL,
+                     "query": video, "platform": _PLATFORM}]
+        return []
+    try:
+        s = _get_session()
+        # 1) view 拿 cid（顺带 title/owner 方便核对拿对了视频）
+        _wait_turn()
+        resp = s.get("https://api.bilibili.com/x/web-interface/view",
+                     params={"bvid": bvid}, timeout=TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != 0:
+            raise BilibiliApiError(
+                f"view code={data.get('code')} "
+                f"message={data.get('message')}")
+        v = data.get("data") or {}
+        cid = v.get("cid")
+        if not cid:
+            raise BilibiliApiError("view 响应无 cid（API 形态变化？）")
+        # 2) player/wbi/v2 拿字幕列表（wbi 签名；wbi 键带 1h TTL 缓存）
+        img_key, sub_key = _get_wbi_keys()
+        _wait_turn()
+        resp = s.get(_API_PLAYER,
+                     params=_wbi_sign({"bvid": bvid, "cid": int(cid)},
+                                      img_key, sub_key),
+                     timeout=TIMEOUT)
+        resp.raise_for_status()
+        pdata = resp.json()
+        if pdata.get("code") != 0:
+            raise BilibiliApiError(
+                f"player code={pdata.get('code')} "
+                f"message={pdata.get('message')}")
+        subs = (((pdata.get("data") or {}).get("subtitle") or {})
+                .get("subtitles")) or []
+        # 3) 逐个拉字幕正文（手动 CC 字幕 URL 访客可读；需要 Referer）
+        out = []
+        for st in subs:
+            if not isinstance(st, dict):
+                continue
+            url = (st.get("subtitle_url") or "").strip()
+            if url.startswith("//"):
+                url = "https:" + url
+            item = {
+                "lan": st.get("lan", ""),
+                "lan_doc": st.get("lan_doc", ""),
+                "ai_type": st.get("ai_type", 0),
+                "url": url,
+                "lines": [],
+                "line_count": 0,
+            }
+            if url:
+                _wait_turn()
+                r2 = s.get(url, timeout=TIMEOUT, headers={
+                    "Referer": "https://www.bilibili.com/"})
+                r2.raise_for_status()
+                body = r2.json()
+                item["lines"] = [
+                    {"from": ln.get("from"), "to": ln.get("to"),
+                     "content": (ln.get("content") or "")}
+                    for ln in (body.get("body") or []) if isinstance(ln, dict)]
+                item["line_count"] = len(item["lines"])
+            out.append(item)
+        return {
+            "bvid": bvid,
+            "cid": cid,
+            "title": _clean_title(v.get("title", "")),
+            "owner": (v.get("owner") or {}).get("name", ""),
+            "has_subtitles": bool(out),
+            "subtitles": out,
+            "url": f"https://www.bilibili.com/video/{bvid}",
+            "platform": _PLATFORM,
+            "engine": "bilibili-api",
+            # 空列表不是故障，note 把实测结论讲清楚，防调用方误判真空/故障
+            "note": "" if out else
+            "该视频字幕列表为空。实测（2026-09-16，3 视频验证）：未登录访客"
+            "请求 subtitle 列表恒为空——B站仅向登录态（SESSDATA）下发字幕，"
+            "手动 CC 亦不豁免；本工具不带登录态，非故障",
         }
     except Exception as e:
         if on_error == "raise":

@@ -1,5 +1,57 @@
 # Changelog
 
+## [3.9.0] - 2026-09-16
+
+### 🎯 cookie 定时续期策略（基于 <48h 实测标定）+ bilibili 字幕读取链路（实测未登录恒空，如实降级）
+
+### Added
+- `tools/doctor.py`：**`--cookie-probe --renew-if-older-than H`**——探活发现
+  cookie 已 expired 且龄 >H 小时时，顺手动用一次无头引导续期（直接调
+  `zhihu_bootstrap.bootstrap`，不走 `_try_self_heal` 的 600s 冷却闸门）。
+  依据：实测标定知乎访客 cookie 寿命 **<48h**（47.4h 即 403，见
+  `state/cookie_lifetime_log.jsonl`），现行"用时触发自愈"白天首用要吃 ~15s
+  无头引导延迟；cron 每日 9 点 `--renew-if-older-than 36` 在低峰窗口把续期
+  做掉，白天使用零延迟。默认关闭=现行纯标定行为不变。纪律：标定读数先落定、
+  续期在其后（不污染寿命分布数据）；续期结果记进同一读数行新增的
+  `renew`（None=未启用/False=启用未触发/True=已续期）与 `renew_result`
+  字段；只动 expired 读数——missing（没戴表）与 error（网络/风控）不触发；
+  续期失败 exit 1（运维动作失败，cron 侧可报警），纯观测仍 expired/valid
+  均 exit 0。顺修隐患：`cmd_cookie_probe` 改为显式传
+  `entry_path=COOKIE_LOG_PATH`（默认参数在 def 时绑定，测试 patch 全局
+  会失效、把假读数写进真实标定日志）
+- `tools/chat-scraper/bilibili_engine.py`：**`fetch_subtitles(video)`**——
+  B 站字幕读取链路：view API 拿 cid → `player/wbi/v2`（复用引擎内置 wbi
+  签名 + 密钥 TTL 缓存）拿 `subtitle.subtitles` → 字幕逐个拉 JSON 正文
+  （`{from,to,content}` 行列表）。**实测上限（如实降级声明）**：未登录
+  访客请求字幕列表**恒为空**——3 个视频实测（BV1GJ411x7h7 Rick Astley MV、
+  BV1hs411j76f TED_Talks、BV1JE411N7UD 迪士尼扭曲仙境剧情片——后者标题
+  自带"CC字幕更新完毕"、确有 CC 字幕，访客列表仍为空），B 站仅向登录态
+  （SESSDATA）下发字幕，手动上传 CC 亦不豁免。本工具不带登录态，故当前
+  `subtitles` 恒为 `[]`（`has_subtitles=false` + note 讲明原因，非故障、
+  不伪装成"没搜到"）；请求链路按登录态可用形态实现并全量 mock 测试，未来
+  接入 SESSDATA 直接出数据。取 P1（view 响应 `data.cid`）；顺带实测确认
+  `player/wbi/v2` 必须带 cid（bvid-only 报 code=-400）
+- `tools/chat-scraper/bilibili_engine.py`：`fetch_video` 返回补 `cid` 字段
+  （字幕链路前置；多 P 视频为 P1 的 cid）
+- `tools/mcp_server.py`：新增 **`bilibili_subtitles`** MCP 工具（委托
+  `fetch_subtitles`，on_error 固定 report），工具总数 13 → 14
+- `tests/test_v390.py`（14 个测试，全离线零真实请求/零浏览器）：renew 分支
+  全覆盖（expired+超龄→bootstrap 调用且 out_path 正确；valid/未超龄/龄未知/
+  missing/error→不调；未启用→不调且 renew=None；续期成功 exit 0、失败
+  exit 1、纯观测 expired exit 0）+ fetch_subtitles（非法 bvid 错误协议、
+  空字幕如实报告且只烧 2 请求、字幕正文解析 + https: 前缀 + Referer、
+  CDN 失败走统一错误协议、cid 透传断言）+ fetch_video cid 补全 +
+  bilibili_subtitles MCP 透传与错误兜底
+
+### Changed
+- 版本号 3.8.2 → 3.9.0（`tools/chat-scraper/__init__.py`、
+  `tools/mcp_server.py`）；README 徽章/Tests 数同步；工具计数 13→14 全处
+  同步（mcp_server docstring、README 特性/工具矩阵/MCP 清单、
+  test_mcp_server 注册表锁）
+
+### 测试
+- 全量 146 passed（v3.8.2 基线 132 + 本轮 14）
+
 ## [3.8.2] - 2026-09-16
 
 ### 🎯 小批次收尾优化：README 徽章修复 + cookie 寿命标定工具 + v3.8.1 审计确认

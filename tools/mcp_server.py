@@ -20,7 +20,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     }
     依赖：pip install "mcp>=2.1"（1.x SDK 亦兼容，见下方双版本导入）。
 
-工具清单（13）:
+工具清单（14）:
     china_search        中国平台聚合搜索（知乎/B站/微信/百度16站）
     read_page           通用阅读器（知乎 API 线 + 外域 HTTP/浏览器兜底）
     zhihu_question      知乎问题详情（官方 API）
@@ -28,6 +28,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     zhihu_article       知乎专栏文章（官方 API）
     zhihu_comments      知乎评论读取（官方 comment_v5 API，含子评论展开）
     bilibili_video      B 站视频结构化详情（官方 view API）
+    bilibili_subtitles  B 站字幕链路（cid 补全 + player/wbi/v2；未登录实测恒空列表）
     hn_search           Hacker News Algolia 搜索
     github_releases     GitHub release 列表
     github_advisories   GitHub Security Advisories
@@ -60,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.8.2"
+__version__ = "3.9.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -106,7 +107,7 @@ def _make_server():
 
 
 _INSTRUCTIONS = """ai-search-stack 工具箱路由：
-- 中国平台内容/社区（知乎、B站、微信公众号、百度16站）-> china_search / read_page / zhihu_* / bilibili_video
+- 中国平台内容/社区（知乎、B站、微信公众号、百度16站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles
 - 国际技术社区反应验证 -> hn_search
 - GitHub release / 安全通告 -> github_releases / github_advisories
 - 通用网页兜底聚合 -> searxng_search（本地实例）/ googlebridge_search（本地服务+Chrome 代理，真 Google）
@@ -156,7 +157,7 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 13 个 MCP tools —— 每个都是对现有模块函数的透传委托
+# 14 个 MCP tools —— 每个都是对现有模块函数的透传委托
 # ---------------------------------------------------------------------------
 @mcp.tool(description=(
     "中国平台聚合搜索：知乎/B站官方 API + 百度 site: 路由 16 站"
@@ -276,6 +277,23 @@ def zhihu_comments(target: str,
 def bilibili_video(video: str) -> str:
     """委托 bilibili_engine.fetch_video（Dict 或 List[错误] 双形态归一为 JSON）。"""
     return _run("chat-scraper", video, _bilibili.fetch_video, video,
+                on_error="report")
+
+
+@mcp.tool(description=(
+    "B 站视频字幕读取（view 拿 cid + player/wbi/v2 wbi 签名）：{bvid, cid, "
+    "title, has_subtitles, subtitles:[{lan, lan_doc, lines:[{from, to, "
+    "content}]}], url, note}。\n"
+    "实测上限（如实报告）：未登录访客请求字幕列表恒为空——B站仅向登录态"
+    "（SESSDATA）下发字幕（手动 CC 亦不豁免），本工具不带登录态，故当前 "
+    "subtitles 恒为 []，这是真实上限不是故障；链路已按登录态形态实现。\n"
+    "何时用：cid 补全（player API 前置）、或未来接入 SESSDATA 后取字幕"
+    "文稿。只要播放数据用 bilibili_video。\n"
+    "video 接受纯 BV 号或任意含 BV 号的 URL，取 P1。耗时：秒级（2 个"
+    "请求）。错误在返回 JSON 内（按统一错误协议上报）。"))
+def bilibili_subtitles(video: str) -> str:
+    """委托 bilibili_engine.fetch_subtitles（Dict 或 List[错误] 双形态归一）。"""
+    return _run("chat-scraper", video, _bilibili.fetch_subtitles, video,
                 on_error="report")
 
 

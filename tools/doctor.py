@@ -13,8 +13,10 @@
 用法:
     python tools/doctor.py                  # 全量巡检，逐项 ✅/❌/⚠️
     python tools/doctor.py --cookie-probe   # 只跑知乎 cookie 寿命标定探活
+    python tools/doctor.py --cookie-probe --renew-if-older-than 36
+                                            # 探活 + 过期超龄顺带续期（cron 友好）
 退出码: 0=全绿或仅可选服务未启动（--cookie-probe 时见该模式说明）;
-        1=有核心通道故障。
+        1=有核心通道故障（--cookie-probe --renew-if-older-than 时续期失败也 1）。
 """
 import json
 import os
@@ -141,13 +143,44 @@ def _cookie_meta():
     return fetched_at, age_h
 
 
-def cookie_probe(entry_path=COOKIE_LOG_PATH) -> dict:
+def _renew_cookie() -> "tuple[bool, str]":
+    """v3.9: 顺手动用一次无头引导续期 cookie（--renew-if-older-than 触发时）。
+
+    直接调 zhihu_bootstrap.bootstrap——不走 zhihu_content._try_self_heal
+    （那里有 600s 冷却闸门，且探活期间已被 monkeypatch 禁用；cron 续期是
+    主动运维动作，不应被冷却闸门拦）。返回 (ok, 结果详情)。
+    """
+    _sys_path_chat_scraper()
+    try:
+        import zhihu_bootstrap
+        payload = zhihu_bootstrap.bootstrap(out_path=COOKIE_PATH,
+                                            headless=True)
+    except Exception as e:   # camoufox 未装 / 轮数用尽 / 日志写不进等
+        return False, f"{type(e).__name__}: {str(e)[:140]}"
+    cookies = payload.get("cookies") or {}
+    ok = all(cookies.get(k) for k in ("d_c0", "__zse_ck"))
+    detail = (f"d_c0({'Y' if cookies.get('d_c0') else 'N'}) "
+              f"__zse_ck(len={len(cookies.get('__zse_ck', ''))})")
+    return ok, detail
+
+
+def cookie_probe(entry_path=COOKIE_LOG_PATH,
+                 renew_if_older_than: "float | None" = None) -> dict:
     """真实调用一次知乎 questions API 标定 cookie 活性，读数追加进 jsonl。
 
     复用 zhihu_content.fetch_question（签名 + 官方 API，探 PROBE_QUESTION_ID）。
     标定纪律：探活期间 monkeypatch 掉 _try_self_heal——标定要的是 cookie
     真实寿命读数；若过期即自愈刷新，每条 expired 都会被"续命"污染，
     寿命分布永远测不出来。
+
+    v3.9 --renew-if-older-than H（默认 None=关闭，保持纯标定行为）：探活
+    发现 status=expired 且 cookie 龄 > H 小时时，顺手动用一次无头引导续期
+    （凌晨/低峰 cron 窗口把续期做掉，白天首次使用零延迟）。实测标定：访客
+    cookie 寿命 <48h（47.4h 即 403），cron 例 `--renew-if-older-than 36`。
+    标定读数在本函数内先落定、续期在其后，不污染本次读数；续期结果记进
+    同一读数行的 renew/renew_result 字段。只动 expired 读数：missing 是
+    "没戴表"（引导也能治，但龄读数为 None 无从判超龄，且行为不同，留给
+    显式引导）、error 是网络/风控（续期无用）、valid 不需要。
 
     读数四态：valid（API 通）/ expired（认证被拒）/ missing（cookie 文件缺
     或无 d_c0，≠ 过期，分开记）/ error（网络、行为风控等其他，不污染两类
@@ -165,6 +198,8 @@ def cookie_probe(entry_path=COOKIE_LOG_PATH) -> dict:
         "cookie_age_h": age_h,
         "status": None,
         "note": "",
+        "renew": None,        # None=未启用 renew；True/False=启用后是否触发
+        "renew_result": "",   # 仅 renew=True 时有意义："ok: ..." / "fail: ..."
     }
     orig_selfheal = zc._try_self_heal
     zc._try_self_heal = lambda: False   # 禁自愈：探真实寿命（见 docstring）
@@ -185,16 +220,33 @@ def cookie_probe(entry_path=COOKIE_LOG_PATH) -> dict:
     finally:
         zc._try_self_heal = orig_selfheal
 
+    if renew_if_older_than is not None:
+        over_age = (entry["cookie_age_h"] is not None
+                    and entry["cookie_age_h"] > renew_if_older_than)
+        should = entry["status"] == "expired" and over_age
+        entry["renew"] = should
+        if should:
+            print(f"→ cookie expired 且龄 {entry['cookie_age_h']}h > "
+                  f"{renew_if_older_than:g}h，顺手动用无头引导续期...")
+            ok, detail = _renew_cookie()
+            entry["renew_result"] = ("ok: " if ok else "fail: ") + detail
+
     os.makedirs(os.path.dirname(entry_path) or ".", exist_ok=True)
     with open(entry_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
 
 
-def cmd_cookie_probe() -> int:
-    print(f"== cookie 寿命标定探活（问题 id {PROBE_QUESTION_ID}，禁自愈）==")
+def cmd_cookie_probe(renew_hours: "float | None" = None) -> int:
+    suffix = (f"，renew_if_older_than={renew_hours:g}h"
+              if renew_hours is not None else "")
+    print(f"== cookie 寿命标定探活（问题 id {PROBE_QUESTION_ID}，禁自愈"
+          f"{suffix}）==")
     try:
-        entry = cookie_probe()
+        # entry_path 显式传全局（默认参数会在 def 时绑定，测试 patch
+        # doctor.COOKIE_LOG_PATH 会失效、把假读数写进真实标定日志）
+        entry = cookie_probe(entry_path=COOKIE_LOG_PATH,
+                             renew_if_older_than=renew_hours)
     except Exception as e:   # import 失败/日志写不进等本地故障
         print(f"❌ cookie-probe 本地故障: {type(e).__name__}: {e}")
         return 1
@@ -204,13 +256,19 @@ def cmd_cookie_probe() -> int:
           f"fetched_at={entry['fetched_at']} "
           f"age={entry['cookie_age_h']}h")
     print(f"   {entry['note']}")
+    if entry.get("renew"):
+        ok = entry["renew_result"].startswith("ok")
+        print(f"{'✅' if ok else '❌'} 续期: {entry['renew_result']}")
     try:
         with open(COOKIE_LOG_PATH, encoding="utf-8") as f:
             n = sum(1 for _ in f)
         print(f"→ 已追加 {COOKIE_LOG_PATH}（累计 {n} 条标定数据）")
     except OSError:
         print(f"→ 已追加 {COOKIE_LOG_PATH}")
-    # 本模式只观测不判故障：expired/valid 都是成功读数（标定数据点），exit 0
+    # 本模式只观测不判故障：expired/valid 都是成功读数（标定数据点），exit 0。
+    # 例外：启用了续期且续期失败 → exit 1（运维动作失败，cron 侧可报警）
+    if entry.get("renew") and not entry["renew_result"].startswith("ok"):
+        return 1
     return 0
 
 
@@ -222,9 +280,17 @@ def main(argv=None) -> int:
                    help="只跑知乎 cookie 寿命标定探活（真实调一次 questions "
                         "API，读数追加 state/cookie_lifetime_log.jsonl），"
                         "不跑全量巡检；expired/valid 均算成功观测，exit 0")
+    p.add_argument("--renew-if-older-than", type=float, default=None,
+                   metavar="H",
+                   help="配合 --cookie-probe：探活发现 cookie 已 expired 且"
+                        "龄 > H 小时时，顺手动用一次无头引导续期（headless，"
+                        "低峰窗口把续期做掉，白天使用零延迟）。默认关闭=纯"
+                        "标定观测。实测访客 cookie 寿命 <48h，cron 例：每日 "
+                        "9 点 `python tools/doctor.py --cookie-probe "
+                        "--renew-if-older-than 36`。续期失败 exit 1")
     args = p.parse_args(argv)
     if args.cookie_probe:
-        return cmd_cookie_probe()
+        return cmd_cookie_probe(renew_hours=args.renew_if_older_than)
     print(f"== ai-search-stack doctor @ {time.strftime('%Y-%m-%d %H:%M')} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
     _check("知乎 cookie", check_cookie, optional=True)

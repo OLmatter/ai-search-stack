@@ -1,7 +1,7 @@
 """MCP server（tools/mcp_server.py）离线单测：零真实网络、零浏览器。
 
 覆盖：
-1. 工具注册表完整性（13 个工具、名称/描述/schema 合法）
+1. 工具注册表完整性（14 个工具、名称/描述/schema 合法）
 2. 参数透传到模块函数（mock 捕获，含固定 on_error="report"）
 3. 错误报告形态（异常兜底成统一错误协议 JSON，server 不炸）
 4. stdout 卫兵（库代码往 stdout 打印被重定向 stderr——MCP stdio 协议保命）
@@ -33,9 +33,9 @@ except ImportError:  # mcp SDK 未安装（离线 CI 等）——本文件全部
 
 EXPECTED_TOOLS = {
     "china_search", "read_page", "zhihu_question", "zhihu_answers",
-    "zhihu_article", "zhihu_comments", "bilibili_video", "hn_search",
-    "github_releases", "github_advisories", "searxng_search",
-    "googlebridge_search", "doctor",
+    "zhihu_article", "zhihu_comments", "bilibili_video",
+    "bilibili_subtitles", "hn_search", "github_releases",
+    "github_advisories", "searxng_search", "googlebridge_search", "doctor",
 }
 
 
