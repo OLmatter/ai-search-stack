@@ -41,7 +41,7 @@ if command -v pkill >/dev/null 2>&1; then
 fi
 
 # Quick health check: if the proxy already forwards, skip restart
-PROBE=$(curl -sS --max-time 3 -x "$PROXY_URL" https://api.minimaxi.com/anthropic -o /dev/null -w '%{http_code}' 2>/dev/null || true)
+PROBE=$(curl -sS --max-time 3 -x "$PROXY_URL" http://connect.rom.miui.com/generate_204 -o /dev/null -w '%{http_code}' 2>/dev/null || true)
 if [ -n "$PROBE" ] && [[ "$PROBE" =~ ^[1-5][0-9][0-9]$ ]]; then
     echo "[$(date)] mihomo already healthy on $PROXY_URL (probe=$PROBE), skip restart"
     exit 0
@@ -73,7 +73,7 @@ if curl -sS --max-time 2 "http://127.0.0.1:$CONTROL_PORT/version" -o /dev/null 2
     echo "[$(date)] mihomo OK (control port $CONTROL_PORT answering)"
     exit 0
 fi
-PROBE=$(curl -sS --max-time 3 -x "$PROXY_URL" https://api.minimaxi.com/anthropic -o /dev/null -w '%{http_code}' 2>/dev/null || true)
+PROBE=$(curl -sS --max-time 3 -x "$PROXY_URL" http://connect.rom.miui.com/generate_204 -o /dev/null -w '%{http_code}' 2>/dev/null || true)
 if [ -n "$PROBE" ] && [[ "$PROBE" =~ ^[1-5][0-9][0-9]$ ]]; then
     echo "[$(date)] mihomo OK (proxy $PROXY_URL forwarding, probe=$PROBE)"
     exit 0

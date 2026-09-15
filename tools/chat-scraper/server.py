@@ -41,6 +41,22 @@ DEFAULT_PORT = 8765
 ENV_PORT = "CHAT_SCRAPER_PORT"
 _BIND = "127.0.0.1"  # 只监听回环：本工具无鉴权，不应对外网暴露
 
+# v3.8.1: Host 白名单——恶意网页可借 DNS rebinding（把攻击者域名解析到
+# 127.0.0.1）跨源驱动本服务的百度查询；校验 Host 头只认回环名+本端口，
+# 其余一律 403。Host 缺失（HTTP/1.0 裸请求）按拒绝处理（fail closed）。
+_ALLOWED_HOST_NAMES = ("127.0.0.1", "localhost")
+
+
+def _host_allowed(host_header: Optional[str], port: int) -> bool:
+    """Host 头必须为 127.0.0.1/localhost 且端口等于本服务实际端口。"""
+    if not host_header:
+        return False
+    host = host_header.strip().lower()
+    name, sep, port_part = host.rpartition(":")
+    if not sep:
+        return False  # 无端口或裸 IPv6 一律不认（本服务端口非 80，Host 必带）
+    return name in _ALLOWED_HOST_NAMES and port_part == str(port)
+
 
 class _Handler(BaseHTTPRequestHandler):
 
@@ -53,6 +69,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802 (http.server 命名约定)
+        if not _host_allowed(self.headers.get("Host"),
+                             self.server.server_address[1]):
+            self._send_json(
+                {"error": "Forbidden: Host header not in loopback whitelist",
+                 "tool": "chat-scraper"}, status=403)
+            return
         url = urlparse(self.path)
         if url.path == "/health":
             self._send_json({

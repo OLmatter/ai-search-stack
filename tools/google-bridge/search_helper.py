@@ -233,17 +233,13 @@ def get_driver():
             if sys.platform == 'win32':
                 chrome_bin = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
             else:
-                # v23.8: portable Linux default — look on PATH first (google-chrome
-                # / chromium), fall back to the legacy per-user install location
-                # only if it actually exists. Override with NO1_CHROME_BIN.
+                # v23.8: portable Linux default — look on PATH only
+                # (google-chrome / chromium). No per-user legacy fallbacks.
+                # Override with NO1_CHROME_BIN if Chrome lives elsewhere.
                 chrome_bin = (shutil.which('google-chrome')
                               or shutil.which('google-chrome-stable')
                               or shutil.which('chromium')
                               or shutil.which('chromium-browser'))
-                if not chrome_bin:
-                    _legacy = '/home/yuliu/chrome/chrome-linux64/chrome'
-                    if os.path.isfile(_legacy):
-                        chrome_bin = _legacy
         kwargs['browser_executable_path'] = chrome_bin
         driver_bin = _find_chromedriver()
         if driver_bin:
@@ -556,6 +552,21 @@ class SearchHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _host_ok(self):
+        # v3.8.1: Host whitelist — loopback name + this service's port only.
+        # Blocks DNS-rebinding style CSRF (a hostile page resolving an attacker
+        # hostname to 127.0.0.1 and driving Google queries through this
+        # bridge). Requests without a Host header fail closed.
+        host_header = self.headers.get('Host')
+        if not host_header:
+            return False
+        host = str(host_header).strip().lower()
+        name, sep, port_part = host.rpartition(':')
+        if not sep:
+            return False
+        return (name in ('127.0.0.1', 'localhost')
+                and port_part == str(self.server.server_address[1]))
+
     def _send_json(self, obj, status=200):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
         self.send_response(status)
@@ -604,6 +615,11 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if not self._host_ok():
+            return self._send_json(
+                {'error': 'Forbidden: Host header not in loopback whitelist'},
+                403)
+
         try:
             path_bytes = self.path.encode('ascii', errors='replace')
             path_str = path_bytes.decode('utf-8', errors='replace')

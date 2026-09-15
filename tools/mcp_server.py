@@ -60,7 +60,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.7.0"
+__version__ = "3.8.1"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -165,7 +165,8 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "何时用：找中文社区内容、验证国内舆论/资料。何时不用：英文技术讨论"
     "（用 hn_search）、GitHub release/通告（用 github_*）、通用英文搜索"
     "（用 searxng_search/googlebridge_search）。\n"
-    "platforms 可选 bilibili、16 个站名、general（百度无 site 通用）、或任意"
+    "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限）、16 个站名、"
+    "general（百度无 site 通用）、或任意"
     "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
     "耗时：bilibili 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"

@@ -88,7 +88,7 @@ fi
 
 # 2. mihomo proxy health (warn only — search_helper still starts without it,
 #    searches will just fail until a proxy is up)
-PROXY_CODE=$(curl -sS --max-time 3 -x "$NO1_PROXY" https://api.minimaxi.com/anthropic -o /dev/null -w '%{http_code}' 2>/dev/null || true)
+PROXY_CODE=$(curl -sS --max-time 3 -x "$NO1_PROXY" http://connect.rom.miui.com/generate_204 -o /dev/null -w '%{http_code}' 2>/dev/null || true)
 if [ -z "$PROXY_CODE" ] || [ "$PROXY_CODE" = "000" ]; then
     echo "[$(date)] WARN: mihomo $NO1_PROXY not reachable (probe=$PROXY_CODE) — continuing; /search will fail until proxy is up"
 fi

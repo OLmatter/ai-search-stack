@@ -1,5 +1,35 @@
 # Changelog
 
+## [3.8.1] - 2026-09-16
+
+### 🎯 安全审计残留低危项收尾 + 运维优化（v3.8 安全加固的收尾轮）
+
+### Security
+- `tools/chat-scraper/server.py`：**Host 白名单校验**——仅接受
+  `127.0.0.1:<port>` / `localhost:<port>`（port=实际监听端口），其余 Host 一律
+  403；Host 头缺失按拒绝处理（fail closed）。防恶意网页借 DNS rebinding
+  （攻击者域名解析到 127.0.0.1）跨源 CSRF 式驱动百度查询。补 3 个回归测试
+  （合法 Host 过 / 伪造 Host 403 / 端口不匹配 403）
+- `tools/google-bridge/search_helper.py`：同款 Host 白名单（双保险，叠加在
+  v3.8 已删 CORS 之上），实现在 `SearchHandler._host_ok`
+- `tools/google-bridge/start_mihomo.sh` + `start_search_helper.sh`：代理健康
+  探针域名 `api.minimaxi.com/anthropic`（非预期第三方）→ 换中性连通性探针
+  `http://connect.rom.miui.com/generate_204`（3 处）
+
+### Fixed
+- `search_helper.py` Linux Chrome 查找链残留的 `/home/yuliu/chrome/...`
+  个人路径回退值删除（有 isfile 守卫但仍是别人机器的路径；PATH 查找链
+  已覆盖，找不到时交给 undetected-chromedriver 自行处理）
+- `mcp_server.py` china_search 工具描述的 platforms 帮助文本补 `wenxin`
+  （v3.7.0 已注册进 `list_platforms` 但描述漏记，LLM 调用方看不到该选项）
+
+### 小账（复审轮补记）
+- CHANGELOG 各版测试计数段间差额（29/30、39/41、74/79、97/100 四处）为
+  复审轮补充测试未逐版记帐所致，非测试丢失；本轮全量 116 全过对齐。
+
+### Changed
+- 版本号 3.7.0 → 3.8.1（`tools/chat-scraper/__init__.py`、`tools/mcp_server.py`）
+
 ## [3.7.0] - 2026-09-10
 
 ### 🎯 新增 wenxin 平台：文心 AI 搜索低频线（AI 认可度 + 引用发现信号）
@@ -397,3 +427,4 @@ v2.1.0 审计结论：5 工具中 2 个能用、3 个不可用（chat-scraper �
 
 [1.0.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v1.0.0
 [3.7.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.7.0
+[3.8.1]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.8.1
