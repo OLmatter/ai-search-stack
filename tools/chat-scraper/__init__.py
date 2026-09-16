@@ -1,4 +1,4 @@
-"""chat-scraper v3.33.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.34.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -157,8 +157,16 @@ q/since，错误协议 report 内嵌不 500）。v3.33: digest.py 每日晨报�
 （tools/ 顶层跨工具组合层：热榜监控环产物 + HN 信号 + GitHub 关注
 发布 + doctor 本地状态四段，单通道失败降级不炸整体；
 digest_task.py DAILY 10:00 错峰 09:45 之后消费当日 diff）。
+
+v3.34.0：digest 配置模板入库 + 本机通知通道——digest_config.example.json
+（示例值与内置常量双向钉死，用户配置**缺失**自动用模板默认值，模板
+缺失再落内置常量，落回层级晨报头部注明）+ digest.py --toast
+（WScript.Shell Popup 系统模态+自动超时本机通知，正文含热榜新增摘要；
+通道选型活体取证：WinRT toast 实机双闸不可见——ToastEnabled=0 +
+QN_QUIET_TIME 弹三发屏上零可见，BurntToast 要装模块/msg 无超时+Home
+缺失，popup 截图证据在案；digest_task register --toast 接线计划任务）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.33.0"
+__version__ = "3.34.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

@@ -2,13 +2,26 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.33.0](https://img.shields.io/badge/release-v3.33.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.33.0)
+[![Release: v3.34.0](https://img.shields.io/badge/release-v3.34.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.34.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 601 passing](https://img.shields.io/badge/tests-601%20passing-success.svg)](tests/)
+[![Tests: 638 passing](https://img.shields.io/badge/tests-638%20passing-success.svg)](tests/)
 
-**v3.33.0（2026-09-17）**：v3.0 全面审计大修之后连续三十四轮迭代——
-**每日晨报聚合 + 班次接线**：digest.py（tools/ 顶层跨工具组合层：
+**v3.34.0（2026-09-17）**：v3.0 全面审计大修之后连续三十五轮迭代——
+**晨报配置模板入库 + 本机通知通道**：digest_config.example.json（模板
+入库，示例值与内置常量双向钉死；digest.py 用户配置**缺失**时自动用模
+板当默认值——零配置可跑且默认值有形可改，模板也缺才落内置常量，落回
+层级晨报头部注明；坏 JSON/类型错仍落内置不被模板掩盖）+ digest.py
+--toast（晨报产出后弹 Windows 系统模态通知框：标题=完成/故障+段状态，
+正文含热榜新增条目摘要；通道选型活体取证——WinRT toast 实机双闸不可见
+[全局 ToastEnabled=0 + 专注助手 QN_QUIET_TIME]、BurntToast 要装模块、
+msg.exe 无自动超时+Home 缺失，采用 WScript.Shell Popup 64+4096 自动
+超时：零模块零外部服务零凭据，不受任何通知设置影响；通知尽力而为失
+败只 warn 不翻退出码）+ digest_task register --toast（计划任务接线，
+opt-in 默认 /TR 形态与 v3.33 逐字节一致），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+**v3.33.0（2026-09-17）**：**每日晨报聚合 + 班次接线**：digest.py（tools/ 顶层跨工具组合层：
 热榜动态（默认零网络消费 hotlist_watch 监控环产物——最新快照 top +
 shift_log 今日 diff 行；快照缺失诚实未启用不代采，--sample-hotlist
 备用采样不落快照）+ HN 信号 + GitHub 关注发布 + doctor 本地状态四段

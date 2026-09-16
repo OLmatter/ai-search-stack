@@ -1,5 +1,61 @@
 # Changelog
 
+## [3.34.0] - 2026-09-17
+
+### 🎯 digest 配置模板入库 + --toast 本机通知通道
+
+- **digest_config.example.json（`tools/digest_config.example.json`，模板
+  入库）**：示例值与 digest.py 内置常量（DEFAULT_REPOS/QUERIES/PLATFORMS）
+  **双向钉死**（tests/test_v3340.py TestTemplate + 模板镜像侧）；JSON 无
+  注释，说明以 `_readme` 锁在文件里（load_config 未知键一律忽略）。
+  **digest.py load_config 三层回退**：用户配置 state/digest_config.json
+  **文件缺失** → 仓库模板 → 代码内置常量，落回层级晨报头部如实注明
+  （"使用仓库模板默认（digest_config.example.json）"）；**仅缺失走模板
+  层**——坏 JSON/顶层非 dict/键类型错保持 v3.33 语义落内置默认（配置写
+  坏不该被模板静默掩盖），零配置可跑语义不变且默认值有形可改（复制模板
+  到 state/ 即接管）。loader 可注入全离线钉（TestConfigThreeTier 五钉：
+  模板层命中/双缺落内置/仓库真模板实读/坏 JSON 不落模板/类型错不落模板）。
+- **digest.py --toast（本机通知，v3.34 新可选参数）**：晨报产出后弹
+  Windows 系统模态通知框——标题「晨报完成/故障 HH:MM:SS」+ 四段状态
+  图标（✅/➖/⚠️），正文含**热榜新增条目摘要**（extract_new_entries 消费
+  hotlist_watch diff 行：「新增 N」多轮求和 + `[NEW] [平台#rank] 标题`
+  告警去重取 3，标题内嵌 ASCII 括号取**最后一个** " (" 定 url 起界——
+  render_alerts 跨解析器消费端钉）。**通道选型（活体取证定案，
+  2026-09-17 本机 win32 10.0.19045）**：
+  * BurntToast：要 PSGallery 装模块=外部服务，拒；
+  * msg.exe：对话框无自动超时（无人值守计划任务会堆积）+ Windows Home
+    缺失，拒；
+  * WinRT toast（Windows PowerShell 5.1 投影，平台级零依赖可用，TOAST
+    弹三发 API 全成功 exit=0）：实机**双闸**取证——全局 toast banner
+    开关 `HKCU\...\PushNotifications\ToastEnabled=0`（已备份原值并恢复）
+    + `SHQueryUserNotificationState=QN_QUIET_TIME(5)`（专注助手开，
+    WNF 会话态不可靠改）——三发全屏截图零可见，只进操作中心；不选为主
+    通道；
+  * **WScript.Shell Popup（采用）**：powershell COM 内联单进程（
+    `-EncodedCommand` UTF-16LE base64——中文/引号零转义事故），64(信息
+    图标)+4096(系统模态置顶)+12s 自动超时（无人值守不堆积对话框）——
+    零模块零外部服务零凭据零临时文件，不受通知设置/专注助手任何影响；
+    实机截图证据：专注助手开着弹窗清晰可见、超时自关 `POPUP_RET=-1`。
+    子进程保险丝 20s > 弹窗超时 12s（承重关系钉死）；pythonw 场景
+    CREATE_NO_WINDOW 免闪窗。**v3.34 自审实抓（真机首跑即中）**：
+    `_default_toast_runner` 初版用 text=True——中文 Windows powershell
+    输出含 GBK 字节（0xd5），utf-8 读管线线程直接 UnicodeDecodeError
+    （v3.28 schtasks 同款病灶，digest_task._decode 先例在案）——改字节
+    捕获 + utf-8→gbk→replace 解码链 `_decode_out`，test_decode_out 钉死。
+    **通知尽力而为**：send_toast 任何失败只
+    返回 fault 不抛，CLI 侧 warn 不翻晨报退出码（TestCliToast 四钉）。
+- **digest_task.py register --toast（计划任务接线，opt-in）**：/TR 追加
+  `--toast`——每日 10:00 晨报产出后弹通知（生产形态）；不传旗标 /TR 与
+  v3.33 形态**逐字节一致**（已注册任务零漂移钉）；261 硬上限带 --toast
+  仍执法（本机实算 230→238 字符，余量 23）。
+- **版本**：digest.py/chat-scraper/mcp_server 三处 `__version__` 3.34.0
+  （test_v3330 版本锁降常青下限 ≥3.33 交接 test_v3340 精确锁，v3.27→
+  …→v3.33 先例）+ README 徽章 release-v3.34.0/tests-638 + 本文件本节。
+- **测试**：test_v3340.py 36 新钉（模板 3 + 三层回退 5 + send_toast 7 +
+  extract_new_entries 4 + toast_text 4 + CLI toast 5 + 注册器 toast 4 +
+  版本/文档 4 + 解码链 1，全离线零真实弹窗）；test_v3330 版本锁两钉降
+  常青 + 页脚版本串降常青（死 _batch_pins 清理）。601→638。
+
 ## [3.33.0] - 2026-09-17
 
 ### 🎯 每日晨报聚合 digest.py + digest_task.py 班次接线

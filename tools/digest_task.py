@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Windows 计划任务注册器：把每日晨报挂成班次节拍（v3.33）。
+"""Windows 计划任务注册器：把每日晨报挂成班次节拍（v3.33；v3.34 加
+register --toast 接线本机通知）。
 
 任务（单任务）:
     ai-search-digest   每日 10:00 单发一轮 digest.py
-                       （四段聚合 -> stdout markdown -> 班次日志一行）
+                       （四段聚合 -> stdout markdown -> 班次日志一行
+                         [-> Windows 弹窗通知，仅 register --toast]）
 
 接线方式（v3.33 评估结论，详见 digest.py 模块 docstring）：晨报聚合是
 确定性动作（固定通道/固定渲染/零认知），归 OS 调度器不占 LLM 班次上下
@@ -23,7 +25,7 @@
     - 非 Windows 诚实报错退出（Linux 用 cron，见 README）
 
 用法:
-    python digest_task.py register [--at HH:MM]
+    python digest_task.py register [--at HH:MM] [--toast]
     python digest_task.py status
     python digest_task.py unregister
 """
@@ -53,9 +55,13 @@ def _python_for_task() -> str:
     return str(exe)
 
 
-def _tr_value(python: str) -> str:
-    """/TR 值：嵌入引号包两个带空格安全的绝对路径 + --log 班次日志。"""
+def _tr_value(python: str, toast: bool = False) -> str:
+    """/TR 值：嵌入引号包两个带空格安全的绝对路径 + --log 班次日志
+    （--toast 再追加弹窗旗标——v3.34 opt-in，默认形态与 v3.33 逐字节
+    一致，已有注册任务零漂移）。"""
     tr = f'"{python}" "{DIGEST_PY}" --log "{SHIFT_LOG}"'
+    if toast:
+        tr += " --toast"
     if len(tr) > TR_MAX:
         # schtasks 对 /TR 有 261 字符硬上限；超长静默截断会注册出
         # 永远跑不起来的任务——宁可不注册
@@ -93,15 +99,19 @@ def _stream(proc, name: str) -> str:
     return getattr(proc, name, None) or ""
 
 
-def register(at: str = DEFAULT_AT, runner=None) -> int:
-    """注册/覆盖每日计划任务，返回退出码（0=注册成功承重生效）。"""
+def register(at: str = DEFAULT_AT, runner=None, toast: bool = False) -> int:
+    """注册/覆盖每日计划任务，返回退出码（0=注册成功承重生效）。
+
+    toast=True 时 /TR 追加 --toast：每日晨报产出后弹 Windows 通知
+    （digest.py --toast，通道与降级语义见 digest.py docstring）。
+    """
     if sys.platform != "win32":
         print("[digest_task] ERROR: Windows-only（Linux 用 cron: "
               "0 10 * * * python digest.py --log state/shift_log.md）",
               file=sys.stderr)
         return 1
     try:
-        tr = _tr_value(_python_for_task())
+        tr = _tr_value(_python_for_task(), toast=toast)
     except ValueError as e:
         print(f"[digest_task] ERROR: {e}", file=sys.stderr)
         return 1
@@ -115,7 +125,8 @@ def register(at: str = DEFAULT_AT, runner=None) -> int:
               file=sys.stderr)
         return 1
     print(f"[digest_task] registered {TASK_NAME} "
-          f"(DAILY {at} -> digest 单发一轮，班次摘要进 shift_log)")
+          f"(DAILY {at} -> digest 单发一轮，班次摘要进 shift_log"
+          + ("，产出后弹 Windows 通知)" if toast else ")"))
     return 0
 
 
@@ -160,11 +171,13 @@ def main() -> int:
     reg = sub.add_parser("register", help="注册/覆盖每日计划任务")
     reg.add_argument("--at", default=DEFAULT_AT,
                      help=f"每日触发时间 HH:MM（默认 {DEFAULT_AT}）")
+    reg.add_argument("--toast", action="store_true",
+                     help="/TR 追加 --toast：晨报产出后弹 Windows 通知")
     sub.add_parser("status", help="查询任务状态")
     sub.add_parser("unregister", help="删除任务（回滚）")
     args = parser.parse_args()
     if args.cmd == "register":
-        return register(at=args.at)
+        return register(at=args.at, toast=args.toast)
     if args.cmd == "status":
         return status()
     return unregister()

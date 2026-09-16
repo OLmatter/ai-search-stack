@@ -343,7 +343,9 @@ class TestRunDigest(unittest.TestCase):
                      "## 热榜动态", "## 技术社区信号",
                      "## 关注项目发布", "## 工具箱状态"):
             self.assertIn(head, md)
-        self.assertIn("digest v3.33.0", md)
+        # v3.34 起页脚版本串降常青：随 dg.__version__ 推导（换版零漂移），
+        # 精确版本串由 test_v3340 版本锁接管
+        self.assertIn(f"digest v{dg.__version__}", md)
 
     def test_single_section_fault_renders_warn_not_crash(self):
         def bad_rel(repo, num):
@@ -582,23 +584,25 @@ class TestRegistrar(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 3. 版本锁 3.33.0 + 文档（自 test_v3310 接管精确锁）
+# 3. 版本锁 3.33.0 + 文档（自 test_v3310 接管；v3.34 起降常青）
 # ---------------------------------------------------------------------------
 class TestVersionSyncV333(unittest.TestCase):
     def test_versions_3330(self):
-        # v3.33 起精确锁自 test_v3310 接管：双 __version__ 同步钉死
+        # v3.34 起精确锁移交 test_v3340，此处降常青下限（v3.27→v3.28→
+        # v3.29→v3.30→v3.31→v3.33 先例）：双 __version__ 同步本身不许破
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.33.0")
-        self.assertIn("chat-scraper v3.33.0", init_src)
+        self.assertGreaterEqual(
+            [int(x) for x in m.group(1).split(".")], [3, 33, 0])
+        self.assertIn(f"chat-scraper v{m.group(1)}", init_src)
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.33.0")
+            self.assertEqual(mcp_server.__version__, m.group(1))
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.33.0"', src)
+            self.assertIn(f'__version__ = "{m.group(1)}"', src)
 
     def test_changelog_and_readme_3330(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -606,22 +610,19 @@ class TestVersionSyncV333(unittest.TestCase):
         self.assertIn("digest.py", changelog)
         self.assertIn("digest_task", changelog)
         self.assertIn("ai-search-digest", changelog)
+        # v3.34 起精确徽章/状态行锁移交 test_v3340，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防换版时徽章漂移回退）
+        init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
+                    ).read_text(encoding="utf-8")
+        ver = re.search(r'__version__ = "([^"]+)"', init_src).group(1)
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.33.0", readme)
-        self.assertIn("v3.33.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 552（v3.31 基线）+ 本批钉数
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)
+        # 测试徽章数 v3.34 起移交 test_v3340 精确锁，此处降常青单调下限：
+        # 601（v3.33 基线 = 552 + 本批 49 钉），回归只许增不许缩
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 552 + self._batch_pins())
-
-    @staticmethod
-    def _batch_pins():
-        src = (REPO / "tests" / "test_v3330.py").read_text(encoding="utf-8")
-        # 数真实 test 方法定义形态；本函数注释与正则字面量一律不得写成
-        # 可被下方正则命中的形态（自引用虚增——v3.33 首跑抓到过：注释
-        # 里的示例方法名被当真实方法计数，badge 虚高 1）
-        return len(re.findall(r"def (test_\w+)\(", src))
+        self.assertGreaterEqual(int(m.group(1)), 601)
 
     def test_honest_doc_evidence_chain(self):
         # 诚实文档（架构原则 8）：组合层归属推导/退出码契约/预算承重值

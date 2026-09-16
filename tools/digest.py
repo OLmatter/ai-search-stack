@@ -1,6 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""每日晨报聚合（v3.33）——四段组合一次早晨汇报，stdout markdown。
+"""每日晨报聚合（v3.33；v3.34 增量见下）——四段组合一次早晨汇报，stdout
+markdown。
+
+v3.34 增量（配置模板入库 + --toast 本机通知）:
+    - tools/digest_config.example.json 模板入库：用户配置**缺失**时自动
+      用模板当默认值（零配置可跑且默认值有形可改——复制模板到
+      state/digest_config.json 即接管），模板也缺失才落代码内置常量；
+      三层落回都会在晨报头部注明。仅「文件缺失」走模板层——坏 JSON/键
+      类型错仍按 v3.33 语义落内置默认（配置写坏不该被模板掩盖）。
+    - --toast 可选参数：晨报产出后弹 Windows 本机通知（标题=完成/故障
+      + 段状态，正文含热榜新增条目摘要）。通道选型（活体取证定案）：
+      * BurntToast：要 PSGallery 装模块=外部服务，拒；
+      * msg.exe：对话框无自动超时（无人值守会堆积）+ Home 版缺失，拒；
+      * WinRT toast（PowerShell 投影）：平台级零依赖可用，但实机双闸
+        取证（2026-09-17）：全局 toast banner 开关 ToastEnabled=0 +
+        SHQueryUserNotificationState=QN_QUIET_TIME（专注助手开）——
+        弹三发 API 全成功屏上零可见（截图存 .scratch/），只进操作中心
+        且专注助手是 WNF 会话态不可靠改；不选为主通道；
+      * **WScript.Shell Popup（采用）**：powershell COM 内联单进程，
+        64(信息图标)+4096(系统模态置顶)+自动超时——零模块零外部服务零
+        凭据零临时文件，不受通知设置/专注助手任何影响，实机截图证据
+        （专注助手开着仍清晰可见，超时自关 POPUP_RET=-1）。
+      通知是尽力而为观测：失败只 stderr warn，绝不翻晨报退出码。
 
 定位（组合层归属推导，v3.33 评估结论）：晨报是**纯组合**（零新引擎能
 力，全部复用既有通道原语），归调用方层组合脚本——hotlist_watch.py v3.31
@@ -42,8 +64,9 @@ toolbox 引擎与 MCP）。二选一评估：
     {"watch_repos": ["owner/repo", ...],
      "watch_queries": ["关键词", ...],
      "watch_platforms": ["bilibili", "weibo"]}
-缺失/坏 JSON/键类型不对 → 该键落回内置默认并在晨报头部注明（配置问题
-不炸整体）。
+文件缺失 → 落回仓库模板 tools/digest_config.example.json（v3.34），
+模板也缺 → 代码内置默认；坏 JSON/键类型不对 → 内置默认。落回层级
+在晨报头部注明（配置问题不炸整体）。
 
 网络预算（默认配置 2 查询 + 2 仓库）：4 发；快照缺失仍 4 发；
 --sample-hotlist 再 +2（bilibili+weibo 各一）。晨报实测 ≤8。
@@ -55,18 +78,22 @@ fault（整份晨报零有效内容，cron 侧可报警）。
 （run_digest 参数），回归钉全离线——真实链路走 digest 实测落 CHANGELOG。
 """
 import argparse
+import base64
 import json
+import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-__version__ = "3.33.0"
+__version__ = "3.34.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
 DEFAULT_CONFIG = HERE / "state" / "digest_config.json"
+EXAMPLE_CONFIG = HERE / "digest_config.example.json"
 DEFAULT_SHIFT_LOG = HERE / "chat-scraper" / "state" / "shift_log.md"
 DEFAULT_SNAPSHOTS = HERE / "chat-scraper" / "state" / "hotlist_snapshots"
 
@@ -81,6 +108,12 @@ HN_NUM = 5               # 每条查询 HN 行数
 REL_NUM = 3              # 每仓库 release 行数
 SNAP_TOP_N = 5           # 快照 top 展示行数
 _DIFF_LINE_MAX = 500     # --log 一行上限（班次流水不刷屏，hotlist_watch 同款）
+
+# --toast 本机通知（WScript.Shell Popup 通道，选型取证见模块 docstring）
+TOAST_TIMEOUT_S = 12     # 弹窗自动关闭秒数（无人值守不堆积对话框）
+TOAST_BOX_TYPE = 64 + 4096   # 64=信息图标 + 4096=系统模态置顶
+TOAST_SUBPROC_TIMEOUT = 20   # powershell 子进程保险丝（弹窗超时 12s + 裕量）
+_TOAST_BODY_MAX = 240    # 弹窗正文上限（弹窗不是数据转储）
 
 # shift_log 里 hotlist_watch 产出行的形态（hotlist_watch.render_log_line
 # 固定前缀 `[YYYY-MM-DD HH:MM] hotlist_watch: `——跨解析器契约的消费端，
@@ -111,16 +144,27 @@ def load_config(path: Optional[str] = None,
                 ) -> Dict:
     """读晨报配置，返回 (config dict 形态统一) 的 dict + config_note。
 
-    任何失败（文件缺失/JSON 坏/顶层非 dict/键类型不对）都落回内置默认，
-    note 里如实说明落回原因——晨报永远出得来。loader 可注入（测试离线）。
+    三层回退（v3.34）：用户配置**文件缺失** → 仓库模板
+    digest_config.example.json → 代码内置常量；坏 JSON/顶层非 dict/键
+    类型不对 → 内置默认（不落模板——配置写坏不该被模板静默掩盖）。note
+    如实说明落回哪层——晨报永远出得来。loader 可注入（测试离线）。
     """
+    def _read(f: Path) -> str:
+        return (loader or (lambda fp: fp.read_text(encoding="utf-8")))(f)
+
     p = Path(path) if path else DEFAULT_CONFIG
     note = ""
     raw = None
     try:
-        raw = (loader or (lambda f: f.read_text(encoding="utf-8")))(p)
+        raw = _read(p)
     except OSError as e:
-        note = f"配置未找到（{type(e).__name__}），使用内置默认"
+        # 文件缺失（仅此一档）走模板层：默认值有形可改，模板=活文档
+        try:
+            raw = _read(EXAMPLE_CONFIG)
+            note = (f"配置未找到（{type(e).__name__}），"
+                    "使用仓库模板默认（digest_config.example.json）")
+        except Exception:                        # noqa: BLE001 —— 模板也缺
+            note = f"配置未找到（{type(e).__name__}），使用内置默认"
     except Exception as e:                       # noqa: BLE001 —— 同上降级
         note = f"配置读取异常（{type(e).__name__}: {e}），使用内置默认"
     if raw is not None:
@@ -437,6 +481,132 @@ def render_log_line(now: Optional[datetime] = None, sections=None) -> str:
     return f"[{ts}] {body[:_DIFF_LINE_MAX]}"
 
 
+# ---------------------------------------------------------------------------
+# --toast 本机通知（v3.34；通道选型取证见模块 docstring——WScript.Shell
+# Popup 64+4096 系统模态 + 自动超时，不受通知设置/专注助手影响）
+# ---------------------------------------------------------------------------
+_NEW_COUNT_RE = re.compile(r"新增 (\d+)")
+# hotlist_watch.render_alerts 形态：[NEW] [平台#rank] 标题 (url)——标题自身
+# 可含括号，取**最后**一个 " (" 才是 url 起界（跨解析器消费端钉）
+_NEW_TITLE_RE = re.compile(r"\[NEW\] \[[^\]]*\] (.+)")
+
+
+def extract_new_entries(watch_lines: List[str]) -> Dict:
+    """从热榜段 watch_lines 提取新增条目摘要 {count, titles}。
+
+    count 取各 diff 行「新增 N」之和（监控环一天可多轮）；titles 取
+    [NEW] 告警标题去重保序最多 3 个。解析不出 = 诚实空（弹窗只报段状态）。
+    """
+    count = 0
+    titles: List[str] = []
+    for ln in watch_lines or []:
+        m = _NEW_COUNT_RE.search(ln)
+        if m:
+            count += int(m.group(1))
+        seg = ln.split("|", 1)[1] if "|" in ln else ""
+        for part in (seg or ln).split("；"):
+            t = _NEW_TITLE_RE.match(part.strip())
+            if t:
+                title = t.group(1).strip()
+                cut = title.rfind(" (")
+                if cut > 0:
+                    title = title[:cut]
+                if title and title not in titles:
+                    titles.append(title)
+    return {"count": count, "titles": titles[:3]}
+
+
+def _ps_quote(text: str) -> str:
+    """PowerShell 单引号字面量转义（' → ''，换行折叠空格，截断上限）。"""
+    t = (text or "").replace("\r", " ").replace("\n", " ")
+    return t[:_TOAST_BODY_MAX].replace("'", "''")
+
+
+def _decode_out(raw) -> str:
+    """子进程输出解码：utf-8 严格 -> gbk 严格 -> replace 兜底（v3.28/v3.31
+    实机抓虫同款链；v3.34 自审实测再证：中文 Windows powershell 输出含
+    GBK 字节，text=True 的 utf-8 读管线线程直接 UnicodeDecodeError）。"""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    for codec in ("utf-8", "gbk"):
+        try:
+            return raw.decode(codec)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+def _default_toast_runner(argv: List[str]):
+    proc = subprocess.run(
+        argv, capture_output=True,
+        timeout=TOAST_SUBPROC_TIMEOUT,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    proc.stdout, proc.stderr = _decode_out(proc.stdout), _decode_out(proc.stderr)
+    return proc
+
+
+def send_toast(title: str, body: str, timeout_s: Optional[int] = None,
+               runner: Optional[Callable] = None,
+               platform: Optional[str] = None) -> Dict:
+    """弹一个 Windows 系统模态通知框（WScript.Shell Popup，自动超时）。
+
+    返回 {status: sent|skipped|fault, return?, error?}。尽力而为：任何
+    失败都只返回 fault 不抛——通知是观测副本，绝不炸已完成的晨报轮。
+    非 Windows 平台诚实 skipped（Linux 自行接 notify-send，未实现）。
+    """
+    if (platform if platform is not None else sys.platform) != "win32":
+        return {"status": "skipped",
+                "error": "非 Windows——弹窗通道不可用（观察者自接通知）"}
+    secs = TOAST_TIMEOUT_S if timeout_s is None else int(timeout_s)
+    # -EncodedCommand（UTF-16LE base64）：标题/正文任意中文引号零转义事故
+    ps = ("$w = New-Object -ComObject WScript.Shell; "
+          f"$r = $w.Popup('{_ps_quote(body)}', {secs}, "
+          f"'{_ps_quote(title)}', {TOAST_BOX_TYPE}); "
+          "Write-Output ('POPUP_RET=' + $r)")
+    enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+    argv = ["powershell", "-NoProfile", "-NonInteractive",
+            "-EncodedCommand", enc]
+    try:
+        proc = (runner or _default_toast_runner)(argv)
+    except Exception as e:                       # noqa: BLE001 —— 尽力而为
+        return {"status": "fault",
+                "error": f"{type(e).__name__}: {e}"[:200]}
+    if proc.returncode != 0:
+        err = (getattr(proc, "stderr", "") or "")[:160]
+        return {"status": "fault",
+                "error": f"powershell exit {proc.returncode}: {err}"}
+    ret = None
+    m = re.search(r"POPUP_RET=(-?\d+)", getattr(proc, "stdout", "") or "")
+    if m:
+        ret = int(m.group(1))
+    return {"status": "sent", "return": ret}
+
+
+def toast_text(result: Dict) -> tuple:
+    """从 run_digest 产物构建弹窗 (title, body)——完成/故障 + 段状态
+    + 热榜新增条目摘要。"""
+    fault = result.get("overall") == "fault"
+    title = f"晨报{'故障' if fault else '完成'} {result.get('ts', '')[-8:]}"
+    icons = {"hotlist": "热榜", "hn": "HN", "releases": "GitHub",
+             "toolbox": "状态"}
+    parts = [f"{name}{'✅' if result.get('sections', {}).get(k) == 'ok'
+              else '➖' if result.get('sections', {}).get(k) == 'empty'
+              else '⚠️'}"
+             for k, name in icons.items()]
+    body = " ".join(parts)
+    new = result.get("new_entries") or {}
+    if new.get("count"):
+        head = f" | 热榜新增 {new['count']} 条"
+        if new.get("titles"):
+            head += "：" + " / ".join(new["titles"])
+        body += head
+    if fault:
+        body += " | 全部段 fault——整份晨报零有效内容"
+    return title, body[:_TOAST_BODY_MAX]
+
+
 def run_digest(config_path: Optional[str] = None,
                config_loader: Optional[Callable[[Path], str]] = None,
                hn_fetcher: Optional[Callable[[str, int], List[Dict]]] = None,
@@ -467,7 +637,8 @@ def run_digest(config_path: Optional[str] = None,
     md = render(hotlist, hn, rel, tb, note, now=d)
     overall = "fault" if all(v == "fault" for v in sections.values()) else "ok"
     return {"markdown": md, "sections": sections, "overall": overall,
-            "ts": d.strftime("%Y-%m-%d %H:%M:%S")}
+            "ts": d.strftime("%Y-%m-%d %H:%M:%S"),
+            "new_entries": extract_new_entries(hotlist.get("watch_lines"))}
 
 
 # ---------------------------------------------------------------------------
@@ -512,11 +683,25 @@ def _main(argv=None) -> int:
     parser.add_argument("--sample-hotlist", action="store_true",
                         help="热榜段现场采样一发（备用路径；默认零网络消费"
                              "监控环快照）")
+    parser.add_argument("--toast", action="store_true",
+                        help="晨报产出后弹 Windows 系统模态通知框（标题+段"
+                             "状态+热榜新增摘要；WScript.Shell Popup 自动"
+                             "超时，尽力而为失败只 warn 不翻退出码）")
     args = parser.parse_args(argv)
     result = run_digest(config_path=args.config,
                         sample_hotlist=args.sample_hotlist)
     _emit(result["markdown"])
     _maybe_log(args.log, result)
+    if args.toast:
+        try:
+            title, body = toast_text(result)
+            t = send_toast(title, body)
+            if t.get("status") == "fault":
+                _warn(f"[{_TOOL}] toast 弹窗失败（尽力而为不翻码）: "
+                      f"{t.get('error', '?')}")
+        except Exception as e:                    # noqa: BLE001 —— 同上
+            _warn(f"[{_TOOL}] toast 弹窗异常（尽力而为不翻码）: "
+                  f"{type(e).__name__}: {e}")
     if result["overall"] == "fault":
         _warn(f"[{_TOOL}] 全部段 fault——整份晨报零有效内容")
         return 1

@@ -1,0 +1,6 @@
+{
+  "_readme": "digest.py 晨报配置模板（v3.34.0 入库）。JSON 不支持注释，说明以 _readme 键存在——load_config 只认 watch_repos / watch_queries / watch_platforms 三个键，未知键一律忽略。用法：把本文件复制为 tools/state/digest_config.json（state/ 已被根 .gitignore 忽略，只留本地）再改字段；用户配置缺失时 digest.py 自动用本模板做默认值（模板也缺失才落代码内置常量），落回哪层都会在晨报头部注明。三键语义：watch_repos=关注项目发布（每仓库 github_releases 一发），watch_queries=技术社区信号（每条 hn_search 24h 一发），watch_platforms=热榜动态平台过滤（bilibili/weibo；zhihu 恒需登录不进榜）。下方示例值与 digest.py 内置常量逐字节一致（tests/test_v3340.py 双向钉死），改本模板请同步钉。",
+  "watch_repos": ["anthropics/claude-code", "microsoft/vscode"],
+  "watch_queries": ["LLM agent", "AI search"],
+  "watch_platforms": ["bilibili", "weibo"]
+}
