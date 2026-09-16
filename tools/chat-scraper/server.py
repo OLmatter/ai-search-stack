@@ -7,8 +7,11 @@
                      "platforms": {...}}
     GET /search?q=...&platforms=zhihu,bilibili&num=10&since=&vendor=&role=
                  -> JSON 数组（平台级错误按统一错误协议内嵌在数组里）
+    GET /hot?platforms=bilibili,weibo&num=20&vendor=&role=
+                 -> JSON 数组（热榜聚合 v3.31：无查询词；平台级错误同样
+                    内嵌在数组里。zhihu 恒报 needs_login 诚实上限）
 
-platforms 省略 / general -> 百度无 site: 通用搜索。
+platforms 省略 / general -> 百度无 site: 通用搜索（/hot 省略为热榜默认可用集）。
 服务端始终用 on_error="report"：单平台故障不会把整个请求打成 500。
 
 启动:
@@ -87,7 +90,10 @@ class _Handler(BaseHTTPRequestHandler):
         if url.path == "/search":
             self._handle_search(parse_qs(url.query))
             return
-        self._send_json({"error": "NotFound: use /search or /health",
+        if url.path == "/hot":
+            self._handle_hot(parse_qs(url.query))
+            return
+        self._send_json({"error": "NotFound: use /search or /hot or /health",
                          "tool": "chat-scraper"}, status=404)
 
     def _handle_search(self, qs: dict) -> None:
@@ -110,6 +116,25 @@ class _Handler(BaseHTTPRequestHandler):
         role = (qs.get("role") or ["primary"])[0]
         results = _facade.search(q, platforms=platforms, num=num, since=since,
                                  vendor=vendor, role=role, on_error="report")
+        self._send_json(results)
+
+    def _handle_hot(self, qs: dict) -> None:
+        """GET /hot（v3.31）——热榜聚合，无查询词，参数同 /search 去掉
+        q/since（接口奇偶补齐：facade hot()/CLI --hot/MCP china_hotlist
+        均已暴露，唯 HTTP 服务缺）。"""
+        raw_platforms = (qs.get("platforms") or [""])[0]
+        platforms: Optional[List[str]] = (
+            [p for p in raw_platforms.split(",") if p.strip()] or None)
+        try:
+            num = int((qs.get("num") or ["10"])[0])
+        except ValueError:
+            self._send_json({"error": "ValueError: 'num' must be an integer",
+                             "tool": "chat-scraper"}, status=400)
+            return
+        vendor = (qs.get("vendor") or ["?"])[0]
+        role = (qs.get("role") or ["primary"])[0]
+        results = _facade.hot(platforms=platforms, num=num, vendor=vendor,
+                              role=role, on_error="report")
         self._send_json(results)
 
     def log_message(self, fmt: str, *args) -> None:  # 收敛默认的逐请求 stderr 噪音

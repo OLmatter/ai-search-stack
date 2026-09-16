@@ -1,6 +1,6 @@
 # chat-scraper (v3)
 
-中国平台聚合搜索：**bilibili/掘金官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）+ **热榜聚合 `hot()`**（bilibili 热门/微博热搜实测可用；知乎热榜实测需登录态，v3.29）+ **榜单 diff `hot_diff()` 与微博 cookie 寿命标定 `weibo_probe_once()`**（监控闭环 + 标定起步，v3.30）。
+中国平台聚合搜索：**bilibili/掘金官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）+ **热榜聚合 `hot()`**（bilibili 热门/微博热搜实测可用；知乎热榜实测需登录态，v3.29）+ **榜单 diff `hot_diff()` 与微博 cookie 寿命标定 `weibo_probe_once()`**（监控闭环 + 标定起步，v3.30）+ **监控环组合脚本 `hotlist_watch.py` 与每日班次接线 `hotlist_watch_task.py`**（采样->快照->diff->告警；schtasks 每日 09:45 diff 进班次日志，v3.31）+ **HTTP 服务 `GET /hot`**（接口奇偶补齐，v3.31）。
 
 ## 版本与诚实声明（先读这段）
 
@@ -17,6 +17,7 @@
 | 热榜 weibo（v3.29） | `ajax/side/hotSearch` + passport 访客 incarnate 流（`hotlist_engine.py`） | ✅ 实测 | 2026-09-17 实跑（探测 #7/#8）：genvisitor→incarnate 换 SUB/SUBP（纯 HTTP 两请求，无浏览器），`realtime[].word/num/label_name` 结构化输出（hot_value + 爆/热/新/沸 标签），is_ad 广告位剔除，cookie 缓存 `state/weibo_visitor_cookies.json` 复用；裸 UA 403 与 m.weibo.cn container `ok=-100` 登录墙均实测排除 |
 | 热榜 zhihu（v3.29） | 官方端点 `/api/v3/feed/topstory/hot-lists/total` | ❌ 访客不可用（诚实上限非故障） | 2026-09-17 实测（探测 #1/#4）：裸调 401；签名线（自愈引导新访客 cookie + x-zse-96）仍 401 code=101「身份未经过验证」——端点需登录态。平台位保留恒报 `zhihu_hotlist_needs_login`，零网络请求不烧引导；凭据线归主人 |
 | 热榜监控 diff + weibo cookie 标定（v3.30） | `hot_diff(before, after)` 纯函数（零网络）+ `weibo_probe_once` 禁 incarnate 单发探活（`hotlist_engine.py`；doctor 热榜探活项/`--hotlist-probe` 接入） | ✅ 实测 | 2026-09-17 真实演练：同主题两轮采样间隔 16 分钟（04:02:06/04:18:08），bilibili+weibo 各 20 条 0 错误；diff 实据 weibo 3 新增（iPhone18Pro/方程SGT/一点点提两箱牛奶上门沟通）3 消失、bilibili 20/20 保持（留档 `state/hotlist_drill_20260917/`）；标定读数流 `state/weibo_cookie_lifetime_log.jsonl`（四态 valid/expired/missing/error，禁 incarnate 保真实寿命） |
+| 热榜监控环 + 每日班次接线（v3.31） | `hotlist_watch.py`（采样 hot() -> 快照 `state/hotlist_snapshots/` 滚动 50 份 -> hot_diff -> stdout 结构化 + `--log` 班次日志行；单发/`--interval` 自轮询）+ `hotlist_watch_task.py` schtasks 注册器（任务 `ai-search-hotlist-watch` DAILY 09:45，`--log state/shift_log.md`）+ server.py `GET /hot` | ✅ 实测 | 2026-09-17 实链：注册后 `schtasks /Run` 两次 -> 首轮建基线次轮 diff，shift_log.md 落 hotlist_watch 行，doctor `_shift_log_stats` 可解析；引擎零改动（监控告警不进引擎=复用边界）；故障轮不落快照（宁缺勿错），退出码 0=有效观测/1=本地故障与 --hotlist-probe 同构 |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
 | zhihu 内容读取（问题/回答/文章） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP + 认证自愈 v3.4） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON；answers 用 web 同款 /feeds 端点；articles 端点 2026-09-10 实测 200 |
 | zhihu 评论（v3.6，回答/问题） | 官方 comment_v5 API（签名 HTTP + paging.next 翻页 + 子评论展开） | ✅ 实测 | answers/12202014 与 questions 端点、child_comment 子评论端点 2026-09-10 实测 200（含翻页） |

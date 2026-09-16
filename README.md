@@ -2,13 +2,26 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.30.0](https://img.shields.io/badge/release-v3.30.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.30.0)
+[![Release: v3.31.0](https://img.shields.io/badge/release-v3.31.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.31.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 517 passing](https://img.shields.io/badge/tests-517%20passing-success.svg)](tests/)
+[![Tests: 552 passing](https://img.shields.io/badge/tests-552%20passing-success.svg)](tests/)
 
-**v3.30.0（2026-09-17）**：v3.0 全面审计大修之后连续三十一轮迭代——
-**热榜监控闭环 + 微博 cookie 寿命标定起步**：hot_diff(before, after)
+**v3.31.0（2026-09-17）**：v3.0 全面审计大修之后连续三十二轮迭代——
+**热榜监控环组合脚本 + 每日班次接线**：hotlist_watch.py（调用方层监控环：
+采样 hot() -> 快照落盘 state/hotlist_snapshots/ 时间戳命名滚动保留 50 份
+-> hot_diff -> stdout 结构化告警 + 可选 --log 班次日志格式一行（doctor
+值班巡检趋势可解析）；单发/--interval 自轮询双模式；故障轮不落快照不
+污染快照链——宁缺勿错；退出码与 --hotlist-probe 契约同构；引擎零改动，
+监控告警不进引擎=ARCHITECTURE.md 复用边界）+ hotlist_watch_task.py
+（schtasks 每日注册器：任务 ai-search-hotlist-watch DAILY 09:45 与
+sogou-probe 09:30 错峰，--log 接 state/shift_log.md 让每日 diff 进班次
+日志；接线二选一按架构推导选 schtasks——确定性节拍归 OS 调度器，不占
+LLM 班次上下文、不等主人 CronUpdate 粘贴）+ server.py GET /hot（接口
+奇偶补齐：facade/CLI/MCP 均有 hot 唯 HTTP 服务缺），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+三十一轮：**热榜监控闭环 + 微博 cookie 寿命标定起步**：hot_diff(before, after)
 纯函数（两轮采样 diff，新增条目=事件信号；身份=(platform,url) 跨轮稳定，
 error 记录剔除、单侧无有效榜单平台整侧剔除不产假信号——宁缺勿错；零
 网络可离线组合，真实演练两轮采样间隔 16 分钟：weibo 3 新增 3 消失、

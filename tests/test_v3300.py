@@ -13,9 +13,9 @@ state/hotlist_drill_20260917/，回归钉全部走 mock / tmp 文件 / 源码钉
    missing 不报警/error ⚠️）+ 读数落账路径显式传参/cmd_hotlist_probe
    退出码契约/--hotlist-probe CLI 派发/标定钩子活性覆盖 weibo 流
    （缺文件不报警、有读数后 >48h 报警，sogou 同款）。
-4. MCP doctor mode=hotlist 派发 + 非法 mode 错误协议 + 版本锁 3.30.0
-   （双 __version__，自 test_v3290 接管精确锁）+ CHANGELOG + README
-   徽章 + 诚实文档证据链钉（docstring 演练日期/标定纪律）。
+4. MCP doctor mode=hotlist 派发 + 非法 mode 错误协议 + 版本锁（v3.31
+   起精确锁降常青移交 test_v3310，双 __version__ 同步钉保留）+ CHANGELOG
+   + README 徽章 + 诚实文档证据链钉（docstring 演练日期/标定纪律）。
 """
 import io
 import json
@@ -392,14 +392,16 @@ class TestMcpDoctorHotlist(unittest.TestCase):
 
 class TestVersionSyncV330(unittest.TestCase):
     def test_versions_3300(self):
-        # v3.30 起精确锁自 test_v3290 接管（v3.27→v3.28→v3.29 先例）
+        # v3.31 起精确锁移交 test_v3310，此处降常青下限（v3.27→v3.28→
+        # v3.29→v3.30 先例）：双 __version__ 同步本身不许破
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.30.0")
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 30, 0])
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)
@@ -411,15 +413,22 @@ class TestVersionSyncV330(unittest.TestCase):
         self.assertIn("hot_diff", changelog)
         self.assertIn("weibo_probe_once", changelog)
         self.assertIn("weibo_cookie_lifetime_log", changelog)
+        # v3.31 起精确徽章/状态行锁移交 test_v3310，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防止换版时徽章漂移回退）
+        if mcp_server is None:
+            src2 = (REPO / "tools" / "mcp_server.py").read_text(
+                encoding="utf-8")
+            ver = re.search(r'__version__ = "([^"]+)"', src2).group(1)
+        else:
+            ver = mcp_server.__version__
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.30.0", readme)
-        self.assertIn("v3.30.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 491（v3.29 基线）+ 本批 26 钉（hot_diff 6 + weibo_probe_once 7
-        # + doctor 热榜 8 + MCP 2 + 版本锁/文档 3）= 517
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)   # 状态行「vX.Y.Z（日期）」头部在场
+        # 测试徽章数随本批移交 test_v3310 精确锁，此处降常青单调下限：
+        # 517（v3.30 基线 = 491 + 本批 26 钉），回归只许增不许缩
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "517")
+        self.assertGreaterEqual(int(m.group(1)), 517)
 
     def test_honest_doc_evidence_chain(self):
         # 诚实文档（架构原则 8）：演练日期/标定纪律/标定流进 docstring

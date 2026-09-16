@@ -1,5 +1,65 @@
 # Changelog
 
+## [3.31.0] - 2026-09-17
+
+### 🎯 热榜监控环组合脚本 + 每日班次接线 + server /hot 接口奇偶
+
+- **hotlist_watch.py（`tools/chat-scraper/hotlist_watch.py`，调用方层监控环）**：
+  把 v3.30 演练里「两轮采样 + hot_diff」的手工链路固化成一条命令——
+  采样 hot() -> 快照落盘 `state/hotlist_snapshots/YYYYMMDD_HHMMSS.json`
+  （同秒冲突 _N 后缀；滚动保留最近 `--keep` 份默认 50）-> 与最近历史
+  快照 hot_diff -> stdout 结构化 JSON（mode/status/summary/new/gone/
+  alerts）+ 可选 `--log FILE` 追加一行班次日志格式
+  `[YYYY-MM-DD HH:MM] hotlist_watch: ...`（doctor 值班巡检趋势
+  `_shift_log_stats` 可直接解析——**每日 diff 进班次日志**的承重契约，
+  test_v3310 跨解析器钉死）。**单发**（默认，cron/计划任务最便宜节拍）
+  与 **`--interval` 自轮询**双模式（监控节奏主权在调用方；单轮故障不
+  退出，瞬时网抖不杀监控环）。**故障轮不落快照**（采样抛异常/全平台
+  error/零有效行/快照写失败 = fault——坏数据不污染快照链，宁缺勿错；
+  半成功轮有效侧照常落盘 diff，error 行随快照如实保存）。退出码契约与
+  --hotlist-probe 同构：0 = 有效观测（建基线/diff 完成），1 = 本地故障；
+  **有新增事件不算故障**——事件是观测结果不是错误。引擎零改动：采样
+  与 diff 全部复用 hotlist_engine 的 hot()/hot_diff()，**监控告警不进
+  引擎**（ARCHITECTURE.md 复用边界；v3.30 架构推导的另一半——引擎无
+  状态，快照落盘/周期调度/告警输出归调用方层）。
+- **每日班次接线 = hotlist_watch_task.py（二选一按架构推导选 schtasks）**：
+  派工给的两个选项（班次提示词片段等 CronUpdate 粘贴 vs 独立 schtasks
+  注册）选后者，推导：每日 diff 节拍是确定性动作（采样/diff/追加一行），
+  零 agent 认知；班次会话是 Agent 调度框架——复用边界明确调度/监控告
+  警不进 toolbox，确定性节拍归 OS 调度器（`ai-search-sogou-probe`
+  v3.21 / `ai-search-gbridge-watchdog` v3.28 同款先例），不占 LLM 班次
+  上下文、也不该等主人下次 CronUpdate 粘贴（人在环里的机器活）。注册器
+  沿 watchdog_task.py v3.28 先例：register/status/unregister 三命令、
+  /TR 261 硬上限超长报错不注册、pythonw 免闪窗、schtasks 输出
+  utf-8→gbk 显式回退链解码（中文 Windows 实测 GBK 字节）、非 win32
+  诚实报错给 cron 等价入口、unregister 幂等（中英文「不存在」措辞都
+  认）。任务 **ai-search-hotlist-watch**：DAILY 09:45（与 sogou-probe
+  09:30 错峰），/TR = `pythonw hotlist_watch.py --log <state>\shift_log.md`
+  （绝对路径自治，任务无需工作目录）。
+- **server.py GET /hot（接口奇偶补齐）**：评估取证发现 hot 动词在
+  facade hot()（v3.29）/CLI --hot（v3.29）/MCP china_hotlist（第 15
+  工具）三接口均已暴露，唯 HTTP 服务缺（v3.8.1 时代只有 /search）——
+  同一动词四接口对齐。参数同 /search 去掉 q/since（热榜无查询词），
+  错误协议恒 report 内嵌数组不 500；Host 白名单/回环绑定安全语义不变。
+- **测试**：test_v3310 35 钉全离线（监控环 20：run_once 三态/采样异常
+  与零有效行不落快照/半成功轮/班次日志行 doctor 跨解析器/日志写失败
+  不炸监控环/快照同秒冲突/坏快照跳读/滚动清理/CLI runpy 双连发与
+  --interval 护栏/**pythonw 空流安全**（schtasks 跑 pythonw 无控制台
+  sys.stdout=None，print 不再 AttributeError 打丑已完成的监控轮）；
+  注册器 8：argv 形态 DAILY/ST/TN/TR/失败退出码/TR 超长/非 win32/
+  幂等/GBK 解码；server /hot 4：参数透传+report 内嵌/num 非法 400/
+  404 文案/源码钉；版本锁/文档 3）；test_v3300 精确锁与徽章钉降常青
+  移交（v3.28→v3.29→v3.30 先例）；517→552 测试。
+  **实链验证（2026-09-17，热榜采样预算 6 发实耗 4 = 两次 schtasks /Run
+  × 双平台）**：注册后 `schtasks /Run` 强制执行两次——首轮 04:59:05 触发
+  建基线（快照 `20260917_045910.json` 于 04:59:10 落盘，bilibili+weibo
+  40 行 0 错误，shift_log.md 落「建基线」行）+ 次轮 05:00:12 触发 diff
+  （快照 #2，**新增 11 消失 11 保留 29**，真实事件信号成立如 bilibili#2
+  iPhone18 Pro 性能分析上榜；shift_log.md 落 diff 行含 [NEW]/[GONE]
+  明细）——调度链/diff/班次日志三环全通；doctor `_shift_log_stats` 对
+  真实 shift_log 复核：机器行与人工行同流解析（total 27 / 覆盖 2 天，
+  最近一条即 05:00 hotlist_watch diff 行）。
+
 ## [3.30.0] - 2026-09-17
 
 ### 🎯 热榜监控闭环批次：hot_diff + 微博 cookie 寿命标定起步 + doctor 热榜探活项

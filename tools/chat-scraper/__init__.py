@@ -1,5 +1,5 @@
-"""chat-scraper v3.30.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
-+ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控 diff）。
+"""chat-scraper v3.31.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
++ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
 实测覆盖与已知限制见 README.md，不要按平台数量估算本工具能力。
@@ -139,8 +139,23 @@ bilibili popular 烂检测 + weibo 标定读数顺带落账；知乎 needs_login
 诚实上限不算故障）+ --hotlist-probe 单发模式 + 标定钩子活性覆盖
 weibo 流（sogou 同款：缺文件不报警，有读数后 >48h 报警）+ MCP doctor
 mode=hotlist。
+
+v3.31.0：热榜监控环组合脚本 + 每日班次接线 + server /hot 接口奇偶——
+hotlist_watch.py（调用方层监控环：采样 hot() -> 快照落盘
+state/hotlist_snapshots/ 时间戳命名滚动保留 -> hot_diff -> stdout 结构化
+告警 + 可选 --log 班次日志格式一行（doctor _shift_log_stats 可解析）；
+单发/--interval 自轮询双模式；故障轮不落快照不污染快照链，退出码契约
+与 --hotlist-probe 同构 0=有效观测/1=本地故障；引擎零改动——监控告警
+不进引擎，ARCHITECTURE.md 复用边界）+ hotlist_watch_task.py（schtasks
+每日注册器，watchdog_task v3.28 先例：任务 ai-search-hotlist-watch
+DAILY 09:45 与 ai-search-sogou-probe 09:30 错峰，--log 接 state/
+shift_log.md 让每日 diff 进班次日志；接线二选一按架构推导选 schtasks
+而非班次提示词片段——确定性节拍归 OS 调度器不占 LLM 班次、不等主人
+CronUpdate 粘贴）+ server.py GET /hot（接口奇偶补齐：facade hot()/
+CLI --hot/MCP china_hotlist 均已暴露唯 HTTP 服务缺；参数同 /search 去
+q/since，错误协议 report 内嵌不 500）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.30.0"
+__version__ = "3.31.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]
