@@ -71,6 +71,29 @@ search:
 # 第二关聚合复发（brave timeout）→ 按单引擎判据立即再禁用。四轮结论：
 # brave 的"单发过"不可信（第 4 轮单发 19 行过、聚合即 timeout），其恢复
 # 判据需升级（如连续 N 轮单发过才允许第二关），观察继续。
+#
+# v3.23 第五轮采样（2026-09-16 深夜，预算 4/4：三引擎各 1 发单发探活 +
+# 1 发默认聚合确认，四发同题 q="python" 同法逐字可比）。本轮按 v3.20
+# 判据升级定位为「连续 gate-1 通过数据积累轮」，不烧第二关预算：
+#   brave        第一关过（20 行，unresponsive 空）——v3.20（19 行）后
+#                连续第 2 轮单发过（streak=2；更早：v3.16 单发过但聚合即
+#                复发，v3.17/3.18/3.19 三连 fail）。「连续 N 轮」的 N 尚未
+#                定标——继续积累，N 定标前不烧第二关。
+#   duckduckgo   第一关未过（CAPTCHA，rows=0，逐字 v3.15~v3.18/v3.22
+#                更正轮症状）→ 诚实 streak 归零（v3.19"恢复"已判假阳性
+#                不计入），维持禁用，第二关必败不做。
+#   startpage    第一关未过（CAPTCHA，rows=0），且第 4 发默认聚合确认
+#                生产路径同病：unresponsive 记 "Suspended: CAPTCHA"
+#                （SearXNG 调度器内部已自动暂停该引擎；同场聚合仅
+#                wikipedia 1 行，google cse/wikidata timeout 与本判据
+#                无关）。两轮三观测（v3.22 记 09-16 晚聚合 parsing error
+#                + 本轮探活 CAPTCHA + 聚合 Suspended:CAPTCHA）→ 按
+#                v3.15 止损判据（不健康引擎不拖慢每次搜索）禁用；恢复
+#                走单引擎两关（其 v3.19 正是经此路径回滚，机制已验证）。
+# 探活机制固化（同轮）：searxng_client 新增 engines= 参数与 probe()
+# 第一关探活函数——v3.16~v3.23 六轮探活全是 ad-hoc 裸 HTTP（判据在
+# settings.yml、调用在各班次习惯里，与 v3.19 acquire 根因同构），
+# 下轮起第一关只准走 probe()（机制进库，调用路径唯一）。
 engines:
   - name: brave
     disabled: true
@@ -90,10 +113,8 @@ engines:
   # 下轮复评先连续多轮单发过再考虑烧第二关预算。
   - name: duckduckgo
     disabled: true
-  # startpage：v3.19 单引擎粒度两关双过（第一关单发 10 行 unresponsive
-  # 空；第二关仅回滚 + restart 后聚合 10 行全 startpage、unresponsive
-  # 无 startpage），单独放回生效。v3.22 观察：2026-09-16 晚聚合实搜
-  # 出现一次 parsing error（同场 ddg CAPTCHA/wikidata timeout），单次
-  # 复现不裁决，维持 enabled，下轮复评时优先复跑观察。
+  # startpage：v3.19 单引擎粒度两关双过单独回滚生效。v3.23 第五轮探活
+  # CAPTCHA + 聚合 "Suspended: CAPTCHA"（两轮三观测，见上方 v3.23 段）
+  # → 按 v3.15 止损判据禁用，恢复走单引擎两关。
   - name: startpage
-    disabled: false
+    disabled: true

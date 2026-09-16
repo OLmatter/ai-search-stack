@@ -245,16 +245,19 @@ class TestSearxngSingleEngineCriterion(unittest.TestCase):
             self.assertIn(token, self.src)
 
     def test_engine_states_match_observation(self):
-        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.22 更正段）：
-        # brave 第一关过但第二关聚合复发 → disabled（其"单发过"四轮证明
-        # 不可信）；duckduckgo v3.20"双过回滚"判词被 v3.22 审计更正为
-        # 假阳性（重复条目致实跑未调度），诚实第二关重跑 CAPTCHA 复发
-        # → disabled；startpage v3.19 双过 → 维持 enabled。任何状态变更
-        # 必须先改 settings.yml 观察记录再改这里（v3.15/v3.16 的"三引擎
-        # 全禁"旧 pin 已按 v3.19/v3.20 实测适配——行为先例：v3.18 对
+        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.23 段）：
+        # brave 第一关过但第二关聚合复发 → disabled，其"单发过"被四轮
+        # 数据证明不可信（v3.23 采样后 streak=2 继续，N 定标前不烧第二关）；
+        # duckduckgo v3.20"双过回滚"判词被 v3.22 审计更正为假阳性（重复
+        # 条目致实跑未调度），v3.23 采样第一关 CAPTCHA 复发 streak 归零
+        # → disabled；startpage v3.19 双过回滚后两轮三观测复发（v3.22
+        # 聚合 parsing error + v3.23 探活 CAPTCHA + 聚合 Suspended:
+        # CAPTCHA）→ 按 v3.15 止损判据 disabled。任何状态变更必须先改
+        # settings.yml 观察记录再改这里（v3.15/v3.16 的"三引擎全禁"旧
+        # pin 已按 v3.19/v3.23 实测两度适配——行为先例：v3.18 对
         # test_v3160 obsolete pins 的处理）
         for engine, want in (("brave", True), ("duckduckgo", True),
-                             ("startpage", False)):
+                             ("startpage", True)):
             block = re.search(
                 rf"- name: {engine}\n\s+disabled: (true|false)", self.src)
             self.assertIsNotNone(block, engine)

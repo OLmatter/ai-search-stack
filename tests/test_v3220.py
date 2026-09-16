@@ -283,14 +283,14 @@ class TestShiftLogDiscipline(unittest.TestCase):
 
 class TestVersionSyncV322(unittest.TestCase):
     def test_versions_3220(self):
-        # 精确锁当前版本（先例：上一版 test_v3210 精确锁同步降常青）
+        # 常青下限（先例：上一版精确锁随新批次移交，v3.17→v3.19、
+        # v3.21→v3.22 同款）：双 __version__ 一致即可，精确锁在 test_v3230
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.22.0")
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)

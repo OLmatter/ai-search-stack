@@ -2,17 +2,18 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.22.0](https://img.shields.io/badge/release-v3.22.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.22.0)
+[![Release: v3.23.0](https://img.shields.io/badge/release-v3.23.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.23.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 374 passing](https://img.shields.io/badge/tests-374%20passing-success.svg)](tests/)
+[![Tests: 393 passing](https://img.shields.io/badge/tests-393%20passing-success.svg)](tests/)
 
-**v3.22.0（2026-09-16）**：v3.0 全面审计大修之后连续二十三轮迭代——
-stop_wake append-only 决策日志（每次触发一行 JSONL 到
-~/.zcode/stop_wake_decisions.jsonl：block 记全文、pass 记归因标签，
-写日志异常一律吞掉绝不影响收工决策；消除 v3.21 声明的观察盲区）、
-收工必写 shift_log 纪律固化（CONTRIBUTING 版本发布检查点，
-v3.19/v3.20 历史条目标注补记），
+**v3.23.0（2026-09-17）**：v3.0 全面审计大修之后连续二十四轮迭代——
+clean-worktree 收工检查固化（`scripts/clean_worktree_test.sh`：HEAD 全新
+worktree checkout 跑全量测试，破「本机绿≠fresh 绿」假象；stash 对
+gitignore 产物无效故走 worktree）、SearXNG 第五轮采样（brave streak=2
+继续积累、ddg CAPTCHA streak 归零、startpage 两轮三观测止损禁用——
+三引擎全禁）、探活机制进库（searxng_client `engines=` 参数 + `probe()`
+第一关函数，终结六轮 ad-hoc 裸探活），
 详见 [CHANGELOG.md](CHANGELOG.md)。
 此前
 二十二维：cookie 寿命标定首批数据分析（7 读数/唯一死亡实测 47.38h，36h 续期阈值

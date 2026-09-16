@@ -48,9 +48,16 @@ curl "http://localhost:18799/search?q=test&num=5&since=7d&vendor=test&role=prima
    `[YYYY-MM-DD HH:MM]`（doctor 值班巡检趋势依赖解析）；漏写的批次
    事后必须补记且**标注「补记」**（无声补=伪造实时流水；v3.19/v3.20
    缺条目的连续性缺口教训，v3.22 固化为检查点）
-3. `git tag vX.Y.Z && git push --tags`
+3. **push 前 clean-worktree 复跑**——`bash scripts/clean_worktree_test.sh`
+   （先提交再跑：push 的是提交，所以在 HEAD 的全新 git worktree checkout
+   里跑全量测试）。机器本地的 gitignore 产物（state/、__pycache__、.env…）
+   会造成「本机绿 ≠ fresh 绿」假象（v3.22 实证：state/shift_log.md 在场
+   掩盖了 fresh checkout 必炸的钉一整轮）；`git stash` 往返不触碰
+   gitignore 文件、对该盲区无效，固此检查走 worktree 而非 stash
+   （v3.23 固化为脚本 + 本检查项）
+4. `git tag vX.Y.Z && git push --tags`
    Tag 推送即发布锚点；GitHub Release 需 gh token（失效时后补 `gh release create <tag>`）。
-4. 不发 PyPI / Docker Hub（项目目前用 git clone 即用）
+5. 不发 PyPI / Docker Hub（项目目前用 git clone 即用）
 
 ## Issue 报告
 

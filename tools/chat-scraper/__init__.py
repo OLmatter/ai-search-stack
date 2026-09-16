@@ -1,4 +1,4 @@
-"""chat-scraper v3.22.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.23.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -98,8 +98,14 @@ acquire()：认领+读队列一步完成的唯一入口，skipped 不返回 inst
 旧版先备份）。+ SearXNG 回滚判据细化到单引擎粒度（每引擎独立两关：
 单发探活 + 仅回滚该引擎 restart 后聚合 unresponsive 清零；三引擎整组
 判据把可救的和无救的绑死——v3.18 startpage 单发恢复只能陪禁）。
+v3.23.0：searxng_client 探活机制固化——search() 新增 engines= 参数
+（追加在 on_error 之后，既有调用方位置传参不断链）+ probe() 单引擎
+两关判据「第一关」函数（ok = rows>0 且 unresponsive 空；纯观测不写
+状态，streak 记账归 settings.yml 观察注释）——v3.16~v3.23 六轮探活
+全是 ad-hoc 裸 HTTP，判据在 settings.yml、调用在习惯里（v3.19
+acquire 根因同构），本轮起第一关只准走 probe()。
 """
 from .search import list_platforms, search
 
-__version__ = "3.22.0"
+__version__ = "3.23.0"
 __all__ = ["search", "list_platforms", "__version__"]

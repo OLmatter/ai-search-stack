@@ -1,5 +1,60 @@
 # Changelog
 
+## [3.23.0] - 2026-09-17
+
+### 🎯 clean-worktree 收工检查固化 + SearXNG 第五轮采样（startpage 止损禁用）+ 探活机制进库
+
+- **clean-worktree 复跑固化为收工检查项（上轮遗留项落地）**：v3.22 实证的
+  「本机绿 ≠ fresh 绿」盲区（state/shift_log.md 在场掩盖 fresh checkout 必炸
+  的钉一整轮）固化为 `scripts/clean_worktree_test.sh`——在 HEAD 的全新
+  `git worktree add --detach` checkout 里跑全量测试，完全不触碰当前工作区
+  （零 stash-pop 冲突风险）。**机制裁决有据**：`git stash`（含 -u）不触碰
+  gitignore 文件——state/、__pycache__ 原地保留，恰恰漏掉本检查要暴露的
+  那类产物，-a 还会把 zhihu_cookies.json 卷进 stash；故检查走 worktree 而非
+  stash（派工原文的 stash 方案被证据否决，目的不变、手段换对）。检查项写进
+  CONTRIBUTING「版本发布」第 3 条（先提交再跑——push 的是提交）。检查器自身
+  按十杀纪律盲测：微型夹具仓「本机 1 passed（假象绿）/ 脚本跑 1 failed
+  exit=1（盲区暴露）」复现成功，trap 清理无残留 worktree
+- **SearXNG 第五轮单发采样（预算 4/4，四发同题 q="python" 同法逐字可比）**：
+  本轮按 v3.20 判据升级定位为「连续 gate-1 通过数据积累轮」，不烧第二关
+  预算——**brave 第一关过**（20 行 unresponsive 空，v3.20 后连续第 2 轮，
+  streak=2；「连续 N 轮」的 N 未定标，继续积累）；**duckduckgo 第一关未过**
+  （CAPTCHA rows=0，逐字 v3.15~v3.18/v3.22 症状，诚实 streak 归零，维持
+  禁用）；**startpage 第一关未过**（CAPTCHA rows=0）且第 4 发聚合确认生产
+  路径同病（unresponsive 记 **"Suspended: CAPTCHA"**——SearXNG 调度器内部
+  已自动暂停该引擎；同场聚合仅 wikipedia 1 行，google cse/wikidata timeout
+  与本判据无关）——两轮三观测（v3.22 聚合 parsing error → 本轮探活 CAPTCHA
+  + 聚合 Suspended）→ 按 v3.15 止损判据**禁用 startpage**（不健康引擎不拖慢
+  每次搜索；恢复走单引擎两关，其 v3.19 正是经此路径回滚、机制已验证）；
+  三引擎当前全禁用。全程零 settings 重启外的真实引擎干预，restart 后 /config
+  核对 startpage disabled 生效（非搜索调用不计预算）
+- **探活机制进库（自评立项，证据充分）**：v3.16~v3.23 六轮 gate-1 探活全是
+  ad-hoc 裸 HTTP——判据写在 settings.yml、调用在各班次习惯里，与 v3.19
+  acquire() 根因同构（机制在库里、路径在习惯里 = 等于没修）。固化：
+  `searxng_client.search()` 新增 `engines=` 参数（**追加在 on_error 之后**，
+  既有调用方位置传参不断链；None/空串不加参数 URL 干净）+ 新增
+  `probe(q, engine)` 第一关函数（返回 rows/unresponsive/ok，ok = rows>0 且
+  unresponsive 空=判据原文；传输故障 error 字段如实区分「无有效观测」与
+  「上游复发」；纯观测不写状态文件，streak 记账归 settings.yml 观察注释）；
+  CLI `--probe ENGINE`（退出码 0=有效观测、1=传输故障，doctor sogou 探活
+  同语义）。下轮起第一关只准走 probe()；probe() 实网首用留待下轮（本轮
+  预算已按历史同法消耗完，方法可比性优先）
+- **顺手修正（本批审计发现）**：test_v3150/test_v3160 三引擎全禁元组恢复
+  （v3.19 适配时移出 startpage，v3.23 起三引擎全禁状态与 v3.15 元组重新
+  一致）；test_v3220 精确版本锁降常青下限（v3.17→v3.19、v3.21→v3.22 先例），
+  精确锁移交 test_v3230
+- **队列卫生**：接手时 worker_queue.json 已为空（`{"instructions": ""}`，
+  mtime 2026-09-16 23:31:28 +0800，无 claim sidecar）——派工内容以班次命令
+  原文为准，收工时保持清空；stop_wake 部署副本与仓库真源 cmp 字节一致复核
+  通过（v3.22 部署未漂移）
+- 测试 374→393 通过（test_v3230：clean-worktree 脚本源钉 + CONTRIBUTING
+  检查项钉 + 盲区复现行为钉（本机绿/脚本红/无残留 worktree；首版红钉曾被 WSL bash 假执行虚假满足、被绿路径钉揪出——检查器自身失效教训入档）+ engines 参数
+  URL 钉 + probe 三态钉（过/复发/传输故障）+ settings v3.23 采样段与三引擎
+  全禁钉 + 版本锁 3.23.0 等 19 钉），连续两轮全绿 + clean-worktree 脚本实跑
+  收工检查通过
+
+[3.23.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.23.0
+
 ## [3.22.0] - 2026-09-16
 
 ### 🎯 stop_wake append-only 决策日志 + 收工必写 shift_log 纪律固化

@@ -229,10 +229,12 @@ class TestSearxngEngineTuning(unittest.TestCase):
     def test_chronic_unhealthy_engines_disabled(self):
         # 2026-09-16 doctor 标定：brave too many requests / duckduckgo
         # CAPTCHA / startpage parsing error（连轮不健康，见 v3.14 判词）。
-        # v3.19 适配（行为演进先例，v3.18 对 test_v3160 obsolete pins 的
-        # 处理同款）：startpage 经单引擎两关双过单独回滚（见 settings.yml
-        # v3.19 观察记录），仅 brave/duckduckgo 维持禁用
-        for engine in ("brave", "duckduckgo"):
+        # v3.19 适配：startpage 经单引擎两关双过单独回滚。v3.23 再适配
+        # （行为演进先例同款）：startpage 两轮三观测复发（09-16 聚合
+        # parsing error → 本轮探活 CAPTCHA + 聚合 Suspended:CAPTCHA，见
+        # settings.yml v3.23 段）→ 按 v3.15 止损判据回到禁用，本钉恢复
+        # v3.15 全量元组
+        for engine in ("brave", "duckduckgo", "startpage"):
             block = (f"- name: {engine}\n    disabled: true")
             self.assertIn(block, self.src, f"{engine} 缺禁用条目")
 
