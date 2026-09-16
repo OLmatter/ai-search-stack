@@ -337,35 +337,65 @@ def fetch_question(question_id: str) -> Dict:
     }
 
 
+_ANSWERS_MAX_PAGES = 50   # 翻页护栏（无子评论放大，50 页×20 条即硬上限）
+
+
 def fetch_answers(question_id: str, num: int = 10,
-                  sort_by: str = "default") -> List[Dict]:
+                  sort_by: str = "default",
+                  max_pages: int = _ANSWERS_MAX_PAGES) -> List[Dict]:
     """回答列表：[{author, excerpt, voteup, url}]。
 
     端点用 web 播放器同款 /feeds（实测 2026-09-09）：/answers 子端点会被
-    行为风控 40362 临时限制，/feeds 正常。include 分号分隔是官方格式。
+    行为风控 40362 临时限制，/feeds 正常。
+
+    v3.10 实测（2026-09-16，含 403 现场复现）：**include=data[*].content
+    已被知乎登录门拦截**——访客带 content include 请求 /feeds 一律
+    HTTP 403 code=40353（"请您登录后查看更多专业优质内容"），全新 cookie
+    亦然（自愈+重试无法救回，此前 v3.4 形态已死）。故本实现**不带
+    include**（实测 200）：author/excerpt/voteup/url 输出契约不变
+    （excerpt 本就是主来源，content 剥 HTML 仅作未来登录态的兜底保留）。
+
+    访客配额门（同一实测）：部分问题服务端只放行前几条回答就 is_end
+    （13 答问题实测只回 3 条）——这是上游登录墙，按 is_end 如实返回，
+    不报错、不伪装完整。翻页沿 paging.next（cursor 形态，服务端下发
+    完整 URL，剥壳原样直调——签名字节与请求字节必须一致，与评论翻页
+    同款纪律）；max_pages 护栏防失控。
+
+    Args:
+        num: 返回条数上限（输入侧硬上限 500；首跳 limit=min(num, 20)）。
+        sort_by: "default"（默认）/ "ts" 等，透传官方参数。
+        max_pages: 翻页护栏（防失控）。
     """
     qid = _check_question_id(question_id)
+    num = min(int(num), 500)   # 审查 v3.6 同款：聚合请求量的输入侧硬上限
     if num <= 0:
         return []
     params = urllib.parse.urlencode({
-        "include": "data[*].content;data[*].author",
         "offset": 0,
         "limit": min(num, 20),
         "sort_by": sort_by,
     })
-    data = _api_get(f"/api/v4/questions/{qid}/feeds?{params}")
+    path_query = f"/api/v4/questions/{qid}/feeds?{params}"
     out: List[Dict] = []
-    for ans in data.get("data", [])[:num]:
-        target = ans.get("target") or ans
-        aid = target.get("id", "")
-        out.append({
-            "author": (target.get("author") or {}).get("name", ""),
-            "excerpt": (target.get("excerpt") or
-                        _strip_html(target.get("content", "")))[:500],
-            "voteup": target.get("voteup_count", 0),
-            "url": f"https://www.zhihu.com/question/{qid}/answer/{aid}",
-            "engine": "zhihu-api",
-        })
+    for _ in range(max_pages):
+        data = _api_get(path_query)
+        for ans in data.get("data") or []:
+            target = ans.get("target") or ans
+            aid = target.get("id", "")
+            out.append({
+                "author": (target.get("author") or {}).get("name", ""),
+                "excerpt": (target.get("excerpt") or
+                            _strip_html(target.get("content", "")))[:500],
+                "voteup": target.get("voteup_count", 0),
+                "url": f"https://www.zhihu.com/question/{qid}/answer/{aid}",
+                "engine": "zhihu-api",
+            })
+            if len(out) >= num:
+                return out
+        paging = data.get("paging") or {}
+        if paging.get("is_end") or not paging.get("next"):
+            return out
+        path_query = _strip_api_base(paging["next"])
     return out
 
 
@@ -896,17 +926,6 @@ _ERROR_PAGE_MARKERS = ("完成验证后即可继续访问", "环境异常", "参
                        "该内容已被发布者删除", "此内容因违规无法查看",
                        "操作过于频繁", "当前环境异常", "内容审核中")
 _ERROR_PAGE_MAX_LEN = 500
-
-
-def _raise_if_error_page(text: str, url: str) -> None:
-    """短文本命中错误/验证页标记 → ReadError（绝不把验证页当正文返回）。"""
-    if len(text) >= _ERROR_PAGE_MAX_LEN:
-        return
-    for marker in _ERROR_PAGE_MARKERS:
-        if marker in text:
-            raise ReadError(
-                f"命中错误页标记 {marker!r}（正文仅 {len(text)} 字）: {url}——"
-                f"该站点对自动化环境返回了验证/错误页，如实报错")
 
 
 class _AnswerMiss(Exception):

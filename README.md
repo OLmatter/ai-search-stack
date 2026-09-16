@@ -2,16 +2,17 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.9.0](https://img.shields.io/badge/release-v3.9.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.9.0)
+[![Release: v3.10.0](https://img.shields.io/badge/release-v3.10.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.10.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 146 passing](https://img.shields.io/badge/tests-146%20passing-success.svg)](tests/)
+[![Tests: 160 passing](https://img.shields.io/badge/tests-160%20passing-success.svg)](tests/)
 
-**v3.9.0（2026-09-16）**：v3.0 全面审计大修之后连续十轮迭代——错误协议统一、
+**v3.10.0（2026-09-16）**：v3.0 全面审计大修之后连续十一轮迭代——错误协议统一、
 知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
 MCP stdio 接入层（14 工具）、文心 AI 搜索、cookie 寿命标定 + 定时续期、
-B站字幕链路（实测未登录恒空，如实声明）。本文档所有能力声明以实测为准
-（依据见 [CHANGELOG.md](CHANGELOG.md)）。
+B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表登录门修复 + cursor
+翻页（实测 403 现场复现，见 [CHANGELOG.md](CHANGELOG.md)）。本文档所有能力
+声明以实测为准（依据见 [CHANGELOG.md](CHANGELOG.md)）。
 
 ## ✨ 特性
 
@@ -120,6 +121,19 @@ CC 字幕的视频）：未登录访客请求字幕列表恒为空**——B 站�
 ——这是真实上限，不是故障；`cid` 补全（`fetch_video` 返回）照常可用，
 接入 SESSDATA 后该链路可直接出数据（mock 全测）。
 
+### 知乎回答列表：登录门修复 + 访客配额墙（v3.10，如实声明）
+
+实测（2026-09-16，403 现场复现 + 同 cookie 对照实验）：知乎已把
+**`include=data[*].content` 形态的 /feeds 回答列表请求整单拦截**——访客
+一律 HTTP 403 code=40353（"请您登录后查看更多专业优质内容"），**全新
+cookie 亦然**（自愈+重试无法救回，v3.4 起的旧形态已死）。v3.10 改用
+**无 include 形态**（实测 200）：`author/excerpt/voteup/url` 输出契约
+不变（excerpt 本就是主来源）。同 cookie 对照实测还发现**访客配额墙**：
+部分问题服务端只放行前几条回答即 `is_end`（13 答问题实测仅回 3 条）——
+按 is_end 如实返回，不报错、不伪装完整；要更多/全文走 `read_page`
+（浏览器线）。新增服务端 cursor 翻页（num 上限 20→500，paging.next
+字节一致直调，max_pages=50 护栏）。
+
 ## 路由速查（详细见 SOP.md）
 
 | 任务类型 | 选 | 备选 |
@@ -148,7 +162,7 @@ anaconda python 的绝对路径。
 | `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/微信/百度16站） | bilibili 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
 | `read_page` | `zhihu_content.read` | 通用阅读器：知乎 API 线 + B站/微信特化 + 外域 HTTP/无头浏览器兜底 | 可能起无头浏览器 10-15s |
 | `zhihu_question` | `zhihu_content.fetch_question` | 知乎问题详情（官方 API） | 秒级 |
-| `zhihu_answers` | `zhihu_content.fetch_answers` | 知乎回答列表（官方 API） | 秒级 |
+| `zhihu_answers` | `zhihu_content.fetch_answers` | 知乎回答列表（官方 API；cursor 翻页，num≤500；访客配额墙按 is_end 如实截断，见下） | 秒级~数秒（翻页按需） |
 | `zhihu_article` | `zhihu_content.fetch_article` | 知乎专栏文章（官方 API） | 秒级 |
 | `zhihu_comments` | `zhihu_content.fetch_comments` | 知乎评论（官方 comment_v5 API，含子评论展开、自动翻页） | 秒级~十秒级（评论多时翻页） |
 | `bilibili_video` | `bilibili_engine.fetch_video` | B站视频结构化数据（官方 view API，含 cid） | 秒级 |

@@ -101,7 +101,6 @@ def check_hook_liveness():
                 last_line = line
     entry = json.loads(last_line)
     ts = entry.get("ts") or entry.get("time") or ""
-    from datetime import datetime
     age_h = (time.time() - datetime.fromisoformat(ts).timestamp()) / 3600
     if age_h > 48:
         raise RuntimeError(

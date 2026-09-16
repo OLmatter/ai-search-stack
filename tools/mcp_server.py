@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.9.0"
+__version__ = "3.10.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -217,9 +217,15 @@ def zhihu_question(question_id: str) -> str:
     "知乎回答列表（官方 API，结构化）：[{author, excerpt, voteup, url}]。\n"
     "何时用：已知知乎问题 ID/链接，要高赞回答摘要与作者。只要题干用 "
     "zhihu_question；要单个回答全文用 read_page。\n"
-    "question_id 接受纯数字 ID 或完整问题 URL；num 上限 20（官方单页上限）。\n"
-    "耗时：秒级。错误按 zhihu_* slug 如实上报（如 zhihu_behavior_limited="
-    "行为风控临时限制，稍后再试）。"))
+    "question_id 接受纯数字 ID 或完整问题 URL；num 上限 500（服务端 cursor "
+    "翻页，is_end 即停）。\n"
+    "实测上限（如实报告，v3.10）：v3.4 的 include=content 形态已被知乎登录"
+    "门拦截（403 code=40353，全新 cookie 亦然），本工具改用无 include 形态"
+    "——excerpt 摘要照常可用；部分问题服务端只放行前几条回答即 is_end"
+    "（访客配额墙，13 答问题实测仅回 3 条），按 is_end 如实返回不伪装完整；"
+    "要更多/全文走 read_page（浏览器线）。\n"
+    "耗时：秒级~数秒（翻页按需）。错误按 zhihu_* slug 如实上报（如 "
+    "zhihu_behavior_limited=行为风控临时限制，稍后再试）。"))
 def zhihu_answers(question_id: str,
                   num: int = 10,
                   sort_by: str = "default") -> str:

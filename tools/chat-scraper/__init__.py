@@ -1,4 +1,4 @@
-"""chat-scraper v3.9.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.10.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -16,8 +16,14 @@ v3.9.0：bilibili fetch_subtitles（字幕读取链路；实测未登录访客�
 恒为空——B站仅向登录态下发字幕，如实报告为空列表非故障）+ fetch_video 补
 cid；doctor --cookie-probe 配 --renew-if-older-than H（实测访客 cookie
 寿命 <48h，cron 低峰窗口顺带续期，白天使用零延迟）。
+
+v3.10.0：fetch_answers 修复+增强——实测（2026-09-16）知乎登录门已拦截
+include=content 形态（403 code=40353，全新 cookie 亦然，旧 v3.4 形态已死），
+改用无 include 形态（excerpt 输出契约不变）+ 新增服务端 cursor 翻页
+（num 上限 20→500，沿 paging.next 字节一致直调，max_pages 护栏；访客配额
+墙按 is_end 如实截断不伪装完整）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.9.0"
+__version__ = "3.10.0"
 __all__ = ["search", "list_platforms", "__version__"]

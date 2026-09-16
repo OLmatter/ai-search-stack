@@ -1,5 +1,50 @@
 # Changelog
 
+## [3.10.0] - 2026-09-16
+
+### 🎯 知乎回答列表登录门修复（实测 403 现场复现）+ cursor 翻页；doctor 钩子活性检查补测；去重清理
+
+### Fixed
+- `tools/chat-scraper/zhihu_content.py` `fetch_answers`：**v3.4 形态已死，
+  实测修复**。2026-09-16 实测（403 现场复现）：知乎登录门已把
+  `include=data[*].content;data[*].author` 形态的 /feeds 请求**整单拦截**
+  ——访客一律 HTTP 403 code=40353（"请您登录后查看更多专业优质内容"），
+  **全新 cookie 亦然**（自愈引导刷新 + 重试无法救回，线上 zhihu_answers
+  实际已不可用）。同 cookie 对照实验：去掉 include 即 200，
+  `author/excerpt/voteup/url` 字段齐全（excerpt 288 字实测在列）——输出
+  契约不变（excerpt 本就是主来源，content 剥 HTML 兜底仅为未来登录态保留）。
+  顺修：删除 `_raise_if_error_page` 重复定义（第二处遮蔽第一处，双处
+  漂移隐患）；`tools/doctor.py` `check_hook_liveness` 函数内冗余
+  `from datetime import datetime` 清理（顶部已 import）
+
+### Added
+- `fetch_answers` **服务端 cursor 翻页**：num 上限 20 → **500**（输入侧
+  硬上限），首跳 `limit=min(num, 20)`，沿响应 `paging.next`（cursor 形态，
+  实测 `?cursor=...&limit=` 尾随空 limit）剥壳**字节一致直调**（与评论
+  翻页同款纪律，`_strip_api_base` 复用），`max_pages=50` 护栏防失控。
+  设计差异（审计确认）：answers 的 `max_pages` 耗尽**安静返回已收集
+  数据**（50 页是护栏不是异常信号）；评论线耗尽即抛错（语义是"疑似
+  分页异常"）——两者各自成立，非不一致。
+  **访客配额墙如实降级**：同一对照实测发现部分问题服务端只放行前几条
+  回答即 `is_end`（13 答问题实测仅回 3 条，响应自带
+  `force_login_when_click_read_more`）——按 is_end 如实返回，不报错、
+  不伪装完整；要更多/全文走 read_page 浏览器线
+- `tools/mcp_server.py` `zhihu_answers` 工具描述同步（num≤500、翻页、
+  登录门/配额墙实测上限如实声明）；README 徽章/头部/工具矩阵/
+  已知限制节同步
+- `tests/test_v3100.py`（14 个测试，全离线零真实请求）：fetch_answers
+  直测（首跳无 include 断言 / 单跳投影 / cursor 翻页字节一致 /
+  num 截断不再发第二跳 / max_pages 护栏 / excerpt→content 兜底 /
+  非法问题 id / num≤0 零请求）+ doctor `check_hook_liveness` 四分支
+  （日志缺失 / 新鲜读数 / >48h 断线报警 / 坏时间戳）
+
+### Changed
+- 版本号 3.9.0 → 3.10.0（`tools/chat-scraper/__init__.py`、
+  `tools/mcp_server.py`）；README 徽章/Tests 数同步
+
+### 测试
+- 全量 160 passed（v3.9.0 基线 146 + 本轮 14）
+
 ## [3.9.0] - 2026-09-16
 
 ### 🎯 cookie 定时续期策略（基于 <48h 实测标定）+ bilibili 字幕读取链路（实测未登录恒空，如实降级）
