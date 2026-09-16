@@ -1,4 +1,4 @@
-"""chat-scraper v3.35.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.36.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -175,8 +175,15 @@ hotlist_watch_task register --toast（opt-in；同批实机抓虫：/TR 258
 字符未超 261 仍被 schtasks 静默截断成 254 报 SUCCESS，悬崖实测
 (250, 258]——对策：--log 改相对值锚定脚本目录缩 /TR 至 173 + 注册后
 回读验证，存储不一致响亮 exit 1）。
+
+v3.36.0：解码链四方副本收口（tools/_subproc_decode.py：utf-8->gbk->
+replace 链自 toast.py/digest_task.py/hotlist_watch_task.py/
+watchdog_task.py 四份逐字节等价副本提炼为一处，四方改 import 别名保
+旧引用名零漂移）+ hotlist_watch_task v3.35 回读验证对策移植
+digest_task.py（/Query /XML 存储与预期不一致响亮 exit 1，无法回读只
+告警——/TR 261 检查是假安全感的同病种根治）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.35.0"
+__version__ = "3.36.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

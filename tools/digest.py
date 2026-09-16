@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""每日晨报聚合（v3.33；v3.34/v3.35 增量见下）——四段组合一次早晨汇报，
-stdout markdown。
+"""每日晨报聚合（v3.33；v3.34/v3.35/v3.36 增量见下）——四段组合一次早晨
+汇报，stdout markdown。
+
+v3.36 增量（解码链收口）: _decode_out 链身共享 tools/_subproc_decode.py
+（toast.py 同步改 import；re-export 别名保旧引用名与函数对象身份一致，
+行为零变化——四方副本收口史见该模块 docstring）。
 
 v3.35 增量（toast 通道提取为公用模块）: --toast 的弹窗通道
 （send_toast 及其常量/转义/解码链）提取到 tools/toast.py 公用模块——
@@ -98,7 +102,7 @@ from toast import (TOAST_BOX_TYPE, TOAST_SUBPROC_TIMEOUT, TOAST_TIMEOUT_S,
                    send_toast)
 from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
-__version__ = "3.35.0"
+__version__ = "3.36.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent

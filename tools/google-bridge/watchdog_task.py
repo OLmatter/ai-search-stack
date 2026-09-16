@@ -29,6 +29,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 子进程输出解码公用模块（tools/_subproc_decode.py，v3.36 四方副本收口；
+# 父目录注入 sys.path 取用——hotlist_watch_task v3.36 同款。GBK 解码
+# 对 schtasks 输出是承重件，模块缺失响亮 ImportError 不静默降级）
+_PARENT = str(Path(__file__).resolve().parent.parent)
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
+from _subproc_decode import decode_out as _decode  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 WATCHDOG_PY = HERE / "watchdog.py"
 
@@ -65,30 +73,12 @@ def _tr_value(python: str, interval_required: bool = False) -> str:
     return tr
 
 
-def _decode(raw):
-    """schtasks 输出解码：utf-8 严格 → gbk 严格 → replace 兜底。
-
-    实测（2026-09-17）：中文 Windows 的 schtasks 输出是 GBK 字节；Anaconda
-    python 在 Git Bash 下 locale 首选编码报 utf-8，直接按它解会崩（v3.21
-    doctor GBK 加固同款教训）。unregister 的幂等匹配（「不存在」/does not
-    exist）依赖解码正确，故走显式回退链而非 locale 猜测。"""
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        return raw
-    for codec in ("utf-8", "gbk"):
-        try:
-            return raw.decode(codec)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", "replace")
-
-
 def _run_schtasks(argv, runner=None):
     """跑 schtasks 并返回 stdout/stderr 已解码为 str 的结果（runner 可注入）。
 
-    字节层收包 + 显式回退链解码（见 _decode）——不用 text=True 的
-    locale 猜测（实测崩读线程）。
+    字节层收包 + 显式回退链解码（见 _decode，共享 tools/_subproc_decode.py）
+    ——不用 text=True 的 locale 猜测（实测崩读线程）。unregister 的幂等
+    匹配（「不存在」/does not exist）依赖解码正确。
     """
     if runner is None:
         proc = subprocess.run(argv, capture_output=True)

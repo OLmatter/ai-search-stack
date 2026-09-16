@@ -503,37 +503,44 @@ class TestWatchRegistrarToast(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 5. 版本锁 3.35.0 + 文档（自 test_v3340 接管精确锁）
+# 5. 版本锁（自 test_v3340 接管；v3.36 起精确锁移交 test_v3360，此处降
+#    常青下限——v3.27→v3.28→v3.29→v3.30→v3.31→v3.33→v3.34→v3.35 先例）
 # ---------------------------------------------------------------------------
 class TestVersionSyncV335(unittest.TestCase):
-    def test_versions_3350(self):
-        self.assertEqual(dg.__version__, "3.35.0")
+    def test_versions_evergreen(self):
+        # v3.36 起精确锁移交 test_v3360，此处降常青下限（交接先例）：
+        # 双 __version__ 同步本身不许破，只放开具体版本号
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.35.0")
-        self.assertIn("chat-scraper v3.35.0", init_src)
+        self.assertIsNotNone(m)
+        ver = m.group(1)
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 35, 0])
+        self.assertIn(f"chat-scraper v{ver}", init_src)
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.35.0")
+            self.assertEqual(mcp_server.__version__, ver)
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.35.0"', src)
+            self.assertIn(f'__version__ = "{ver}"', src)
 
-    def test_changelog_and_readme_3350(self):
+    def test_changelog_and_readme_evergreen(self):
+        # v3.36 起精确徽章/状态行锁移交 test_v3360，此处降常青：
+        # 3.35 批次的 CHANGELOG 事实行（toast.py/回读验证/--toast）永久在场
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertIn("## [3.35.0] - 2026-09-17", changelog)
         self.assertIn("toast.py", changelog)
         self.assertIn("--toast", changelog)
+        self.assertIn("静默截断", changelog)
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.35.0", readme)
-        self.assertIn("v3.35.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 638（v3.34 基线）+ 本批钉数
+        # 测试徽章数 v3.36 起移交 test_v3360 精确锁，此处降常青单调下限：
+        # 638（v3.34 基线）+ 本批 38 钉 = 676（v3.35 基线），只许增不许缩
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 638 + self._batch_pins())
+        self.assertGreaterEqual(int(m.group(1)),
+                                638 + self._batch_pins())
 
     @staticmethod
     def _batch_pins():

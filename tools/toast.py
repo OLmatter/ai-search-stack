@@ -32,7 +32,9 @@
 实现纪律：send_toast 用 -EncodedCommand（UTF-16LE base64）内联
 PowerShell——标题/正文任意中文引号零转义事故；子进程输出字节捕获 +
 utf-8->gbk->replace 解码链（v3.28/v3.31/v3.34 三轮实机抓虫同款病灶：
-中文 Windows 子进程输出含 GBK 字节，text=True 直接崩读线程）。
+中文 Windows 子进程输出含 GBK 字节，text=True 直接崩读线程；v3.36 起
+链身共享 tools/_subproc_decode.py，四方副本收口，_decode_out 为别名
+re-export 保旧引用名与身份一致）。
 """
 import base64
 import os
@@ -40,6 +42,8 @@ import re
 import subprocess
 import sys
 from typing import Callable, Dict, List, Optional
+
+from _subproc_decode import decode_out as _decode_out  # noqa: E402
 
 __all__ = ["send_toast", "_ps_quote", "_decode_out", "_default_toast_runner",
            "TOAST_TIMEOUT_S", "TOAST_BOX_TYPE", "TOAST_SUBPROC_TIMEOUT",
@@ -56,22 +60,6 @@ def _ps_quote(text: str) -> str:
     """PowerShell 单引号字面量转义（' → ''，换行折叠空格，截断上限）。"""
     t = (text or "").replace("\r", " ").replace("\n", " ")
     return t[:TOAST_BODY_MAX].replace("'", "''")
-
-
-def _decode_out(raw) -> str:
-    """子进程输出解码：utf-8 严格 -> gbk 严格 -> replace 兜底（v3.28/v3.31
-    实机抓虫同款链；v3.34 自审实测再证：中文 Windows powershell 输出含
-    GBK 字节，text=True 的 utf-8 读管线线程直接 UnicodeDecodeError）。"""
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        return raw
-    for codec in ("utf-8", "gbk"):
-        try:
-            return raw.decode(codec)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", "replace")
 
 
 def _default_toast_runner(argv: List[str]):

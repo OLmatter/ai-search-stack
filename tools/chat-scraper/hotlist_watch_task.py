@@ -29,7 +29,8 @@
       sys.executable 并 stderr 告警
     - 脚本与 shift_log 路径自治（__file__ 定位），任务无需设工作目录
     - schtasks 输出 utf-8->gbk 显式回退链解码（中文 Windows 实测 GBK
-      字节，locale 猜测崩读线程——v3.28 实机抓虫同款）
+      字节，locale 猜测崩读线程——v3.28 实机抓虫同款；v3.36 起共享
+      tools/_subproc_decode.py，四方副本收口）
     - 非 Windows 诚实报错退出（Linux 用 cron，见 README）
 
 用法:
@@ -42,6 +43,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+# 子进程输出解码公用模块（tools/_subproc_decode.py，v3.36 四方副本收口；
+# 父目录注入 sys.path 取用——hotlist_watch.py 取 toast.py 同款先例。
+# GBK 解码对 schtasks 输出是承重件，模块缺失响亮 ImportError 不静默降级）
+_PARENT = str(Path(__file__).resolve().parent.parent)
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
+from _subproc_decode import decode_out as _decode  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 WATCH_PY = HERE / "hotlist_watch.py"
@@ -87,24 +96,6 @@ def _tr_value(python: str, toast: bool = False) -> str:
             f"/TR too long ({len(tr)} > {TR_MAX}): {tr}\n"
             "把仓库挪到更短路径，或手工注册（schtasks /Create ...）")
     return tr
-
-
-def _decode(raw):
-    """schtasks 输出解码：utf-8 严格 → gbk 严格 → replace 兜底。
-
-    实测（2026-09-17，watchdog_task 同款）：中文 Windows 的 schtasks
-    输出是 GBK 字节；Anaconda python 在 Git Bash 下 locale 首选编码报
-    utf-8，直接按它解会崩。"""
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        return raw
-    for codec in ("utf-8", "gbk"):
-        try:
-            return raw.decode(codec)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", "replace")
 
 
 def _run_schtasks(argv, runner=None):

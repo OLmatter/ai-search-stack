@@ -1,5 +1,42 @@
 # Changelog
 
+## [3.36.0] - 2026-09-17
+
+### 🎯 digest_task 回读验证移植 + 解码链四方副本收口
+
+- **digest_task.py 注册后回读验证（hotlist_watch_task v3.35 实机抓虫
+  对策移植——v3.35 CHANGELOG 明记的同病种潜伏下一环）**：`/Create`
+  成功后 `/Query /XML` 回读存储的 Command+Arguments 与预期做空白不
+  敏感比对——不一致（schtasks 静默截断必现形）响亮 ERROR exit 1，
+  宁报错不留一个不按预期运行的假任务；无法回读（任务缺失/XML 解析
+  不出）只 warn 不翻码——「无法验证」≠「验证失败」。/TR 保持 v3.34
+  绝对 `--log` 形态零漂移（本机 238 字符余量 23 暂离悬崖
+  (250, 258]，回读是兜底不是装饰；digest.py 相对路径锚定语义与
+  hotlist_watch.py 不同，不跟改相对值）。
+- **tools/_subproc_decode.py（新公用模块，解码链四方副本收口）**：
+  utf-8 严格 -> gbk 严格 -> replace 兜底链此前在 toast.py
+  （`_decode_out`）/ digest_task.py（`_decode`）/
+  chat-scraper/hotlist_watch_task.py（`_decode`）/
+  google-bridge/watchdog_task.py（`_decode`）四份**逐字节等价**副本
+  ——副本漂移是潜伏病（v3.28/v3.31/v3.34 同病灶三轮复发：改一处漏
+  三处），统一收口一处，四方改 import；旧引用名以别名保零漂移
+  （`toast._decode_out` / 各注册器 `task._decode` 仍按原名调用且是
+  同一函数对象，test_v3360 以 `is` 身份钉四方同源）+「副本不再生」
+  源码钉（链身 for-loop 只许存在于共享模块一处）。子目录注册器取用
+  为父目录注入 sys.path（hotlist_watch.py 取 toast.py 同款先例）；
+  解码对 GBK schtasks 输出是承重件，模块缺失响亮 ImportError 不静
+  默降级。watchdog_task `_run_schtasks` docstring 补回承重知识
+  （unregister 幂等匹配依赖解码正确，随本地 `_decode` docstring 一
+  并收口不丢）。
+- **测试**：tests/test_v3360.py 11 离线钉（共享模块 3：链行为
+  None/str/utf-8/gbk/replace、四方 `is` 身份、副本不再生源码钉；
+  digest_task 回读 5：XML 拆解与 None 契约/不一致 exit 1/一致通过/
+  无法回读只 warn//TR v3.34 形态零漂移；版本/文档 3）；test_v3350
+  版本锁降常青（精确锁移交 test_v3360，v3.27→…→v3.35 交接先例；
+  徽章单调下限 638+38=676 保留）；676→687 两+连续绿；引擎/MCP 零
+  改动（digest.py/mcp_server.py 仅 `__version__` 与 docstring 增量
+  行，行为零变化）。
+
 ## [3.35.0] - 2026-09-17
 
 ### 🎯 toast 通道提取公用模块 + 监控环即时弹窗 + schtasks 静默截断实机抓虫

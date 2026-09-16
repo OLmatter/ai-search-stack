@@ -2,11 +2,23 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.35.0](https://img.shields.io/badge/release-v3.35.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.35.0)
+[![Release: v3.36.0](https://img.shields.io/badge/release-v3.36.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.36.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 676 passing](https://img.shields.io/badge/tests-676%20passing-success.svg)](tests/)
+[![Tests: 687 passing](https://img.shields.io/badge/tests-687%20passing-success.svg)](tests/)
 
+**v3.36.0（2026-09-17）**：v3.0 全面审计大修之后连续三十七轮迭代——
+**digest_task 回读验证移植 + 解码链四方副本收口**：digest_task.py
+注册后 /Query /XML 回读验证（hotlist_watch_task v3.35 静默截断抓虫
+对策移植——存储 /TR 与预期不一致响亮 exit 1，无法回读只告警不判失
+败；/TR 保持 v3.34 绝对 --log 形态零漂移，回读是兜底不是装饰）+
+tools/_subproc_decode.py（utf-8 严格→gbk 严格→replace 解码链自
+toast/digest_task/hotlist_watch_task/watchdog_task 四份逐字节等价
+副本收口一处——副本漂移是潜伏病，v3.28/v3.31/v3.34 同病灶三轮复
+发；旧引用名别名 re-export 零漂移，四方 is 身份钉 + 副本不再生源
+码钉），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.35.0（2026-09-17）**：v3.0 全面审计大修之后连续三十六轮迭代——
 **toast 通道提取公用模块 + 监控环即时弹窗 + schtasks 静默截断实机抓
 虫**：tools/toast.py（send_toast 及常量/转义/解码链自 digest.py 逐字
