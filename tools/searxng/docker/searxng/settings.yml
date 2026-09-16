@@ -78,12 +78,22 @@ engines:
   # unresponsive 仅 google cse（与本判据无关）、无 ddg——回滚生效维持启用。
   # 与 brave 同场对照的价值：brave 聚合即复发、ddg 干净——单发可信度
   # 因引擎而异，判据必须逐引擎走完两关。
-  - name: duckduckgo
-    disabled: false
+  # [v3.22 审计更正，判词作废] 上面 v3.20 的 ddg"两关双过、回滚生效"是
+  # 假阳性：当轮 settings.yml 存在重复 ddg 条目（false+true 并存），
+  # SearXNG loader 对同名条目依次 update_dict 进同一个默认引擎字典——
+  # 后者覆盖前者，实跑时 ddg 根本未被调度（运行实例 /config 探得
+  # enabled=False 实证；"unresponsive 无 ddg"是空洞真——禁用的引擎
+  # 永远不会进 unresponsive）。测试钉正则取首匹配，对重复条目全盲，
+  # 两轮全绿未拦截。v3.22 修复重复条目后诚实重走第二关（restart +
+  # 聚合实搜 1 发）：ddg CAPTCHA 复发——与 v3.15~v3.18 上游封锁史
+  # 一致，按单引擎判据立即再禁用。ddg 与 brave 同病：单发过不可信，
+  # 下轮复评先连续多轮单发过再考虑烧第二关预算。
   - name: duckduckgo
     disabled: true
   # startpage：v3.19 单引擎粒度两关双过（第一关单发 10 行 unresponsive
   # 空；第二关仅回滚 + restart 后聚合 10 行全 startpage、unresponsive
-  # 无 startpage），单独放回生效
+  # 无 startpage），单独放回生效。v3.22 观察：2026-09-16 晚聚合实搜
+  # 出现一次 parsing error（同场 ddg CAPTCHA/wikidata timeout），单次
+  # 复现不裁决，维持 enabled，下轮复评时优先复跑观察。
   - name: startpage
     disabled: false

@@ -245,13 +245,15 @@ class TestSearxngSingleEngineCriterion(unittest.TestCase):
             self.assertIn(token, self.src)
 
     def test_engine_states_match_observation(self):
-        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.20 段）：
+        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.22 更正段）：
         # brave 第一关过但第二关聚合复发 → disabled（其"单发过"四轮证明
-        # 不可信）；duckduckgo 两关双过 → 回滚启用；startpage v3.19 双过
-        # → 维持 enabled。任何状态变更必须先改 settings.yml 观察记录再改
-        # 这里（v3.15/v3.16 的"三引擎全禁"旧 pin 已按 v3.19/v3.20 实测
-        # 适配——行为先例：v3.18 对 test_v3160 obsolete pins 的处理）
-        for engine, want in (("brave", True), ("duckduckgo", False),
+        # 不可信）；duckduckgo v3.20"双过回滚"判词被 v3.22 审计更正为
+        # 假阳性（重复条目致实跑未调度），诚实第二关重跑 CAPTCHA 复发
+        # → disabled；startpage v3.19 双过 → 维持 enabled。任何状态变更
+        # 必须先改 settings.yml 观察记录再改这里（v3.15/v3.16 的"三引擎
+        # 全禁"旧 pin 已按 v3.19/v3.20 实测适配——行为先例：v3.18 对
+        # test_v3160 obsolete pins 的处理）
+        for engine, want in (("brave", True), ("duckduckgo", True),
                              ("startpage", False)):
             block = re.search(
                 rf"- name: {engine}\n\s+disabled: (true|false)", self.src)
@@ -260,6 +262,22 @@ class TestSearxngSingleEngineCriterion(unittest.TestCase):
             self.assertEqual(got, want,
                              f"{engine}: settings disabled={block.group(1)}"
                              f" != 观察记录 {want}")
+
+    def test_engines_no_duplicate_entries(self):
+        """v3.22 防重复盲区钉：engines 同名条目必须恰好一条。
+
+        v3.20 实录 disease：ddg 出现 false+true 两条目，本文件状态钉的
+        re.search 只看首条（false 过钉），而 SearXNG loader 对同名条目
+        依次 update_dict 进同一个默认字典——后者覆盖前者，实跑 disabled，
+        "第二关双过回滚生效"判词因此假阳性且两轮全绿未拦截。任何引擎
+        名出现第二次即 FAIL（全列表去重，不限三引擎）。
+        """
+        names = re.findall(r"^\s*- name: (\S+)", self.src, re.M)
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        self.assertEqual(
+            dupes, [],
+            f"settings.yml engines 存在重复条目: {dupes}"
+            f"（loader 后者覆盖前者，状态钉首匹配全盲——v3.20 ddg 假阳性教训）")
 
 
 # ---- 4. 版本锁 3.19.0 ---------------------------------------------------------------
