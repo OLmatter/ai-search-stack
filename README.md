@@ -2,14 +2,15 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.11.0](https://img.shields.io/badge/release-v3.11.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.11.0)
+[![Release: v3.12.0](https://img.shields.io/badge/release-v3.12.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.12.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 177 passing](https://img.shields.io/badge/tests-177%20passing-success.svg)](tests/)
+[![Tests: 201 passing](https://img.shields.io/badge/tests-201%20passing-success.svg)](tests/)
 
-**v3.11.0（2026-09-16）**：v3.0 全面审计大修之后连续十二轮迭代——B站搜索翻页、
-doctor GitHub 检查修复、截断可见化（详见 [CHANGELOG.md](CHANGELOG.md)）。此前
-十一轮：错误协议统一、
+**v3.12.0（2026-09-16）**：v3.0 全面审计大修之后连续十三轮迭代——百度搜索
+翻页、截断可见化扫尾（详见 [CHANGELOG.md](CHANGELOG.md)）。此前
+十二轮：B站搜索翻页、doctor GitHub 检查修复、zhihu_content 截断可见化、
+错误协议统一、
 知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
 MCP stdio 接入层（14 工具）、文心 AI 搜索、cookie 寿命标定 + 定时续期、
 B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表登录门修复 + cursor
@@ -135,6 +136,24 @@ cookie 亦然**（自愈+重试无法救回，v3.4 起的旧形态已死）。v3
 按 is_end 如实返回，不报错、不伪装完整；要更多/全文走 `read_page`
 （浏览器线）。新增服务端 cursor 翻页（num 上限 20→500，paging.next
 字节一致直调，max_pages=50 护栏）。
+
+### 百度搜索翻页 + 截断可见化扫尾（v3.12，如实声明）
+
+- **百度 num>20 自动翻页**：此前单页 20 条到顶、多要的静默蒸发（与 v3.11
+  修掉的 bilibili 同一架构病）。现按 `pn` 偏移翻页：护栏 `MAX_PAGES=3` 页
+  （有效上限约 60 条；百度风控实测敏感且引擎级节流默认 20s/请求，护栏比
+  bilibili 的 5 页保守），服务端空页如实停；页间节流走引擎内置 `_wait_turn`。
+  **半途被风控（已收集 >0 条）时如实抛 `baidu_soft_blocked`**（message 含
+  已收集页数/条数，门面按既有协议降级搜狗），不伪装部分结果为完整，也绝不
+  再烧移动桶；**0 收获时才切移动桶兜底**（v3.2 语义原样，移动桶保持单页）。
+  翻页耗时按页数线性放大（3 页 ≈ 40s+）。**跨页去重**：页间重叠条目不再
+  重复进返回集；整页全是重复 = 排序已穷尽信号，如实停（bilibili v3.11
+  翻页同构病本轮一并扫出修复）。
+- **截断可见化扫尾**：v3.11 只扫了 zhihu_content 四处，本轮把剩余三个输出
+  截断口扫完——wenxin `answer`（截 4000 标 `truncated=true`）与
+  `citations[].abstract`（截 500 每条标 `truncated`）、bilibili
+  `fetch_video` 的 `desc`（截 2000 标 `truncated`）。全部增量字段，向后
+  兼容。搜狗（降级环，风控阈值未测）与知乎链保持单页如实截断，不做翻页。
 
 ## 路由速查（详细见 SOP.md）
 

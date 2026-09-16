@@ -61,6 +61,7 @@ TIMEOUT = 20                      # 单请求超时（秒）
 ORDER = "totalrank"               # 综合排序（官方默认）
 RESULTS_PER_PAGE = 30             # 官方单页上限约 30 条
 MAX_PAGES = 5                     # 搜索翻页护栏（v3.11）：num 有效上限约 150
+DESC_LIMIT = 2000                 # fetch_video desc 截断上限（v3.12 起带 truncated 标记）
 WBI_KEY_TTL = 3600.0              # wbi key 缓存时长（官方按天轮换，1h 足够新鲜）
 RETRYABLE_CODES = {-403, -412}    # 收到即认为可能要求 wbi 签名，签名重试一次
 # wbi 签名用的固定重排表（来源 bilibili-API-collect，社区逆向的混淆表）
@@ -258,6 +259,7 @@ def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
             cutoff = time.time() - window
 
     out: List[Dict] = []
+    seen_bvids: set = set()
     if num <= 0:
         return out
     fetched_pages = 0
@@ -279,10 +281,14 @@ def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
                 f"code={payload.get('code')} message={payload.get('message')}")
 
         items = (payload.get("data") or {}).get("result") or []
+        page_new = 0
         for item in items:
             bvid = item.get("bvid") or ""
             if not bvid:
                 continue  # 无 bvid 的是广告推广卡（pubdate=1970 的"咨询领福利"），丢弃
+            if bvid in seen_bvids:
+                continue  # 跨页去重（审查 A1）：翻页页间结果重叠是常态
+            seen_bvids.add(bvid)
             pubdate = int(item.get("pubdate") or 0)
             if cutoff and pubdate < cutoff:
                 continue
@@ -299,12 +305,13 @@ def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
                 "role": role,
                 "since": since or "all",
             })
+            page_new += 1
             if len(out) >= num:
                 break
         fetched_pages += 1
         p += 1
-        if not items:
-            break   # 服务端空页 = 真空到底，如实停，不发多余请求
+        if not items or not page_new:
+            break   # 服务端空页 或 整页跨页重复 = 真空到底，如实停，不发多余请求
     return out
 
 
@@ -349,7 +356,8 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
     video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。成功返回 Dict；
     on_error="report" 时错误返回 List（统一错误协议）——两种返回形态；
     风控/不存在按统一错误协议处理。cid 为 P1 的 cid（多 P 视频各分 P 的
-    cid 见 view 原始响应 data.pages，本工具不展开）。
+    cid 见 view 原始响应 data.pages，本工具不展开）。desc 截 2000 字符时
+    输出带 truncated=true（v3.12 截断可见化）。
     """
     bvid = _extract_bvid(video)
     if not bvid:
@@ -372,9 +380,13 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
                 f"code={data.get('code')} message={data.get('message')}")
         v = data.get("data") or {}
         from datetime import datetime as _dt
+        desc, desc_truncated = (v.get("desc") or "").strip(), False
+        if len(desc) > DESC_LIMIT:
+            desc, desc_truncated = desc[:DESC_LIMIT], True
         return {
             "title": _clean_title(v.get("title", "")),
-            "desc": (v.get("desc") or "").strip()[:2000],
+            "desc": desc,
+            "truncated": desc_truncated,
             "owner": (v.get("owner") or {}).get("name", ""),
             "cid": v.get("cid"),
             "view": v.get("stat", {}).get("view", 0),

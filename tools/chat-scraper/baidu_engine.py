@@ -59,6 +59,9 @@ ENV_PROXY = "CHAT_SCRAPER_BAIDU_PROXY"    # 默认空=直连；显式设置才�
 DEFAULT_MIN_INTERVAL = 20.0
 TIMEOUT = 20                      # 单请求超时（秒）
 RESULTS_PER_PAGE = 20             # rn 参数；未登录状态下 20 是稳定单页上限
+MAX_PAGES = 3                     # 搜索翻页护栏（v3.12）：num 有效上限约 60。
+# 百度软风控实测敏感（占位页/验证码）且引擎级节流默认 20s——护栏取 3 页，
+# 比 bilibili（3s 间隔、护栏 5 页）保守；页数越多风控压力与耗时线性放大。
 MAX_SOFTBLOCK_RETRIES = 2         # 占位页最大重试次数（总尝试 = 1 + 2）
 BACKOFF_MULTIPLIER = 2.0          # 第 n 次重试前等待 interval * MULTIPLIER ** n
 PLACEHOLDER_MAX_LEN = 5000        # 占位页判定: len(html) < 此值且含 "timeout"
@@ -232,19 +235,25 @@ def search(
     role: str = "primary",
     site: Optional[str] = None,
     platform: Optional[str] = None,
+    page: int = 1,
     on_error: str = "report",
 ) -> List[Dict]:
     """百度搜索（可带 site: 站内过滤）。
 
     Args:
         q: 搜索关键词
-        num: 返回条数上限（单页最多 RESULTS_PER_PAGE 条，超出只返回单页内容）
+        num: 返回条数上限。单页 RESULTS_PER_PAGE=20 条；num>20 自动翻页
+            （pn 偏移，护栏 MAX_PAGES=3 页即有效上限约 60 条）——护栏耗尽或
+            服务端空页时安静返回已收集条数（护栏是防失控，不是异常信号；
+            页间节流走引擎内置 _wait_turn，默认 20s/请求，翻页耗时按页数
+            线性放大，风控压力与页数线性可控）
         since: 时间窗 24h/7d/30d -> gpc=stf（best-effort，见常量注释）;
             None/"" 不过滤
         vendor: 主题分类（指标用，透传）
         role: primary / fallback / verify（透传）
         site: 站点域名如 "zhihu.com"; None 表示无 site: 通用搜索
         platform: 结果 platform 字段的展示名; 默认 site 或 "general"
+        page: 起始页码（从 1 开始；翻页自该页起算）
         on_error: "report" / "raise" / "empty"（见模块 docstring）
 
     Returns:
@@ -252,7 +261,7 @@ def search(
     """
     name = platform or site or "general"
     try:
-        rows, engine = _search_impl(q, num, since, site, name)
+        rows, engine = _search_impl(q, num, since, site, name, page)
         return [_record(r, name, since, vendor, role, engine) for r in rows]
     except Exception as e:
         if on_error == "raise":
@@ -329,54 +338,93 @@ def _reset_sessions() -> None:
 
 
 def _search_impl(q: str, num: int, since: Optional[str],
-                 site: Optional[str], name: str) -> Tuple[List[Dict[str, str]], str]:
-    """实际请求 + 占位页退避重试；桌面穷尽（或网络异常）后切移动端桶。
+                 site: Optional[str], name: str, page: int = 1
+                 ) -> Tuple[List[Dict[str, str]], str]:
+    """实际请求 + 占位页退避重试 + 翻页；桌面穷尽（或网络异常）且 0 收获时
+    切移动端桶。
 
-    返回 (rows, engine)；双桶都失败抛 BaiduSoftBlocked（message 含桌面+
-    移动双端结局）/ requests 异常。审查修正（B1）：桌面 RST/ProxyError/
-    Timeout 等 requests 异常不能跳过移动桶——RST 恰是软风控形态之一，
-    移动独立桶正是为它准备的。
+    返回 (rows, engine)；审查修正（B1）：桌面 RST/ProxyError/Timeout 等
+    requests 异常不能跳过移动桶——RST 恰是软风控形态之一，移动独立桶正是
+    为它准备的。
+
+    翻页语义（v3.12，与 bilibili 同款纪律）：
+    - num>20 按 pn 偏移翻页，护栏 MAX_PAGES 页封顶，服务端空页如实停；
+    - 已收集 >0 条后桌面桶病了（占位页/验证码/网络异常退避穷尽）→ 如实
+      抛 BaiduSoftBlocked（message 含已收集页数/条数），不伪装部分结果为
+      完整；门面按既有协议降级搜狗；绝不切换移动桶（移动桶单页 20 条，
+      补不齐还多烧一个风控桶）；
+    - 0 收获时才走移动桶兜底（v3.2 语义原样保留，移动桶保持单页）。
     """
     s = _get_session()
-    params: Dict[str, object] = {
-        "wd": f"{q} site:{site}" if site else q,
-        "rn": RESULTS_PER_PAGE,
-    }
     gpc = _since_to_gpc(since)
-    if gpc:
-        params["gpc"] = gpc
+    wd = f"{q} site:{site}" if site else q
 
+    out: List[Dict[str, str]] = []
+    seen_urls: set = set()
+    fetched_pages = 0
+    p = max(1, page)
     reason = ""
     desktop_error: Optional[Exception] = None
-    for attempt in range(MAX_SOFTBLOCK_RETRIES + 1):
-        _wait_turn()
-        try:
-            resp = s.get(_SEARCH_URL, params=params, timeout=TIMEOUT)
-        except requests.RequestException as e:
-            desktop_error = e        # RST/代理死/超时：记下，继续退避重试
-            reason = f"{type(e).__name__}: {e}"
-        else:
-            desktop_error = None
-            reason = _looks_soft_blocked(resp.text)
-            if reason is None:
-                return _parse_results(resp.text)[:num], "baidu"
-        if attempt < MAX_SOFTBLOCK_RETRIES:
-            # 指数退避: interval * 2, interval * 4
-            time.sleep(_min_interval() * (BACKOFF_MULTIPLIER ** (attempt + 1)))
-    # 桌面桶穷尽（占位页/验证码/网络异常）→ 移动端桶（独立风控，实测桌面
-    # 被锁时仍可用）
-    try:
-        return _mobile_search_impl(q, num, since, site), "baidu-mobile"
-    except BaiduSoftBlocked as me:
-        _reset_sessions()   # 双桶皆病，下次调用换新会话
-        if desktop_error is not None:
-            raise BaiduSoftBlocked(
-                f"desktop network error: {desktop_error}; "
-                f"mobile fallback also failed: {me}") from me
-        raise BaiduSoftBlocked(
-            f"desktop: {reason}; gave up after {MAX_SOFTBLOCK_RETRIES + 1} "
-            f"attempts (min_interval={_min_interval():g}s); "
-            f"mobile fallback also failed: {me}") from me
+    while fetched_pages < MAX_PAGES and len(out) < num:
+        params: Dict[str, object] = {
+            "wd": wd,
+            "rn": RESULTS_PER_PAGE,
+            "pn": (p - 1) * RESULTS_PER_PAGE,
+        }
+        if gpc:
+            params["gpc"] = gpc
+
+        page_rows: Optional[List[Dict[str, str]]] = None
+        for attempt in range(MAX_SOFTBLOCK_RETRIES + 1):
+            _wait_turn()
+            try:
+                resp = s.get(_SEARCH_URL, params=params, timeout=TIMEOUT)
+            except requests.RequestException as e:
+                desktop_error = e    # RST/代理死/超时：记下，继续退避重试
+                reason = f"{type(e).__name__}: {e}"
+            else:
+                desktop_error = None
+                reason = _looks_soft_blocked(resp.text)
+                if reason is None:
+                    page_rows = _parse_results(resp.text)
+                    break
+            if attempt < MAX_SOFTBLOCK_RETRIES:
+                # 指数退避: interval * 2, interval * 4
+                time.sleep(_min_interval() * (BACKOFF_MULTIPLIER ** (attempt + 1)))
+
+        if page_rows is None:
+            # 桌面桶穷尽（占位页/验证码/网络异常）
+            if out:
+                raise BaiduSoftBlocked(
+                    f"pagination interrupted after {fetched_pages} page(s), "
+                    f"{len(out)} rows collected; desktop: {reason or desktop_error}")
+            # 0 收获 → 移动端桶（独立风控，实测桌面被锁时仍可用）
+            try:
+                return _mobile_search_impl(q, num, since, site), "baidu-mobile"
+            except BaiduSoftBlocked as me:
+                _reset_sessions()   # 双桶皆病，下次调用换新会话
+                if desktop_error is not None:
+                    raise BaiduSoftBlocked(
+                        f"desktop network error: {desktop_error}; "
+                        f"mobile fallback also failed: {me}") from me
+                raise BaiduSoftBlocked(
+                    f"desktop: {reason}; gave up after "
+                    f"{MAX_SOFTBLOCK_RETRIES + 1} attempts "
+                    f"(min_interval={_min_interval():g}s); "
+                    f"mobile fallback also failed: {me}") from me
+
+        # 跨页去重（审查 A1）：_parse_results 的 seen 是页内局部，pn 翻页
+        # 页间结果重叠是百度常态——重复 url 不再进返回集；整页全是重复 =
+        # 已到底，如实停（同空页语义），不多发请求
+        new_rows = [r for r in page_rows if r["url"] not in seen_urls]
+        for r in new_rows:
+            seen_urls.add(r["url"])
+        out.extend(new_rows)
+        fetched_pages += 1
+        p += 1
+        if not new_rows:
+            break   # 服务端空页 或 整页跨页重复 = 真空到底，如实停
+    return out[:num], "baidu"
 
 
 def _main() -> int:

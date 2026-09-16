@@ -1,5 +1,70 @@
 # Changelog
 
+## [3.12.0] - 2026-09-16
+
+### 🎯 架构病扫尾批：百度搜索翻页（num>20 不再静默截断）+ 截断可见化扫尾（wenxin / bilibili desc）
+
+v3.11 修的两个架构病（num 超单页上限静默截断、截断无标记）各只扫了一个
+引擎/模块；本轮按架构图把同构残留扫完。
+
+### Added
+- `tools/chat-scraper/baidu_engine.py`：**搜索翻页**——num>20 不再静默
+  截断（此前 rn=20 单页到顶，多要的条数无声蒸发；docstring 虽声明了单页
+  上限，但门面/MCP 描述未把上限传给调用方，与 v3.11 修掉的 bilibili 同一
+  架构病）。实现与 bilibili 同款纪律：`pn` 偏移翻页、护栏 `MAX_PAGES=3`
+  页（有效上限约 60 条——百度软风控实测敏感且引擎级节流默认 20s/请求，
+  护栏比 bilibili 的 5 页保守；页数越多风控压力与耗时线性放大）、服务端
+  空页如实停（不发多余请求）、页间节流复用引擎内置 `_wait_turn`；num≤20
+  的单页快路径请求次数与 v3.11 完全一致；`page` 起始页参数（库能力，与
+  bilibili 对称）；`since` gpc 逐页携带。**翻页中途风控的诚实语义**：已
+  收集 >0 条后桌面桶病了（占位页/验证码/网络异常退避穷尽）→ 如实抛
+  `BaiduSoftBlocked`（message 含已收集页数/条数），不伪装部分结果为完整，
+  也绝不切移动桶（移动桶单页 20 条补不齐还多烧一个风控桶；门面按既有
+  协议降级搜狗）；**0 收获时才走移动桶兜底**（v3.2 语义原样保留，移动桶
+  保持单页）。`search()` docstring 同步
+
+### Fixed
+- **跨页去重缺失（审查 A1，独立审计发现）**：两引擎翻页的页内去重
+  （`_parse_results` 的 `seen` / bilibili 页内循环）都是局部集合——翻页
+  后页间重叠条目会重复进返回集（百度 pn 翻页页间重叠是常态）。修复：
+  - `baidu_engine._search_impl`：跨页 `seen_urls` 集合，重复 url 不再进
+    返回集；整页全是重复 = 排序已穷尽信号，如实停（同空页语义，不发
+    多余请求）
+  - `bilibili_engine._search_impl`：跨页 `seen_bvids` 同款修复（v3.11
+    翻页引入的同构病，本轮审计扫出）
+- **截断可见化扫尾**（v3.11 只扫了 zhihu_content 四处，本轮把剩余输出
+  截断口扫完，全部增量字段向后兼容）：
+  - `tools/chat-scraper/wenxin_engine.py`：`answer` 截 4000 时输出带
+    `truncated=true`；`citations[].abstract` 截 500 时每条自带 `truncated`
+    ——统一走新增 `_clip(text, limit)` helper，源代码级断言不再有裸
+    `[:ANSWER_MAX_CHARS]`/`[:ABSTRACT_MAX_CHARS]` 切片
+  - `tools/chat-scraper/bilibili_engine.py` `fetch_video`：`desc` 截
+    2000 时输出带 `truncated=true`（新增 `DESC_LIMIT=2000` 常量）
+
+### Changed
+- `tools/mcp_server.py` 描述如实化：`china_search` 补百度系 num>20 自动
+  翻页（护栏 3 页约 60 条、页间 ~20s 节流按页数放大）与 sogou/知乎链
+  单页如实截断声明（搜狗是降级环、连发风控阈值未测，不做翻页——与引擎
+  定位一致）；`bilibili_video` 补 desc 截 2000 带 truncated 说明
+- 版本号 3.11.0 → 3.12.0（`tools/mcp_server.py`、
+  `tools/chat-scraper/__init__.py`）；README 徽章同步；顺修
+  `__init__.py` docstring 首行版本串残留 v3.10.0 的漂移
+
+### 测试
+- `tests/test_v3120.py`（24 个测试，全离线零真实请求/零浏览器）：百度
+  翻页（单页快路径 1 请求 / num=45 三页 pn=0/20/40 / 空页如实停 /
+  MAX_PAGES 护栏 / num=0 零请求 / page 起始页 pn 偏移 / gpc 逐页携带 /
+  半途风控如实抛错含已收集数且不烧移动桶 / 0 收获切移动桶兜底 / report
+  模式错误记录包装 / 跨页去重+整页重复早停）+ wenxin 截断（`_clip` 边界 /
+  parse_sse abstract per 条标记 / search answer 顶层标记长短两态）+
+  bilibili desc 截断（超限 / 短文 / 恰好 2000 边界）+ bilibili 跨页去重
+  （混合页去重 / 整页重复早停）+ 源码级裸切片清零断言 + mcp_server
+  版本锁
+- v3.11 护栏测试适配早停语义（护栏用例改每页不同数据；页间重复早停由
+  test_v3120 单独钉死）
+- 全量 201 passed 连续两轮（v3.11.0 基线 177 + 本轮 24）；百度翻页另附
+  当天真实翻页实验（num=45 三页实测，见 Added 节）
+
 ## [3.11.0] - 2026-09-16
 
 ### 🎯 v3.10 暂缓项复评落地：doctor GitHub 403 根因修复（实测对照）+ B站搜索翻页 + Method 2 死代码清理 + 截断可见化

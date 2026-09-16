@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.11.0"
+__version__ = "3.12.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -169,8 +169,10 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限）、16 个站名、"
     "general（百度无 site 通用）、或任意"
     "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
-    "bilibili num>30 自动翻页（护栏 5 页，有效上限约 150 条；页间走引擎级"
-    "节流，风控压力线性可控）。\n"
+    "num 与单页上限（如实声明）：bilibili num>30 自动翻页（护栏 5 页，有效"
+    "上限约 150 条）；百度系（general/16站/任意域名）num>20 自动翻页（护栏"
+    "3 页，有效上限约 60 条，页间走引擎级 ~20s 节流，翻页耗时按页数放大）；"
+    "sogou（百度降级环）与知乎链（SearXNG→搜狗→百度）单页到顶如实截断。\n"
     "耗时：bilibili 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"
     "错误在返回 JSON 内（{\"error\": ...} 项），区分故障与 0 结果。"))
@@ -278,7 +280,8 @@ def zhihu_comments(target: str,
 
 
 @mcp.tool(description=(
-    "B 站视频结构化详情（官方 view API，公开免签名）：{title, desc, owner, "
+    "B 站视频结构化详情（官方 view API，公开免签名）：{title, desc(截 2000 "
+    "时带 truncated=true), owner, cid, "
     "view, danmaku, like, favorite, pubdate, url, engine}。\n"
     "何时用：已知 BV 号或视频 URL，要播放/弹幕/点赞等数据字段。搜索视频用 "
     "china_search(platforms=[\"bilibili\"])；读页面形态用 read_page。\n"

@@ -189,13 +189,23 @@ def _trip_breaker(reason: str) -> float:
     return _breaker_open_until
 
 
+# ---------------------------------------------------------------- 截断可见化
+# v3.12 起截断必须可见（与 zhihu_content._content_field 同一纪律：调用方
+# 不再把"被剪过的 answer/abstract"误当全文）。两个输出口：answer 顶层
+# truncated 字段；citations[].abstract 每条自带 truncated 字段。
+def _clip(text: str, limit: int) -> "tuple[str, bool]":
+    """(截断后文本, 是否发生截断)。所有截断口径统一走这里。"""
+    return text[:limit], len(text) > limit
+
+
 # ---------------------------------------------------------------- SSE 解析
 def parse_sse(raw: str) -> Dict:
     """解析 conversation 端点的 SSE 全文（纯函数，离线测试覆盖）。
 
     Returns:
         {answer, citations, kunlun, status_first, token_fail, end_turn}
-        answer: markdown-yiyan 增量顺序拼接；citations 已按 url 去重保序；
+        answer: markdown-yiyan 增量顺序拼接；citations 已按 url 去重保序
+        （abstract 超 ABSTRACT_MAX_CHARS 截断，per 条 truncated 标记）；
         status_first: 首个非 0 的 message status（无则 0）；kunlun 取自
         basedata.chatHitKunlun；token_fail 对应 hints.parts[].type=="tokenFail"。
     """
@@ -246,10 +256,13 @@ def parse_sse(raw: str) -> Dict:
                     if not url or url in seen_urls:
                         continue
                     seen_urls.add(url)
+                    abstract, abstract_truncated = _clip(
+                        (ref.get("abstract") or "").strip(), ABSTRACT_MAX_CHARS)
                     citations.append({
                         "url": url,
                         "title": (ref.get("text") or "").strip(),
-                        "abstract": (ref.get("abstract") or "").strip()[:ABSTRACT_MAX_CHARS],
+                        "abstract": abstract,
+                        "truncated": abstract_truncated,
                         "source": (ref.get("source") or "").strip(),
                     })
         except (KeyError, TypeError):
@@ -403,9 +416,10 @@ def search(q: str, timeout_s: float = 90, on_error: str = "report",
            vendor: str = "?", role: str = "primary") -> Dict:
     """文心 AI 搜索：返回单条聚合行（不是列表）。
 
-    成功行: {q, answer(markdown, 截断至 4000 字符), citations:
-            [{url,title,abstract,source}], engine: "wenxin-ai",
-            count: 引用条数, platform: "wenxin", vendor, role}
+    成功行: {q, answer(markdown, 截 4000 时带 truncated=true), citations:
+            [{url,title,abstract(截 500 时带 truncated=true),source}],
+            engine: "wenxin-ai", count: 引用条数, platform: "wenxin",
+            vendor, role}
 
     Args:
         q: 搜索关键词
@@ -436,8 +450,10 @@ def search(q: str, timeout_s: float = 90, on_error: str = "report",
                     "前端版本漂移，需重新侦察（证据存 .scratch）")
             raise WenxinError(
                 "SSE 流被截断且未拿到答案正文（endTurn 未到）——如实报错")
+        answer, answer_truncated = _clip(parsed["answer"], ANSWER_MAX_CHARS)
         return {
-            "answer": parsed["answer"][:ANSWER_MAX_CHARS],
+            "answer": answer,
+            "truncated": answer_truncated,
             "citations": parsed["citations"],
             "engine": "wenxin-ai",
             "count": len(parsed["citations"]),

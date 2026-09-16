@@ -114,7 +114,10 @@ class TestBilibiliPaginationV311(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
 
     def test_max_pages_guard_caps_requests(self):
-        out = self._run([_page([_item(i) for i in range(30)])] * 6, num=1000)
+        # v3.12 起整页跨页重复=诚实早停信号，护栏测试改用每页不同数据
+        # （页间重复的早停语义由 test_v3120 单独钉死）
+        out = self._run([_page([_item(pg * 30 + i) for i in range(30)])
+                         for pg in range(6)], num=1000)
         self.assertEqual(len(out), be.MAX_PAGES * 30)   # 150
         self.assertEqual(len(self.calls), be.MAX_PAGES)  # 护栏 5 页封顶
 
