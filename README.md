@@ -2,13 +2,25 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.26.0](https://img.shields.io/badge/release-v3.26.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.26.0)
+[![Release: v3.27.0](https://img.shields.io/badge/release-v3.27.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.27.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 418 passing](https://img.shields.io/badge/tests-418%20passing-success.svg)](tests/)
+[![Tests: 425 passing](https://img.shields.io/badge/tests-425%20passing-success.svg)](tests/)
 
-**v3.26.0（2026-09-17）**：v3.0 全面审计大修之后连续二十七轮迭代——
-判据 v2 第二次实战（brave gate-1 fail，01:23:10 "brave: timeout"
+**v3.27.0（2026-09-17）**：v3.0 全面审计大修之后连续二十八轮迭代——
+症状漂移观察轮（第九轮采样，预算 3/3）：brave gate-1 fail
+"brave: too many requests" **逐字回摆**（v3.26 timeout 漂移单轮即止）、
+ddg gate-1 fail "duckduckgo: CAPTCHA" **逐字复发**（九轮中第八轮，
+漂移确认未持续）——双 streak 维持 0，a) fail 一票否决 + c) 跨度
+~0.5h << 24h 双拦 **gate-2 不烧**；漂移轮结论：v3.26 双 timeout 与
+v3.25 收官聚合 0 行同构，**实例级/瞬时窗口假设再获证据**，逐字症状
+仍是主导态；聚合确认 20 行实例级健康无降级窗，三引擎维持全禁；
+**CLI --probe 退出码契约钉**（gate-1 班次实际入口的「0=有效观测/
+1=无有效观测」契约此前只活在 help 文本，test_v3270 runpy+mock 离线
+钉三态），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十七轮：判据 v2 第二次实战（brave gate-1 fail，01:23:10 "brave: timeout"
 rows=0 → **streak 4→0 诚实归零**；a) fail 一票否决 + c) 跨度 ~3.5h
 << 24h 双拦 **gate-2 不烧**——4 连 streak 在跨度未满时一发即断，
 「3h 窗口运气」风险实测成立，c) 条拿到反向证据）、ddg gate-1 fail

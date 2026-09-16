@@ -1,5 +1,39 @@
 # Changelog
 
+## [3.27.0] - 2026-09-17
+
+### 🎯 症状漂移观察轮：双引擎回摆逐字症状（v3.26 timeout 漂移未持续）+ CLI --probe 退出码契约钉
+
+- **第九轮采样（预算 3/3，同题 q="python"，全程走 CLI --probe 入口）=
+  症状漂移观察轮 + 双引擎 gate-1 重积累第 1 发（双 streak 自 0 起算）**：
+  brave gate-1 未过（01:52:34，rows=0，unresponsive "brave: too many
+  requests"——v3.17/18/19 同款逐字限流症状）→ **v3.26 timeout 漂移单轮
+  即止未持续**，streak 维持 0（重积累第 1 发 fail）；判据 v2 裁决
+  a) ✗（gate-1 fail 一票否决）c) ✗（streak 起点 v3.26 01:23 距本次
+  ~0.5h << 24h，派工预注册「24h 跨度锚 09-18 前不烧关」兑现）→
+  **gate-2 不烧**。ddg gate-1 未过（01:52:52，rows=0，
+  "duckduckgo: CAPTCHA" **逐字复发**——v3.15 起九轮中第八轮逐字）
+  streak 维持 0（归零后连续第 5 fail），逐字复发判据（v3.22 审计更正
+  口径）恢复适配。**漂移轮结论**：v3.26 双引擎 timeout 与 v3.25 收官
+  聚合 0 行同构——实例级/瞬时窗口假设再获证据；逐字症状（brave too
+  many requests / ddg CAPTCHA）仍是主导态，timeout 降级为窗口内偶发，
+  「逐字复发」口径恢复为可靠判读依据。startpage 止损期跳过；聚合确认
+  （01:53:10，~3s）20 行 = google cse 19 + wikipedia 1，实例级健康
+  无降级窗（对比 v3.25 收官 0 行 / v3.26 20 行）；三引擎维持全禁
+  （逐字复发即上游封锁持续的直接证据），实例级波动不触发单引擎状态调整
+- **CLI --probe 退出码契约钉（自评立项，先取证后落地）**：gate-1 机制化
+  的班次实际入口（本轮探活即用其退出码 0×2 实测与「有效观测」语义
+  一致），其「0=有效观测（ok 真假均算，判读看 JSON）/1=传输解析故障
+  无有效观测」契约此前只活在 help 文本、零测试钉（test_v3230 钉
+  probe() 函数体、test_v3130 钉搜狗 --probe 工具字段，searxng CLI
+  包装层无人钉）——test_v3270 runpy+mock urlopen 离线钉三态（过 /
+  上游复发=有效观测 / 传输故障），过路径顺带钉 probe 严格收窄请求形状
+- 测试 418→425 通过（test_v3270：CLI --probe 退出码三态钉 ×3 +
+  settings.yml v3.27 段与三引擎维持全禁钉 ×2 + 版本锁 3.27.0 双
+  __version__ + CHANGELOG/README ×2；test_v3260 精确版本锁降常青移交
+  test_v3270——v3.24→v3.25→v3.26 先例延续），连续两轮全绿 +
+  clean-worktree 收工检查
+
 ## [3.26.0] - 2026-09-17
 
 ### 🎯 判据 v2 第二次实战（brave gate-1 fail + 跨度双拦，gate-2 不烧）+ search(engines=) 语义统一（严格收窄落地）
