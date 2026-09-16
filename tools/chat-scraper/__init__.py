@@ -1,4 +1,4 @@
-"""chat-scraper v3.34.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.35.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -165,8 +165,18 @@ v3.34.0：digest 配置模板入库 + 本机通知通道——digest_config.exam
 通道选型活体取证：WinRT toast 实机双闸不可见——ToastEnabled=0 +
 QN_QUIET_TIME 弹三发屏上零可见，BurntToast 要装模块/msg 无超时+Home
 缺失，popup 截图证据在案；digest_task register --toast 接线计划任务）。
+
+v3.35.0：toast 通道提取公用模块 + 监控环即时弹窗——tools/toast.py
+（send_toast 及常量/转义/解码链自 digest.py 逐字节迁移，digest 改
+import + re-export 旧引用名零行为变化；通道选型证据随模块走）+
+hotlist_watch.py --toast（监控环 diff 出新增条目**即时**弹窗，不等
+10:00 晨报：baseline/fault/零新增不弹，尽力而为失败不翻退出码）+
+hotlist_watch_task register --toast（opt-in；同批实机抓虫：/TR 258
+字符未超 261 仍被 schtasks 静默截断成 254 报 SUCCESS，悬崖实测
+(250, 258]——对策：--log 改相对值锚定脚本目录缩 /TR 至 173 + 注册后
+回读验证，存储不一致响亮 exit 1）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.34.0"
+__version__ = "3.35.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

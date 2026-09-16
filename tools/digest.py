@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""每日晨报聚合（v3.33；v3.34 增量见下）——四段组合一次早晨汇报，stdout
-markdown。
+"""每日晨报聚合（v3.33；v3.34/v3.35 增量见下）——四段组合一次早晨汇报，
+stdout markdown。
+
+v3.35 增量（toast 通道提取为公用模块）: --toast 的弹窗通道
+（send_toast 及其常量/转义/解码链）提取到 tools/toast.py 公用模块——
+hotlist_watch.py 监控环同批接入 --toast（diff 出新增条目即时弹窗，不等
+10:00 晨报）。本文件改为 from toast import 并 re-export 旧引用名
+（send_toast/TOAST_*/_decode_out 等），函数体逐字节迁移零行为变化。
 
 v3.34 增量（配置模板入库 + --toast 本机通知）:
     - tools/digest_config.example.json 模板入库：用户配置**缺失**时自动
@@ -78,17 +84,21 @@ fault（整份晨报零有效内容，cron 侧可报警）。
 （run_digest 参数），回归钉全离线——真实链路走 digest 实测落 CHANGELOG。
 """
 import argparse
-import base64
 import json
-import os
 import re
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-__version__ = "3.34.0"
+# 弹窗通道公用模块（v3.35 自本文件提取；re-export 保旧引用名零漂移——
+# 通道选型取证/契约/常量见 toast.py docstring）
+from toast import (TOAST_BOX_TYPE, TOAST_SUBPROC_TIMEOUT, TOAST_TIMEOUT_S,
+                   _decode_out, _default_toast_runner, _ps_quote,
+                   send_toast)
+from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
+
+__version__ = "3.35.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
@@ -108,12 +118,6 @@ HN_NUM = 5               # 每条查询 HN 行数
 REL_NUM = 3              # 每仓库 release 行数
 SNAP_TOP_N = 5           # 快照 top 展示行数
 _DIFF_LINE_MAX = 500     # --log 一行上限（班次流水不刷屏，hotlist_watch 同款）
-
-# --toast 本机通知（WScript.Shell Popup 通道，选型取证见模块 docstring）
-TOAST_TIMEOUT_S = 12     # 弹窗自动关闭秒数（无人值守不堆积对话框）
-TOAST_BOX_TYPE = 64 + 4096   # 64=信息图标 + 4096=系统模态置顶
-TOAST_SUBPROC_TIMEOUT = 20   # powershell 子进程保险丝（弹窗超时 12s + 裕量）
-_TOAST_BODY_MAX = 240    # 弹窗正文上限（弹窗不是数据转储）
 
 # shift_log 里 hotlist_watch 产出行的形态（hotlist_watch.render_log_line
 # 固定前缀 `[YYYY-MM-DD HH:MM] hotlist_watch: `——跨解析器契约的消费端，
@@ -514,74 +518,6 @@ def extract_new_entries(watch_lines: List[str]) -> Dict:
                 if title and title not in titles:
                     titles.append(title)
     return {"count": count, "titles": titles[:3]}
-
-
-def _ps_quote(text: str) -> str:
-    """PowerShell 单引号字面量转义（' → ''，换行折叠空格，截断上限）。"""
-    t = (text or "").replace("\r", " ").replace("\n", " ")
-    return t[:_TOAST_BODY_MAX].replace("'", "''")
-
-
-def _decode_out(raw) -> str:
-    """子进程输出解码：utf-8 严格 -> gbk 严格 -> replace 兜底（v3.28/v3.31
-    实机抓虫同款链；v3.34 自审实测再证：中文 Windows powershell 输出含
-    GBK 字节，text=True 的 utf-8 读管线线程直接 UnicodeDecodeError）。"""
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        return raw
-    for codec in ("utf-8", "gbk"):
-        try:
-            return raw.decode(codec)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", "replace")
-
-
-def _default_toast_runner(argv: List[str]):
-    proc = subprocess.run(
-        argv, capture_output=True,
-        timeout=TOAST_SUBPROC_TIMEOUT,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-    proc.stdout, proc.stderr = _decode_out(proc.stdout), _decode_out(proc.stderr)
-    return proc
-
-
-def send_toast(title: str, body: str, timeout_s: Optional[int] = None,
-               runner: Optional[Callable] = None,
-               platform: Optional[str] = None) -> Dict:
-    """弹一个 Windows 系统模态通知框（WScript.Shell Popup，自动超时）。
-
-    返回 {status: sent|skipped|fault, return?, error?}。尽力而为：任何
-    失败都只返回 fault 不抛——通知是观测副本，绝不炸已完成的晨报轮。
-    非 Windows 平台诚实 skipped（Linux 自行接 notify-send，未实现）。
-    """
-    if (platform if platform is not None else sys.platform) != "win32":
-        return {"status": "skipped",
-                "error": "非 Windows——弹窗通道不可用（观察者自接通知）"}
-    secs = TOAST_TIMEOUT_S if timeout_s is None else int(timeout_s)
-    # -EncodedCommand（UTF-16LE base64）：标题/正文任意中文引号零转义事故
-    ps = ("$w = New-Object -ComObject WScript.Shell; "
-          f"$r = $w.Popup('{_ps_quote(body)}', {secs}, "
-          f"'{_ps_quote(title)}', {TOAST_BOX_TYPE}); "
-          "Write-Output ('POPUP_RET=' + $r)")
-    enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
-    argv = ["powershell", "-NoProfile", "-NonInteractive",
-            "-EncodedCommand", enc]
-    try:
-        proc = (runner or _default_toast_runner)(argv)
-    except Exception as e:                       # noqa: BLE001 —— 尽力而为
-        return {"status": "fault",
-                "error": f"{type(e).__name__}: {e}"[:200]}
-    if proc.returncode != 0:
-        err = (getattr(proc, "stderr", "") or "")[:160]
-        return {"status": "fault",
-                "error": f"powershell exit {proc.returncode}: {err}"}
-    ret = None
-    m = re.search(r"POPUP_RET=(-?\d+)", getattr(proc, "stdout", "") or "")
-    if m:
-        ret = int(m.group(1))
-    return {"status": "sent", "return": ret}
 
 
 def toast_text(result: Dict) -> tuple:

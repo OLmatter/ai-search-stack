@@ -2,11 +2,24 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.34.0](https://img.shields.io/badge/release-v3.34.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.34.0)
+[![Release: v3.35.0](https://img.shields.io/badge/release-v3.35.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.35.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 638 passing](https://img.shields.io/badge/tests-638%20passing-success.svg)](tests/)
+[![Tests: 676 passing](https://img.shields.io/badge/tests-676%20passing-success.svg)](tests/)
 
+**v3.35.0（2026-09-17）**：v3.0 全面审计大修之后连续三十六轮迭代——
+**toast 通道提取公用模块 + 监控环即时弹窗 + schtasks 静默截断实机抓
+虫**：tools/toast.py（send_toast 及常量/转义/解码链自 digest.py 逐字
+节迁移成跨工具公用模块，通道选型取证随模块走；digest.py 改 import +
+re-export 旧引用名，行为零变化）+ hotlist_watch.py --toast（监控环
+diff 出新增条目**即时**弹 Windows 系统模态通知，不等 10:00 晨报汇总：
+baseline/fault/零新增不弹——弹窗只报事件信号；尽力而为失败只 warn 不
+翻退出码）+ **实机抓虫**：/TR 全串 258 字符（未超 261 检查上限）被
+schtasks 静默截断成 254 仍报 SUCCESS（悬崖实测 (250, 258]，261 执法
+= 假安全感）——双对策：--log 改相对值锚定脚本目录（/TR 258→173）+
+注册后回读验证（存储不一致响亮 exit 1），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.34.0（2026-09-17）**：v3.0 全面审计大修之后连续三十五轮迭代——
 **晨报配置模板入库 + 本机通知通道**：digest_config.example.json（模板
 入库，示例值与内置常量双向钉死；digest.py 用户配置**缺失**时自动用模

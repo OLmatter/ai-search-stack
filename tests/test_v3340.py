@@ -18,6 +18,8 @@ CHANGELOG v3.34.0；回归钉全走 mock / runner 注入 / 源码钉）：
 4. 版本锁 3.34.0（双 __version__，自 test_v3330 接管精确锁，v3330 同批
    降常青）+ CHANGELOG + README 徽章 + 诚实文档钉（通道选型活体取证
    在场：WinRT 双闸 / BurntToast 拒因 / popup 采用理由）。
+   —— v3.35 起：第 4 块精确锁移交 test_v3350（同批降常青，只保双
+   __version__ 同步与徽章单调下限）；test_v3330 降常青交接先例。
 """
 import base64
 import io
@@ -431,37 +433,41 @@ class TestRegistrarToast(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 4. 版本锁 3.34.0 + 文档（自 test_v3330 接管精确锁）
+# 4. 版本锁（自 test_v3330 接管；v3.35 起精确锁移交 test_v3350，此处降
+#    常青下限——v3.27→v3.28→v3.29→v3.30→v3.31→v3.33→v3.34 先例）
 # ---------------------------------------------------------------------------
 class TestVersionSyncV334(unittest.TestCase):
-    def test_versions_3340(self):
+    def test_versions_evergreen(self):
+        # v3.35 起精确锁移交 test_v3350，此处降常青下限（交接先例）：
+        # 双 __version__ 同步本身不许破，只放开具体版本号
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.34.0")
-        self.assertIn("chat-scraper v3.34.0", init_src)
+        self.assertIsNotNone(m)
+        ver = m.group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 34, 0))
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.34.0")
+            self.assertEqual(mcp_server.__version__, ver)
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.34.0"', src)
+            self.assertIn(f'__version__ = "{ver}"', src)
 
-    def test_changelog_and_readme_3340(self):
+    def test_changelog_and_readme_evergreen(self):
+        # v3.35 起精确徽章/状态行锁移交 test_v3350，此处降常青：
+        # 3.34 批次的 CHANGELOG 事实行（模板入库/--toast）永久在场
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("## [3.34.0] - 2026-09-17", changelog)
         self.assertIn("digest_config.example.json", changelog)
-        self.assertIn("--toast", changelog)
         self.assertIn("WScript.Shell", changelog)
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.34.0", readme)
-        self.assertIn("v3.34.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 601（v3.33 基线）+ 本批钉数
+        # 测试徽章数 v3.35 起移交 test_v3350 精确锁，此处降常青单调下限：
+        # 638（v3.34 基线 = 601 + 本批 37 钉），回归只许增不许缩
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 601 + self._batch_pins())
+        self.assertGreaterEqual(int(m.group(1)),
+                                601 + self._batch_pins())
 
     @staticmethod
     def _batch_pins():

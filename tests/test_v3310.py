@@ -366,25 +366,31 @@ def _runner_map(responses):
 
 class TestRegistrar(unittest.TestCase):
     def test_register_argv_shape(self):
-        seen = {}
+        seen = []
 
         def runner(argv, capture_output=True, text=True):
-            seen["argv"] = list(argv)
+            seen.append(list(argv))
             return _FakeProc(0, "SUCCESS", "")
 
         with mock.patch.object(sys, "platform", "win32"):
             code = task.register(at="09:45", runner=runner)
         self.assertEqual(code, 0)
-        argv = seen["argv"]
+        # v3.35 起注册后回读验证（/Query）——runner 收到多笔调用，
+        # 形态断言只看第一笔 /Create
+        argv = seen[0]
         self.assertEqual(argv[:2], ["schtasks", "/Create"])
         self.assertIn("/F", argv)
         self.assertEqual(argv[argv.index("/TN") + 1], "ai-search-hotlist-watch")
         self.assertEqual(argv[argv.index("/SC") + 1], "DAILY")
         self.assertEqual(argv[argv.index("/ST") + 1], "09:45")
         tr = argv[argv.index("/TR") + 1]
-        # 嵌入引号包脚本绝对路径 + --log 班次日志绝对路径（每日 diff 进班次日志）
+        # 嵌入引号包脚本绝对路径 + --log 班次日志。v3.35 演进（实机
+        # 抓虫）：绝对 --log 使 /TR 全串 258 字符被 schtasks 静默截断
+        # 仍报 SUCCESS——改传相对值（hotlist_watch.py 锚定脚本目录），
+        # /TR 258 -> 173 字符远离截断悬崖；/Query 之后的形态钉在
+        # test_v3350 回读验证钉里
         self.assertIn(f'"{task.WATCH_PY}"', tr)
-        self.assertIn(f'--log "{task.SHIFT_LOG}"', tr)
+        self.assertIn("--log state/shift_log.md", tr)
         self.assertIn("hotlist_watch.py", tr)
 
     def test_register_failure_exit1(self):

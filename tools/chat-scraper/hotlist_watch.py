@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""热榜监控环组合脚本（v3.31）——采样 -> 快照落盘 -> hot_diff -> 告警输出。
+"""热榜监控环组合脚本（v3.31；v3.35 增量见下）——采样 -> 快照落盘 ->
+hot_diff -> 告警输出。
+
+v3.35 增量（--toast 即时弹窗）: 加 --toast 旗标——监控环 diff 出**新增
+条目**时立即弹 Windows 系统模态通知框（标题=热榜新增 N 条 + 轮次时间，
+正文=前 3 条 [NEW] 平台#rank 标题 + 消失数），不等 10:00 晨报弹窗汇总。
+通道复用 tools/toast.py 公用模块（v3.34 活体取证定案的 WScript.Shell
+Popup，父目录注入 sys.path 取用，双模式导入同 search.py 先例）；弹窗
+尽力而为：fault/异常只 stderr warn 绝不翻监控环退出码；baseline（首轮
+建基线）/fault（采样挂）/零新增不弹——弹窗只报事件信号。弹窗阻塞至
+自动超时（12s）或用户确认，自轮询节拍相应顺移（采样节奏主权仍在调用
+方，介意就别开 --toast 或调大 --interval）。hotlist_watch_task v3.35
+同款：register --toast 把旗标带进计划任务 /TR（opt-in，无旗标不含
+--toast）；**v3.35 实机抓虫**：/TR 含绝对 --log 时全串 258 字符被
+schtasks 静默截断成 254 仍报 SUCCESS（261 上限检查给假安全感，截断
+悬崖实测在 (250, 258]）——注册器改传相对 --log（本脚本把相对路径锚
+定到脚本所在目录，schtasks 任务工作目录不可设）+ 注册后回读验证，
+/TR 从 258 缩到 173 字符远离悬崖。
 
 定位（toolbox 复用边界，ARCHITECTURE.md「复用边界」）：监控告警**不进引擎**
 ——引擎只提供 hot()（采样原语）与 hot_diff()（两轮 diff 纯函数，v3.30）；
@@ -24,8 +41,9 @@
     # 单发（默认）：采样一次、diff 一次、退出——cron/计划任务最便宜节拍
     python hotlist_watch.py [--platforms bilibili,weibo] [--num 20]
                             [--snapshots-dir DIR] [--keep 50] [--log FILE]
+                            [--toast]
     # 自轮询：每 --interval 秒一轮（监控节奏主权在调用方）
-    python hotlist_watch.py --interval 600
+    python hotlist_watch.py --interval 600 [--toast]
 
 退出码（--hotlist-probe 契约同构）: 0 = 有效观测（建基线/diff 完成/自轮询
 正常退出）；1 = 本地故障（采样抛异常 / 全平台 error / 零有效行 / 快照写
@@ -49,8 +67,24 @@ try:  # 包内导入（同 search.py 双模式）
 except ImportError:  # 扁平导入（sys.path 指向本目录）
     import hotlist_engine as hl  # type: ignore
 
+# 弹窗通道公用模块（tools/toast.py，在本目录的父目录——v3.35 提取自
+# digest.py；父目录注入 sys.path 后取用，缺失时降级为 fault 工厂不炸
+# 监控环——弹窗是观测副本，缺了只许少弹不许多炸）
+try:
+    _PARENT = str(Path(__file__).resolve().parent.parent)
+    if _PARENT not in sys.path:
+        sys.path.insert(0, _PARENT)
+    from toast import send_toast as _toast_send_impl
+    from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
+except ImportError:                              # pragma: no cover
+    def _toast_send_impl(title, body):           # type: ignore
+        return {"status": "fault",
+                "error": "toast 模块缺失（tools/toast.py）"}
+    _TOAST_BODY_MAX = 240
+
 __all__ = ["run_once", "save_snapshot", "latest_snapshot",
-           "cleanup_snapshots", "render_alerts", "render_log_line"]
+           "cleanup_snapshots", "render_alerts", "render_log_line",
+           "watch_toast_text"]
 
 _TOOL = "hotlist_watch"
 DEFAULT_KEEP = 50                 # 快照滚动保留份数
@@ -244,6 +278,29 @@ def render_log_line(result: Dict) -> str:
     return f"[{result['ts'][:16]}] {body[:_LOG_LINE_MAX]}"
 
 
+def watch_toast_text(result: Dict) -> tuple:
+    """从监控轮产物构建弹窗 (title, body)——新增条目数 + 前 3 条
+    [NEW] 平台#rank 标题 + 消失数。
+
+    标题直接取结构化行（result["new"] 的 {platform, rank, title, url}），
+    不含 URL 后缀，无需 digest extract_new_entries 的内嵌括号截断；正文
+    截 TOAST_BODY_MAX 上限（弹窗不是数据转储）。"""
+    s = result.get("summary") or {}
+    n = int(s.get("new", 0) or 0)
+    title = f"热榜新增 {n} 条 {(result.get('ts') or '')[-8:]}"
+    titles: List[str] = []
+    for r in (result.get("new") or [])[:3]:
+        t = str((r or {}).get("title", "")).strip()
+        if t:
+            titles.append(f"[{(r or {}).get('platform', '?')}"
+                          f"#{(r or {}).get('rank', '?')}] {t}")
+    body = " ".join(titles)
+    gone = int(s.get("gone", 0) or 0)
+    if gone:
+        body += f" | 消失 {gone}"
+    return title, body[:_TOAST_BODY_MAX]
+
+
 def _maybe_log(log_path: Optional[str], result: Dict,
                now: Optional[datetime] = None) -> None:
     """--log 追加一行（班次日志格式）。写失败只 warn——日志是观测副本，
@@ -278,12 +335,38 @@ def _warn(text: str) -> None:
     print(text, file=sys.stderr)
 
 
-def _cycle(platforms, num, snapshots_dir, keep, log_path) -> int:
+def _send_toast(title: str, body: str) -> Dict:
+    """弹一发（尽力而为）：通道异常归 fault dict 不抛——通知是观测副本，
+    绝不炸已落盘的监控轮（快照/--log 在 run_once 内已落）。"""
+    try:
+        return _toast_send_impl(title, body)
+    except Exception as e:                       # noqa: BLE001 —— 同上
+        return {"status": "fault",
+                "error": f"{type(e).__name__}: {e}"[:200]}
+
+
+def _maybe_toast(result: Dict) -> None:
+    """--toast 接线：diff 出**新增条目**才弹（baseline/fault/零新增不弹
+    ——弹窗只报事件信号）；失败只 warn 不翻退出码。"""
+    s = result.get("summary") or {}
+    if result.get("status") != "diff" or not s.get("new"):
+        return
+    title, body = watch_toast_text(result)
+    t = _send_toast(title, body)
+    if t.get("status") == "fault":
+        _warn(f"[{_TOOL}] toast 弹窗失败（尽力而为不翻码）: "
+              f"{t.get('error', '?')}")
+
+
+def _cycle(platforms, num, snapshots_dir, keep, log_path,
+           toast: bool = False) -> int:
     """跑一轮并打印结构化 JSON，返回退出码（0 有效观测 / 1 故障）。"""
     result = run_once(platforms=platforms, num=num,
                       snapshots_dir=snapshots_dir, keep=keep,
                       log_path=log_path)
     _emit(json.dumps(result, ensure_ascii=False, indent=1))
+    if toast:
+        _maybe_toast(result)
     return 1 if result["status"] == "fault" else 0
 
 
@@ -304,15 +387,26 @@ def _main() -> int:
                              f"<1 不清理）")
     parser.add_argument("--log", default=None,
                         help="告警/状态追加日志（班次日志格式一行一条，"
-                             "如 state/shift_log.md）")
+                             "如 state/shift_log.md；**相对路径按本脚本所"
+                             "在目录锚定**——schtasks 任务工作目录不可设"
+                             "（/Create 无该参数，恒为 system32），注册器"
+                             "因此传相对值缩 /TR）")
+    parser.add_argument("--toast", action="store_true",
+                        help="diff 出新增条目时立即弹 Windows 系统模态通"
+                             "知框（tools/toast.py 公用通道；baseline/"
+                             "fault/零新增不弹；尽力而为失败不翻退出码）")
     args = parser.parse_args()
+    # --log 相对路径锚定本脚本目录（schtasks 任务无工作目录可设，恒为
+    # system32——绝对路径照旧不受影响；v3.35 注册器借相对值缩 /TR）
+    if args.log and not Path(args.log).is_absolute():
+        args.log = str(Path(__file__).resolve().parent / args.log)
     platforms = ([p for p in args.platforms.split(",") if p.strip()]
                  if args.platforms else None)
     snapshots_dir = args.snapshots_dir or str(
         Path(__file__).resolve().parent / "state" / "hotlist_snapshots")
     if args.interval is None:       # 单发：一次采样一次 diff
         return _cycle(platforms, args.num, snapshots_dir, args.keep,
-                      args.log)
+                      args.log, toast=args.toast)
     if args.interval <= 0:
         parser.error("--interval must be > 0")
     # 自轮询：单轮故障不退出（瞬时网抖不该杀死监控环），下一轮自愈；
@@ -320,7 +414,7 @@ def _main() -> int:
     while True:
         try:
             code = _cycle(platforms, args.num, snapshots_dir, args.keep,
-                          args.log)
+                          args.log, toast=args.toast)
             if code:
                 _warn(f"[{_TOOL}] 本轮 fault（自轮询继续，下一轮自愈）")
         except KeyboardInterrupt:

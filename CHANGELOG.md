@@ -1,5 +1,71 @@
 # Changelog
 
+## [3.35.0] - 2026-09-17
+
+### 🎯 toast 通道提取公用模块 + 监控环即时弹窗 + schtasks 静默截断实机抓虫
+
+- **tools/toast.py（新公用模块）**：`send_toast` 及常量
+  （TOAST_TIMEOUT_S=12 / TOAST_BOX_TYPE=64+4096 / TOAST_SUBPROC_TIMEOUT=20 /
+  TOAST_BODY_MAX=240）与助手函数（`_ps_quote` / `_decode_out` /
+  `_default_toast_runner`）自 digest.py **逐字节迁移**——通道选型活体
+  取证结论（BurntToast/msg.exe/WinRT 双闸拒因、WScript.Shell Popup 采用
+  理由、保险丝 20s>12s 承重关系）随模块 docstring 走。**digest.py 改
+  import + re-export 旧引用名**（send_toast/_decode_out/_ps_quote/
+  _default_toast_runner/TOAST_*），行为零变化（test_v3340 37 钉不改一
+  字全过为证）；dead import（base64/os/subprocess）随提取清除；
+  toast_text（弹窗文案=晨报语义）留在 digest 不随通道迁。
+- **hotlist_watch.py --toast（监控环即时弹窗）**：diff 出**新增条目**
+  立即弹 Windows 系统模态通知——标题「热榜新增 N 条 HH:MM:SS」，正文
+  前 3 条 `[NEW] 平台#rank 标题`（直取结构化行，无 URL 后缀无需内嵌括
+  号截断）+ 消失数，截 240 上限。**baseline（首轮建基线）/fault（采样
+  挂）/零新增不弹**——弹窗只报事件信号；尽力而为：通道 fault/异常只
+  stderr warn 绝不翻监控环退出码（观测副本纪律，digest 同款）。接线在
+  CLI 层（_cycle/_maybe_toast），run_once 核心签名不动；通道取用为父目
+  录注入 sys.path + 双模式导入（search.py 先例），toast 模块缺失降级为
+  fault 工厂少弹不炸（源码钉）。弹窗阻塞至自动超时（12s）或用户确认，
+  自轮询节拍相应顺移（采样节奏主权仍在调用方，docstring 如实声明）。
+- **🪲 实机抓虫：schtasks /TR 静默截断假成功（v3.35 头号发现）**：
+  hotlist_watch_task register --toast 首次真注册即中——/TR 全串 258 字
+  符（**未超** 261 检查上限）被 schtasks 静默截断成 254（Arguments 尾
+  部 `--toast` 被削成 `--`，`<Command>` 拆出 pythonw 正常）**仍报
+  SUCCESS**；无旗标 250 字符版自 v3.31 天天正常跑——截断悬崖实测在
+  **(250, 258]**，v3.28/v3.31 以来的「261 上限执法」是假安全感（静默
+  截断的截断点比文档上限更早且不报错）。**双对策根治**：
+  1. *hotlist_watch_task /TR 瘦身*：`--log` 改传**相对值**
+     `state/shift_log.md`（hotlist_watch.py `_main` 把相对 --log 锚定
+     到脚本所在目录——schtasks 任务工作目录不可设恒为 system32，绝对
+     路径行为不变）→ /TR 258 → 173 字符，远离悬崖；dead const
+     SHIFT_LOG 随之移除（注释说明位置不变，doctor/digest 消费端零影
+     响）。
+  2. *注册后回读验证*：`/Create` 成功后 `/Query /XML` 回读存储的
+     Command+Arguments 与预期做空白不敏感比对——不一致（截断必现形）
+     响亮 ERROR exit 1，宁报错不留一个不按预期运行的假任务；无法回读
+     （XML 解析不出）只 warn 不翻码——「无法验证」≠「验证失败」。
+  digest_task.py（v3.34，235 字符）同病种潜伏但余量 23 字符，本轮不动
+  （下一环建议：同款回读验证）。
+- **hotlist_watch_task register --toast（opt-in）**：/TR 追加 --toast，
+  261 上限检查保留（粗防线）+ 回读验证（细防线）；无旗标不含 --toast；
+  成功消息提及「新增条目即时弹 Windows 通知」。
+- **测试**：tests/test_v3350.py 38 离线钉（toast 通道 9：常量承重值/
+  argv 形态/POPUP_RET/超时透传/非 win32 skipped/异常与非零退出 fault/
+  转义截断/解码链/零网络 import 源码钉；digest 兼容 3：re-export 同源
+  同值/通道已提取+dead import 已清源码钉/toast_text 留守；监控环
+  --toast 14：文案 3/接线 6/端到端 5 含 CLI 旗标+help+相对 --log 锚
+  定；注册器 8：toast 旗标/无旗标/TR≤180 远离悬崖源码钉/261 执法/消
+  息/回读不一致 exit1/回读一致通过/无法回读只 warn；版本/文档 4）；
+  test_v3310 register 形态钉随契约演进改钉（v3.35 注释在案）；
+  test_v3340 版本锁降常青（精确锁移交 test_v3350，v3.27→…→v3.34 交接
+  先例；双 __version__ 同步与徽章单调下限保留）；638→676 两+连续绿
+  轮。**engines/MCP 零改动**（mcp_server 仅版本串，v3.33 组合层判词继
+  续有效）。
+- **活体证据（2026-09-17 真机）**：`hotlist_watch.py --toast --log`
+  单发实跑 status=diff 新增 16 条（bilibili 11 + weibo 5，何同学
+  iPhone 18 Pro 等），exit 0，弹窗 12s 自动关闭 + 直调
+  `toast.send_toast` 返回 `{'status': 'sent', 'return': 1}`（人手点掉
+  ——弹窗真实在屏）；shift_log 落 `[07:02] hotlist_watch: diff 新增 16
+  消失 16 保留 24` 行；重注册任务回读验证通过、存储 /TR 以 `--toast`
+  完整收尾。网络预算：bilibili 1 + weibo 1（热榜），其余零网络。
+
 ## [3.34.0] - 2026-09-17
 
 ### 🎯 digest 配置模板入库 + --toast 本机通知通道
