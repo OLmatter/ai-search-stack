@@ -1,10 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""热榜聚合引擎 —— bilibili 热门/微博热搜（知乎热榜诚实上限）v3.29
+"""热榜聚合引擎 —— bilibili 热门/微博热搜（知乎热榜诚实上限）v3.30
 
 定位：**无查询词的监控原语**（vendor 官宣/事件首发地监控、舆情雷达），
 与 search() 的 query 语义不同构，故独立引擎 + 门面 hot() 路由 +
 MCP china_hotlist 工具（bilibili_video 与 search 分工具同款先例）。
+
+v3.30 增量（监控闭环补全 + cookie 寿命标定起步）:
+    - hot_diff(before, after)：两轮采样 diff 纯函数（零网络）。榜单本身
+      只是「正在发生」，两轮快照的**新增条目才是事件信号**（刚上榜 =
+      正在发生的事）。架构推导：diff 是纯计算不是网络操作，落引擎层
+      作纯函数（可离线钉测、可被任意监控环组合），不挂 hot() 参数
+      （那会把两次采样焊死进一次调用，翻倍网络且无法控制采样间隔——
+      监控节奏是调用方的事，toolbox 复用边界：监控告警不包含）。
+      2026-09-17 真实演练：同 query 主题两轮采样（间隔 >=10 分钟），
+      diff 实据见 CHANGELOG v3.30.0。
+    - weibo_probe_once：微博访客 cookie 寿命标定单发探活（doctor 热榜
+      探活项的引擎侧实现）。**禁 incarnate 纪律**（知乎 cookie_probe
+      禁自愈同构）：只动用 state 缓存 cookie 真调一次 hotSearch，失效
+      如实记 expired，绝不顺手续命——若探活即重领，每条 expired 都被
+      续命污染，寿命分布永远测不出来（实际使用路径 hot() 的自动重领
+      不受影响）。读数追加 state/weibo_cookie_lifetime_log.jsonl
+      （独立 jsonl——仓库标定流先例：cookie_lifetime_log /
+      sogou_recovery_log / sogou_throttle_log 各自独立流，互不混写；
+      同日志带 platform 字段的方案被否：不同标定对象节奏/寿命/四态
+      语义都不同，混写会让钩子活性检查无法按流判读数）。
+      saved_at 自 v3.29 落盘自带——寿命标定起步的数据基座。
 
 实测结论（2026-09-17 本机验证，v3.29 立项依据；逻辑探测预算 8 发）:
     - bilibili 热门: GET https://api.bilibili.com/x/web-interface/
@@ -53,7 +74,8 @@ import random
 import sys
 import threading
 import time
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -62,7 +84,9 @@ try:  # 包内导入（同 search.py 双模式）
 except ImportError:  # 扁平导入（sys.path 指向本目录）
     import bilibili_engine as _bili  # type: ignore
 
-__all__ = ["hot", "ZhihuHotlistNeedsLogin", "WeiboHotlistError"]
+__all__ = ["hot", "hot_diff", "weibo_probe_once",
+           "ZhihuHotlistNeedsLogin", "WeiboHotlistError",
+           "WeiboHotlistAuthRejected"]
 
 _TOOL = "chat-scraper"
 _ENGINE = "hotlist"
@@ -78,6 +102,9 @@ _API_HOTSEARCH = "https://weibo.com/ajax/side/hotSearch"
 _PASSPORT_GEN = "https://passport.weibo.com/visitor/genvisitor"
 _PASSPORT_INCARNATE = "https://passport.weibo.com/visitor/visitor"
 _WEIBO_STATE_PATH = os.path.join(_STATE_DIR, "weibo_visitor_cookies.json")
+# v3.30: 微博访客 cookie 寿命标定读数（独立 jsonl，仓库标定流先例）
+WEIBO_LIFETIME_LOG_PATH = os.path.join(_STATE_DIR,
+                                       "weibo_cookie_lifetime_log.jsonl")
 _WEIBO_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
              "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
 
@@ -95,6 +122,19 @@ class WeiboHotlistError(RuntimeError):
     """微博热搜访客流失败（incarnate 被拒 / 信封非 ok）。"""
 
     slug = "weibo_hotlist_error"
+
+
+class WeiboHotlistAuthRejected(WeiboHotlistError):
+    """hotSearch 明确拒绝访客身份（HTTP 401/403）——cookie 死亡信号。
+
+    v3.30 细分：weibo_probe_once 据此把标定读数判 expired（寿命死亡的
+    关键数据点），与 non-JSON 等页面形态异常（error 态）区分，不靠错误
+    信息字符串猜。是 WeiboHotlistError 子类——hot() 的 except/重领流程
+    与 report 协议行为不变（except 父类照常命中；slug 更精确到
+    weibo_hotlist_auth_rejected，属错误分类学细化非行为变更）。
+    """
+
+    slug = "weibo_hotlist_auth_rejected"
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +342,7 @@ def _call_hotsearch(cookies: Dict[str, str]) -> Dict:
     _weibo_wait_turn()
     resp = s.get(_API_HOTSEARCH, cookies=cookies, timeout=TIMEOUT)
     if resp.status_code in (401, 403):
-        raise WeiboHotlistError(
+        raise WeiboHotlistAuthRejected(
             f"hotSearch HTTP {resp.status_code}（访客身份被拒，"
             f"cookie 可能失效）: {resp.text[:120]!r}")
     try:
@@ -441,6 +481,200 @@ def hot(platforms: Optional[List[str]] = None, num: int = 10,
                              "platform": name})
             # on_error == "empty": 静默跳过故障平台
     return rows
+
+
+# ---------------------------------------------------------------------------
+# 榜单 diff（v3.30：两轮采样的监控信号，纯函数零网络）
+# ---------------------------------------------------------------------------
+def _entry_key(row: Dict) -> Tuple[str, str]:
+    """条目身份键：(platform, url)；url 缺失回退 title（防御脏数据）。
+
+    url 在两条线都跨轮稳定：bilibili 是 bvid 视频 URL、微博是
+    s.weibo.com 词检索 URL——同一热点的 URL 不随轮次变化，可作身份。
+    """
+    return (str(row.get("platform") or ""),
+            str(row.get("url") or "") or str(row.get("title") or ""))
+
+
+def _group_hot_rows(rows: Optional[List[Dict]]
+                    ) -> Tuple[Dict[str, Dict[Tuple[str, str], Dict]],
+                               Dict[str, Dict]]:
+    """按平台分组有效榜单条目；error 记录（report 协议产物）不进组。
+
+    返回 ({platform: {身份键: row}}, {platform: 首条 error 记录})。
+    """
+    groups: Dict[str, Dict[Tuple[str, str], Dict]] = {}
+    errs: Dict[str, Dict] = {}
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        if "error" in r:
+            errs.setdefault(str(r.get("platform") or "?"), r)
+            continue
+        p = str(r.get("platform") or "?")
+        groups.setdefault(p, {})[_entry_key(r)] = r
+    return groups, errs
+
+
+def hot_diff(before: Optional[List[Dict]],
+             after: Optional[List[Dict]]) -> Dict:
+    """两轮热榜采样 diff（v3.30，纯函数零网络）——新增条目=事件信号。
+
+    用法：调用方间隔 >=10 分钟做两轮 hot() 采样，本函数只算差集：
+
+        rows1 = hot(platforms=["bilibili", "weibo"], num=20)
+        # ... >=10 分钟 ...
+        rows2 = hot(platforms=["bilibili", "weibo"], num=20)
+        diff = hot_diff(rows1, rows2)
+
+    架构推导（为何是纯函数而非 hot() 的 baseline 参数）：diff 是纯计算
+    不是网络操作；baseline 参数会把两次采样焊死进一次调用（翻倍网络、
+    无法控制采样间隔、监控节奏失去调用方主权）。引擎不存快照状态——
+    快照落盘/周期调度是监控环调用方的事（toolbox 复用边界：监控告警
+    不包含）。
+
+    身份 = (platform, url)（url 跨轮稳定，见 _entry_key）。返回::
+
+        {
+          "new":  [row, ...]   # 后轮新增（after 子集，platform+rank 升序）
+          "gone": [row, ...]   # 前轮有后轮无（before 子集，同序）
+          "kept": int,         # 两轮都在的条目总数
+          "platforms": {p: {"new": n, "gone": m, "kept": k}},
+                               # 仅实际做了 diff 的平台
+          "skipped_platforms": {p: 原因},
+                               # 单侧无有效榜单的平台——整侧剔除不产信号
+        }
+
+    宁缺勿错：某平台单侧报错（on_error="report" 的 error 记录）或单侧
+    未采样时，该平台**整侧剔除**进 skipped_platforms——否则前轮报错、
+    后轮恢复会把全榜误报成「新增」的假事件信号。输入只读不改（纯函数，
+    返回的 row 是原 dict 引用，不做拷贝不注字段）。
+    """
+    groups_b, errs_b = _group_hot_rows(before)
+    groups_a, errs_a = _group_hot_rows(after)
+    new_rows: List[Dict] = []
+    gone_rows: List[Dict] = []
+    kept = 0
+    summary: Dict[str, Dict[str, int]] = {}
+    skipped: Dict[str, str] = {}
+    for p in sorted(set(groups_b) | set(groups_a)):
+        b, a = groups_b.get(p), groups_a.get(p)
+        if b is None or a is None:
+            reasons = []
+            if b is None:
+                reasons.append("前轮" + ("该平台报错" if p in errs_b
+                                          else "未采样该平台"))
+            if a is None:
+                reasons.append("后轮" + ("该平台报错" if p in errs_a
+                                          else "未采样该平台"))
+            skipped[p] = "；".join(reasons) + "——整侧剔除不产信号"
+            continue
+        new_keys = a.keys() - b.keys()
+        gone_keys = b.keys() - a.keys()
+        kept += len(a) - len(new_keys)
+        summary[p] = {"new": len(new_keys), "gone": len(gone_keys),
+                      "kept": len(a) - len(new_keys)}
+        new_rows.extend(a[k] for k in new_keys)
+        gone_rows.extend(b[k] for k in gone_keys)
+
+    def _order(row: Dict):
+        rank = row.get("rank")
+        return (str(row.get("platform") or ""),
+                rank if isinstance(rank, int) else 10 ** 9)
+
+    new_rows.sort(key=_order)
+    gone_rows.sort(key=_order)
+    return {"new": new_rows, "gone": gone_rows, "kept": kept,
+            "platforms": summary, "skipped_platforms": skipped}
+
+
+# ---------------------------------------------------------------------------
+# 微博访客 cookie 寿命标定（v3.30：单发探活读数，禁 incarnate 纪律）
+# ---------------------------------------------------------------------------
+def _append_jsonl(path: str, entry: Dict) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def weibo_probe_once(log_path: Optional[str] = WEIBO_LIFETIME_LOG_PATH,
+                     tool: str = "hotlist_engine weibo_probe_once") -> Dict:
+    """微博访客 cookie 寿命标定单发探活（doctor 热榜探活项的引擎侧实现）。
+
+    标定纪律：**禁 incarnate**（知乎 cookie_probe 禁自愈同构，见模块
+    docstring）——只动用 state 缓存 cookie 真调一次 hotSearch，失效如实
+    记 expired，绝不续命；实际使用路径 hot() 的自动重领不受影响（探活
+    归探活，使用归使用，两条路径互不污染）。
+
+    读数四态（知乎 cookie_lifetime_log 同构）：
+        valid   信封 ok=1（note 带 top1 词与条数）
+        expired HTTP 401/403（WeiboHotlistAuthRejected 明确身份拒绝）或
+                信封 ok!=1——cookie 死亡读数（寿命标定的关键数据点：
+                死亡时刻的 cookie_age_h）
+        missing 无缓存 cookie（零网络——不 incarnate 不烧 passport）
+        error   non-JSON/网络等其他异常（不污染两类主读数）
+    cookie 年龄从缓存 saved_at 起算（v3.29 落盘自带）。
+
+    读数一行追加 log_path（默认 state/weibo_cookie_lifetime_log.jsonl；
+    None 只测不落账，测试用）：
+        {ts, tool, saved_at, cookie_age_h, status, note}
+    返回该条读数 dict。
+    """
+    entry: Dict = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "tool": tool,
+        "saved_at": None,
+        "cookie_age_h": None,
+        "status": None,
+        "note": "",
+    }
+    try:
+        with open(_WEIBO_STATE_PATH, encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        payload = {}
+    saved_at = payload.get("saved_at")
+    entry["saved_at"] = saved_at
+    if saved_at:
+        try:
+            age_s = time.time() - datetime.strptime(
+                str(saved_at), "%Y-%m-%d %H:%M:%S").timestamp()
+            entry["cookie_age_h"] = round(age_s / 3600, 2)
+        except (ValueError, TypeError, OSError):
+            pass        # 坏 saved_at：龄读数为 None，不影响状态判定
+    cookies = {str(k): str(v)
+               for k, v in (payload.get("cookies") or {}).items()
+               if k in ("SUB", "SUBP") and v}
+    if not cookies:
+        entry["status"] = "missing"
+        entry["note"] = ("无缓存访客 cookie（missing != 过期；首次实际"
+                         "使用时 hot() 会 incarnate 重领）")
+    else:
+        try:
+            env = _call_hotsearch(cookies)
+        except WeiboHotlistAuthRejected as e:   # HTTP 401/403 明确身份拒绝
+            entry["status"] = "expired"
+            entry["note"] = str(e)[:160]
+        except Exception as e:           # non-JSON/网络等其他异常
+            entry["status"] = "error"
+            entry["note"] = f"{type(e).__name__}: {str(e)[:140]}"
+        else:
+            if env.get("ok") == 1:
+                entry["status"] = "valid"
+                realtime = (env.get("data") or {}).get("realtime") or []
+                words = [str(i.get("word") or "") for i in realtime
+                         if isinstance(i, dict) and i.get("word")
+                         and not i.get("is_ad")]
+                entry["note"] = (f"top1={words[0] if words else '?'} "
+                                 f"rows={len(words)}")
+            else:
+                # 信封级失效（HTTP 200 但 ok!=1）= cookie 死亡同读数
+                entry["status"] = "expired"
+                entry["note"] = (f"信封 ok={env.get('ok')}（cookie 失效；"
+                                 f"标定禁 incarnate 不续命）")
+    if log_path:
+        _append_jsonl(log_path, entry)
+    return entry
 
 
 def _main() -> int:

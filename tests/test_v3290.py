@@ -420,13 +420,16 @@ class TestRoutingAndFacade(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestVersionSyncV329(unittest.TestCase):
     def test_versions_3290(self):
+        # v3.30 起精确锁移交 test_v3300，此处降常青下限（v3.27→v3.28→
+        # v3.29 先例）：双 __version__ 同步本身不许破
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.29.0")
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 29, 0])
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)
@@ -438,13 +441,17 @@ class TestVersionSyncV329(unittest.TestCase):
         self.assertIn("热榜", changelog)
         self.assertIn("incarnate", changelog)
         self.assertIn("zhihu_hotlist_needs_login", changelog)
+        # v3.30 起精确徽章/状态行锁移交 test_v3300，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防止换版时徽章漂移回退）
+        if mcp_server is None:
+            src2 = (REPO / "tools" / "mcp_server.py").read_text(
+                encoding="utf-8")
+            ver = re.search(r'__version__ = "([^"]+)"', src2).group(1)
+        else:
+            ver = mcp_server.__version__
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.29.0", readme)
-        self.assertIn("v3.29.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）
-        m = re.search(r"tests-(\d+)%20passing", readme)
-        self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "491")
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)   # 状态行「vX.Y.Z（日期）」头部在场
 
     def test_honest_doc_evidence_chain(self):
         # 诚实文档（架构原则 8）：能力声明以实测为准，证据链进 docstring

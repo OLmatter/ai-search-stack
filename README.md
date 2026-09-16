@@ -2,13 +2,26 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.29.0](https://img.shields.io/badge/release-v3.29.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.29.0)
+[![Release: v3.30.0](https://img.shields.io/badge/release-v3.30.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.30.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 491 passing](https://img.shields.io/badge/tests-491%20passing-success.svg)](tests/)
+[![Tests: 517 passing](https://img.shields.io/badge/tests-517%20passing-success.svg)](tests/)
 
-**v3.29.0（2026-09-17）**：v3.0 全面审计大修之后连续三十轮迭代——
-**A2 热榜聚合**：hotlist_engine.py（bilibili 热门/微博热搜/知乎诚实上限）
+**v3.30.0（2026-09-17）**：v3.0 全面审计大修之后连续三十一轮迭代——
+**热榜监控闭环 + 微博 cookie 寿命标定起步**：hot_diff(before, after)
+纯函数（两轮采样 diff，新增条目=事件信号；身份=(platform,url) 跨轮稳定，
+error 记录剔除、单侧无有效榜单平台整侧剔除不产假信号——宁缺勿错；零
+网络可离线组合，真实演练两轮采样间隔 16 分钟：weibo 3 新增 3 消失、
+bilibili 20/20 保持）+ weibo_probe_once（微博访客 cookie 寿命标定单发
+探活，禁 incarnate 纪律与知乎 cookie_probe 禁自愈同构，读数四态
+valid/expired/missing/error 追加 state/weibo_cookie_lifetime_log.jsonl
+独立标定流）+ doctor 热榜探活项（全量巡检第 9 项：bilibili popular 烂
+检测 + weibo 标定读数顺带落账；知乎 needs_login 诚实上限不算故障）+
+--hotlist-probe 单发模式 + 标定钩子活性覆盖 weibo 流（sogou 同款）+
+MCP doctor mode=hotlist，
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+三十轮：**A2 热榜聚合**：hotlist_engine.py（bilibili 热门/微博热搜/知乎诚实上限）
 + 门面 search.hot() 路由 + MCP china_hotlist 工具（第 15 个工具，无查询词
 的监控原语：vendor 官宣/事件首发地/舆情雷达）。实测（逻辑探测 8 发）：
 B 站 popular API 裸调即通（连 buvid3 都不需要）；微博 hotSearch 走
@@ -118,7 +131,7 @@ doctor GitHub 检查可选 GITHUB_TOKEN 认证（缓解匿名 60 req/h 共享配
 此前
 十六轮：doctor
 标定钩子活性扩展覆盖搜狗恢复曲线日志、mcp doctor 工具 mode 子模式
-（full|cookie|sogou）、SearXNG 实例上游引擎调优（实测不健康引擎清零，
+（full|cookie|sogou|hotlist）、SearXNG 实例上游引擎调优（实测不健康引擎清零，
 详见 [CHANGELOG.md](CHANGELOG.md)）。
 此前
 十五轮：搜狗
@@ -317,7 +330,7 @@ anaconda python 的绝对路径。
 | `github_advisories` | `github_client.get_advisories` | 安全通告（按生态） | 秒级 |
 | `searxng_search` | `searxng_client.search` | SearXNG 聚合搜索（默认本地 8888） | 秒级；实例未起返回可读错误 |
 | `googlebridge_search` | HTTP 转发 `127.0.0.1:18799/search` | 真 Google（需先起 search_helper + Chrome 代理） | 数十秒级；服务未起返回可读错误 |
-| `doctor` | `tools/doctor.py` check/探活体系 | 全通道体检 + 标定探活子模式（mode: full\|cookie\|sogou，默认 full） | full 5-10s；cookie/sogou 单发秒级~十几秒 |
+| `doctor` | `tools/doctor.py` check/探活体系 | 全通道体检 + 标定探活子模式（mode: full\|cookie\|sogou\|hotlist，默认 full） | full 5-10s；cookie/sogou/hotlist 单发秒级~十几秒 |
 
 **GitHub 为何拆两个工具**：MCP 的工具描述就是模型的路由提示。两个正交参数集
 （`repo` vs `ecosystem`）合成一个带 `kind` 判别参数的工具，模型更容易填错参数；

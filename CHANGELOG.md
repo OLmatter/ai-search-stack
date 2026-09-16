@@ -1,5 +1,64 @@
 # Changelog
 
+## [3.30.0] - 2026-09-17
+
+### 🎯 热榜监控闭环批次：hot_diff + 微博 cookie 寿命标定起步 + doctor 热榜探活项
+
+- **hot_diff(before, after) 纯函数（`tools/chat-scraper/hotlist_engine.py`）**：
+  两轮热榜采样 diff，**新增条目=事件信号**（刚上榜=正在发生的事）——把
+  v3.29 的「榜单快照」升级成「监控闭环」。架构推导：diff 是纯计算不是
+  网络操作，落引擎层纯函数（零网络可离线钉测、可被任意监控环组合），
+  **不做** hot() 的 baseline 参数（会把两次采样焊死进一次调用：翻倍网络、
+  采样间隔失去调用方主权）；引擎不存快照状态——快照落盘/周期调度归监控
+  环调用方（toolbox 复用边界：监控告警不包含）。身份=(platform, url)
+  （bilibili bvid URL / 微博词检索 URL 跨轮稳定；url 缺失回退 title）；
+  返回 {new, gone, kept, platforms 分平台 summary, skipped_platforms}；
+  **宁缺勿错**：error 记录（report 协议产物）剔除、单侧无有效榜单平台
+  整侧剔除不产信号——前轮报错后轮恢复会把全榜误报成「新增」的假事件；
+  输入零 mutation，new/gone 按 (platform, rank) 确定序。
+  **真实演练实据（2026-09-17，同主题两轮采样间隔 16 分钟）**：04:02:06
+  轮1 / 04:18:08 轮2，各 bilibili+weibo num=20 共 40 行 0 错误、5.4s；
+  diff：kept=37，bilibili {new 0, gone 0, kept 20}（热门页慢变量），
+  weibo {new 3, gone 3, kept 17}——新增 iPhone18Pro(#10)/方程SGT(#19)/
+  一点点提两箱牛奶上门沟通(#20)，消失 中国男乒五战全败/美联储今晚声明
+  五大看点/多国亚运代表队落地名古屋被困机场，事件信号真实成立。留档
+  `state/hotlist_drill_20260917/`（round1/round2/diff 三件套，本地）。
+- **weibo_probe_once（`hotlist_engine.py`）+ weibo cookie 寿命标定起步**：
+  state/weibo_visitor_cookies.json 自 v3.29 落盘自带 saved_at——寿命数据
+  基座就位，本批接积累机制。标定纪律**禁 incarnate**（知乎 cookie_probe
+  禁自愈同构）：探活只动缓存 cookie 真调一次 hotSearch，失效如实记
+  expired 绝不续命（若探活即重领，每条 expired 都被续命污染，寿命分布
+  永远测不出来）；实际使用路径 hot() 的自动重领不受影响（探活归探活、
+  使用归使用，两条路径互不污染）。读数四态 valid/expired/missing/error
+  （知乎 cookie_lifetime_log 同构；expired=WeiboHotlistAuthRejected
+  HTTP 401/403 或信封 ok!=1 的 cookie 死亡读数，带死亡时刻 cookie_age_h；
+  missing 零网络不烧 passport；non-JSON 等页面形态异常归 error 不冒充
+  死亡）追加 **state/weibo_cookie_lifetime_log.jsonl**——独立 jsonl
+  （仓库标定流先例：cookie_lifetime/sogou_recovery/sogou_throttle 各自
+  独立流；同日志带 platform 字段的方案被否：不同标定对象节奏/寿命/四态
+  语义都不同，混写让钩子活性检查无法按流判读数）。
+  同批细分 **WeiboHotlistAuthRejected(WeiboHotlistError)** 子类：_call_
+  hotsearch 的 401/403 明确身份拒绝单列（slug weibo_hotlist_auth_
+  rejected），探活四态判定不靠错误信息字符串猜；hot() 流程 except 父类
+  照常命中，行为零变更。
+- **doctor 热榜探活项（全量巡检第 9 项 = 6 网络 + 3 本地，可选观测）**：
+  check_hotlist = bilibili popular 一发烂检测（code=0 + 榜非空）+ 微博
+  weibo_probe_once 缓存线单发（读数**顺带落账** weibo_cookie_lifetime_
+  log.jsonl——寿命数据靠巡检/探活节奏积累）；valid ✅ 带龄 / expired ⚠️
+  **非通道故障**（cookie 死亡是标定的关键数据点，实际使用自动重领）/
+  missing 不报警 / **知乎线 needs_login 诚实上限不算故障**（零网络静态
+  说明，凭据线归主人）。标定钩子活性扩展覆盖 weibo 流（v3.15 sogou
+  同款：缺文件=可选观测未启用不报警，有读数后 >48h 报警=钩子疑似断线）。
+  新增 **--hotlist-probe** 单发模式（最便宜周期标定节拍，cron 友好：
+  bilibili 线无 cookie 无寿命可言不发请求，其可达性由全量巡检覆盖；
+  valid/expired/missing 均成功观测 exit 0，本地故障 exit 1——与
+  --cookie-probe/--sogou-probe 契约一致）。MCP doctor mode 三态→四态
+  （+hotlist），描述/耗时/退出码语义同步。
+- **测试**：test_v3300 26 钉全离线（hot_diff 6 + weibo_probe_once 7 +
+  doctor 热榜 8 + MCP doctor 2 + 版本锁/诚实文档 3）——演练走真实采样
+  独立留档，回归钉全走 mock/tmp 文件/源码钉；test_v3290 精确锁降常青
+  移交（v3.27→v3.28→v3.29 先例）；491→517 测试。
+
 ## [3.29.0] - 2026-09-17
 
 ### 🎯 热榜聚合批次：hotlist_engine（A2）——B站热门/微博热搜/知乎诚实上限

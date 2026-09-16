@@ -35,7 +35,8 @@ class TestDoctorRegistration(unittest.TestCase):
         src = (REPO / "tools" / "doctor.py").read_text(encoding="utf-8")
         self.assertIn('_check("值班巡检趋势", check_shift_log, optional=True)',
                       src)
-        self.assertIn("8 = 5 网络探活 + 3 本地状态", src)   # docstring 同步
+        # v3.30 起巡检项 8→9（热榜通道），项数 token 降常青（清单随批演进）
+        self.assertIn("网络探活 + 3 本地状态", src)   # docstring 同步
 
 
 # ---- 2. SearXNG settings.yml 恢复观察钉子 ----------------------------------------
@@ -108,7 +109,8 @@ class TestMcpDoctorDescriptionV316(unittest.TestCase):
         import asyncio
         tools = asyncio.run(mcp_server.mcp.list_tools())
         desc = {t.name: t.description for t in tools}["doctor"]
-        for token in ("8 项", "值班巡检趋势", "shift_log",
+        # v3.30 起清单 8→9 项（+热榜通道），"8 项" token 降常青为"项："
+        for token in ("项：", "值班巡检趋势", "shift_log",
                       "cookie_lifetime_log.jsonl", "sogou_recovery_log.jsonl"):
             self.assertIn(token, desc)
 

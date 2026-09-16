@@ -2,14 +2,20 @@
 # -*- coding: utf-8 -*-
 """ai-search-stack 工具箱体检（doctor）—— 一条命令巡检全部通道健康。
 
-巡检项（8 = 5 网络探活 + 3 本地状态）：
+巡检项（9 = 6 网络探活 + 3 本地状态）：
     - 本地 SearXNG 实例（zhihu 链第一环）：存活 + unresponsive_engines
     - 知乎 cookie：文件存在性 + 年龄（v3.4 起过期可自愈，但仍值得观测）
-    - 标定钩子活性（v3.8.2，v3.15 扩展）：周期探活的最后读数 >48h = 钩子
-      疑似断线——覆盖 cookie_lifetime_log（缺文件报警）与 sogou_recovery_log
-      （v3.15；缺文件=可选观测项未启用不报警，有读数后 >48h 报警）
+    - 标定钩子活性（v3.8.2，v3.15/v3.30 扩展）：周期探活的最后读数 >48h
+      = 钩子疑似断线——覆盖 cookie_lifetime_log（缺文件报警）与
+      sogou_recovery_log（v3.15；缺文件=可选观测项未启用不报警，有读数
+      后 >48h 报警）与 weibo_cookie_lifetime_log（v3.30，sogou 同款：
+      缺文件不报警，有读数后 >48h 报警）
     - bilibili 官方 API：用一个知名 bvid 探活（只读、无风控压力）
     - 百度直连：首页探活（搜索风控与首页可达是两回事，这里只测通道）
+    - 热榜通道（v3.30，可选观测项）：bilibili popular 端点一发烂检测 +
+      微博访客 cookie 缓存线单发探活（禁 incarnate，读数顺带落账
+      weibo_cookie_lifetime_log.jsonl——cookie 寿命标定起步）；知乎线
+      needs_login 是诚实上限非故障，零网络静态说明
     - google-bridge 服务：/health（通常按需启动，未起不算故障）
     - GitHub API：可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
       UA 会被 GitHub 按 IP 强限流成永久 403；v3.18 起可选 GITHUB_TOKEN，
@@ -27,10 +33,15 @@
     python tools/doctor.py --sogou-probe    # 只跑搜狗单发探活（v3.14 恢复
                                             # 曲线标定，读数追加
                                             # state/sogou_recovery_log.jsonl）
-退出码: 0=全绿或仅可选服务未启动（--cookie-probe / --sogou-probe 单项
-        标定模式只观测不判故障，expired/valid/blocked 均为成功读数）;
+    python tools/doctor.py --hotlist-probe  # 只跑微博访客 cookie 寿命标定
+                                            # 探活（v3.30，禁 incarnate，
+                                            # 读数追加
+                                            # state/weibo_cookie_lifetime_log.jsonl）
+退出码: 0=全绿或仅可选服务未启动（--cookie-probe / --sogou-probe /
+        --hotlist-probe 单项标定模式只观测不判故障，expired/valid/
+        missing/blocked 均为成功读数）;
         1=有核心通道故障（--cookie-probe --renew-if-older-than 时续期失败
-        也 1；--sogou-probe 本地故障也 1）。
+        也 1；--sogou-probe / --hotlist-probe 本地故障也 1）。
 """
 import json
 import os
@@ -60,6 +71,16 @@ PROBE_QUESTION_ID = "19550227"   # bootstrap 同款知名问题，仅作 API 探
 # search 同判据）。日志在 state/ 下（已 gitignore，只留本地）。
 SOGOU_RECOVERY_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
                                        "sogou_recovery_log.jsonl")
+
+# v3.30: 微博访客 cookie 寿命标定（--hotlist-probe / 全量巡检热榜项）。
+# weibo_visitor_cookies.json 自 v3.29 落盘自带 saved_at——寿命标定的
+# 数据基座。标定纪律与知乎 cookie_probe 同构：探活禁 incarnate（不续命，
+# 保真实寿命读数）。读数流独立 jsonl（仓库标定流先例：
+# cookie_lifetime_log / sogou_recovery_log / sogou_throttle_log 各自
+# 独立；混写会让钩子活性检查无法按流判读数）。日志在 state/ 下
+# （已 gitignore，只留本地）。
+WEIBO_LIFETIME_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
+                                       "weibo_cookie_lifetime_log.jsonl")
 
 # v3.18: 值班巡检趋势统计口径重做（check_shift_log 于 v3.16 引入）。
 # shift_log.md 是值班会话的巡检/处置流水（人工+会话写入），doctor 只读
@@ -203,6 +224,20 @@ def check_hook_liveness():
                 f"钩子疑似断线（--sogou-probe 定时任务没跑？）")
         parts.append(f"sogou 最后读数 {sogou_age_h:.1f}h 前"
                      f"（{'blocked' if sogou.get('blocked') else 'ok'}）")
+
+    # v3.30: weibo cookie 寿命标定流（sogou 同款可选观测语义）
+    weibo = _last_valid_entry(WEIBO_LIFETIME_LOG_PATH)
+    if weibo is None:
+        parts.append("weibo 标定无读数（可选观测项未启用，不报警；"
+                     "python tools/doctor.py --hotlist-probe 可启用）")
+    else:
+        weibo_age_h = _reading_age_h(weibo)
+        if weibo_age_h > 48:
+            raise RuntimeError(
+                f"weibo cookie 标定最后读数已是 {weibo_age_h:.0f}h 前——"
+                f"热榜探活钩子疑似断线（--hotlist-probe / 全量巡检没跑？）")
+        parts.append(f"weibo 最后读数 {weibo_age_h:.1f}h 前"
+                     f"（{weibo.get('status', '?')}）")
     return "; ".join(parts)
 
 
@@ -326,6 +361,50 @@ def check_bilibili():
 def check_baidu():
     body = _get("https://www.baidu.com/")
     return f"首页 200, {len(body)} 字节（注意：搜索风控另行判定）"
+
+
+def check_hotlist():
+    """热榜通道健康（v3.30，可选观测项）——端点可达性烂检测 + weibo
+    cookie 寿命标定读数顺带落账。
+
+    - bilibili 热门线：popular API 一发烂检测（code=0 + 榜单非空；裸调
+      即通无需 cookie，2026-09-17 v3.29 探测 #3 实测）。
+    - 微博线：hotlist_engine.weibo_probe_once 缓存 cookie 单发（**禁
+      incarnate** 标定纪律，读数顺带追加 weibo_cookie_lifetime_log.jsonl
+      ——寿命数据靠巡检/探活节奏积累）。valid=✅ 带龄；expired=⚠️ 不判
+      故障（cookie 死亡是标定的关键数据点，实际使用时 hot() 自动重领，
+      通道本身没坏）；missing=未启用说明不报警；error=⚠️。
+    - 知乎线：needs_login 是诚实上限**非故障**（v3.29 实测端点需登录态，
+      凭据线归主人），零网络静态说明。
+    """
+    _sys_path_chat_scraper()
+    import hotlist_engine as hl
+    body = _get("https://api.bilibili.com/x/web-interface/popular"
+                "?ps=20&pn=1")
+    payload = json.loads(body)
+    if payload.get("code") != 0:
+        raise RuntimeError(f"popular code={payload.get('code')} "
+                           f"message={payload.get('message')}")
+    n_bili = len((payload.get("data") or {}).get("list") or [])
+    if not n_bili:
+        raise RuntimeError("popular 200 但空榜（data.list 空）")
+    parts = [f"bilibili popular {n_bili} 条"]
+    entry = hl.weibo_probe_once(log_path=WEIBO_LIFETIME_LOG_PATH,
+                                tool="doctor 热榜探活项")
+    if entry["status"] == "valid":
+        parts.append(f"weibo cookie 龄 {entry['cookie_age_h']}h 有效"
+                     f"（{entry['note']}）")
+    elif entry["status"] == "missing":
+        parts.append("weibo 无缓存 cookie（missing != 过期，不报警；"
+                     "首次实际使用时自动 incarnate）")
+    elif entry["status"] == "expired":
+        raise RuntimeError(
+            f"weibo 访客 cookie 已失效（龄 {entry['cookie_age_h']}h，读数"
+            f"已落账）——实际使用时 hot() 自动 incarnate 重领，非通道故障")
+    else:
+        raise RuntimeError(f"weibo 探活 {entry['status']}: {entry['note']}")
+    parts.append("zhihu 线 needs_login 诚实上限非故障（凭据线归主人）")
+    return "; ".join(parts)
 
 
 def check_google_bridge():
@@ -551,6 +630,45 @@ def cmd_sogou_probe() -> int:
     return 0
 
 
+def cmd_hotlist_probe() -> int:
+    """v3.30: 微博访客 cookie 寿命标定单发探活（--hotlist-probe，独立于
+    全量巡检）。
+
+    引擎侧 weibo_probe_once：只动用缓存 cookie 真调一次 hotSearch，**禁
+    incarnate**（不续命，保真实寿命读数），读数（含 saved_at 起算的
+    cookie_age_h）追加 WEIBO_LIFETIME_LOG_PATH。本模式只观测不判故障：
+    valid/expired/missing 均为成功读数（寿命数据点），exit 0；本地故障
+    （导入失败/日志写不进）exit 1。bilibili 线无 cookie 无寿命可言，此
+    模式不发请求（其可达性由全量巡检热榜项覆盖）——最便宜的周期标定节
+    拍（cron 友好）。
+    """
+    _sys_path_chat_scraper()
+    import hotlist_engine as hl
+    print("== 微博访客 cookie 寿命标定探活（缓存 cookie 单发，禁 incarnate）==")
+    try:
+        # log_path 显式传全局（同 cookie_probe：默认参数在 def 时绑定，
+        # 测试 patch doctor.WEIBO_LIFETIME_LOG_PATH 需要生效）
+        entry = hl.weibo_probe_once(log_path=WEIBO_LIFETIME_LOG_PATH,
+                                    tool="doctor --hotlist-probe")
+    except Exception as e:   # 读数函数自身不许炸，走到这基本是写日志失败
+        print(f"❌ hotlist-probe 本地故障: {type(e).__name__}: {e}")
+        return 1
+    icon = {"valid": "✅", "expired": "🪦", "missing": "⚠️",
+            "error": "❌"}.get(entry["status"], "❓")
+    print(f"{icon} status={entry['status']} "
+          f"saved_at={entry['saved_at']} "
+          f"age={entry['cookie_age_h']}h")
+    print(f"   {entry['note']}")
+    try:
+        with open(WEIBO_LIFETIME_LOG_PATH, encoding="utf-8") as f:
+            n = sum(1 for _ in f)
+        print(f"→ 已追加 {WEIBO_LIFETIME_LOG_PATH}"
+              f"（累计 {n} 条 cookie 寿命读数）")
+    except OSError:
+        print(f"→ 已追加 {WEIBO_LIFETIME_LOG_PATH}")
+    return 0
+
+
 def _make_stdout_robust():
     """v3.21: GBK 控制台加固——✅/🪦/❌ 等 emoji 在 GBK 编码管道下直接
     UnicodeEncodeError 崩掉整份报告（2026-09-16 sogou cron 部署调试期实录，
@@ -592,17 +710,26 @@ def main(argv=None) -> int:
                         "判定与 search 同判据，读数含距上次风控秒数追加 "
                         "state/sogou_recovery_log.jsonl），不跑全量巡检；"
                         "blocked/正常均为成功观测，exit 0")
+    p.add_argument("--hotlist-probe", action="store_true",
+                   help="只跑微博访客 cookie 寿命标定探活（v3.30，缓存 "
+                        "cookie 单发禁 incarnate，读数含 cookie 龄追加 "
+                        "state/weibo_cookie_lifetime_log.jsonl），不跑全"
+                        "量巡检；valid/expired/missing 均为成功观测，"
+                        "exit 0")
     args = p.parse_args(argv)
     if args.cookie_probe:
         return cmd_cookie_probe(renew_hours=args.renew_if_older_than)
     if args.sogou_probe:
         return cmd_sogou_probe()
+    if args.hotlist_probe:
+        return cmd_hotlist_probe()
     print(f"== ai-search-stack doctor @ {time.strftime('%Y-%m-%d %H:%M')} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
     _check("知乎 cookie", check_cookie, optional=True)
     _check("标定钩子活性", check_hook_liveness, optional=True)
     _check("bilibili 官方 API", check_bilibili)
     _check("百度直连", check_baidu)
+    _check("热榜通道", check_hotlist, optional=True)
     _check("google-bridge 服务", check_google_bridge, optional=True)
     _check("GitHub API", check_github)
     _check("值班巡检趋势", check_shift_log, optional=True)

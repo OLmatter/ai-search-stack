@@ -1,5 +1,5 @@
-"""chat-scraper v3.29.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
-+ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合）。
+"""chat-scraper v3.30.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
++ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控 diff）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
 实测覆盖与已知限制见 README.md，不要按平台数量估算本工具能力。
@@ -123,8 +123,24 @@ SUB/SUBP cookie，无浏览器，缓存 state/weibo_visitor_cookies.json 复用�
 is_ad 广告位剔除）；知乎热榜官方端点访客线实测死刑（裸调 401 + 签名线
 401 code=101，端点需登录态——平台位保留恒报 zhihu_hotlist_needs_login，
 零网络请求不烧引导，凭据线归主人）。
+
+v3.30.0：热榜监控闭环 + 微博 cookie 寿命标定起步——hot_diff(before,
+after) 纯函数（两轮采样 diff，新增条目=事件信号；身份=(platform,url)
+跨轮稳定；error 记录剔除、单侧无有效榜单平台整侧剔除不产假信号——
+宁缺勿错；零网络可离线组合，2026-09-17 真实演练两轮采样间隔 >=10 分钟
+实据落 CHANGELOG）+ weibo_probe_once（微博访客 cookie 寿命标定单发
+探活：禁 incarnate 纪律与知乎 cookie_probe 禁自愈同构——探活只动缓存
+cookie 真调一次 hotSearch，失效如实记 expired 绝不续命，实际使用路径
+hot() 自动重领不受影响；读数四态 valid/expired/missing/error 同构知乎，
+追加 state/weibo_cookie_lifetime_log.jsonl 独立标定流——仓库标定流
+先例 cookie_lifetime/sogou_recovery/sogou_throttle 各自独立，混写会让
+钩子活性检查无法按流判读数）+ doctor 热榜探活项（全量巡检第 9 项：
+bilibili popular 烂检测 + weibo 标定读数顺带落账；知乎 needs_login
+诚实上限不算故障）+ --hotlist-probe 单发模式 + 标定钩子活性覆盖
+weibo 流（sogou 同款：缺文件不报警，有读数后 >48h 报警）+ MCP doctor
+mode=hotlist。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.29.0"
+__version__ = "3.30.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]
