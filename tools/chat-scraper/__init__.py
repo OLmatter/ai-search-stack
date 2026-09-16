@@ -1,4 +1,4 @@
-"""chat-scraper v3.12.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.13.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -33,8 +33,15 @@ v3.12.0：百度搜索翻页（num>20 不再静默截断：pn 偏移翻页，护
 citations[].abstract、bilibili fetch_video desc 三处输出口带 truncated
 标记，与 v3.11 zhihu_content 同一诚实纪律）+ 审查 A1：两引擎翻页跨页
 去重（页间重叠条目不再重复进返回集，整页重复=排序穷尽信号如实停）。
+
+v3.13.0：搜狗连发风控阈值标定（--probe 连发探测，读数落
+state/sogou_throttle_log.jsonl；2026-09-16 实测连发阈值=4 发、
+第 5 发即 antispider，风控后 ~171s 冷却恢复——架构图最后一个无标定
+数据的引擎补齐）+ bilibili 多 P 展开（fetch_video/fetch_subtitles 接受
+URL ?p=N 或 part 参数取任意分 P，输出 page/part_title/pages_count，
+分 P 超界如实报错含合法范围）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.12.0"
+__version__ = "3.13.0"
 __all__ = ["search", "list_platforms", "__version__"]

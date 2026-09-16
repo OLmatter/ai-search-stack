@@ -17,7 +17,8 @@
 用法:
     from bilibili_engine import search, fetch_video, fetch_subtitles
     results = search("python 教程", num=10)
-    info = fetch_video("BV1GJ411x7h7")            # 结构化详情（含 cid）
+    info = fetch_video("BV1GJ411x7h7")            # 结构化详情（含 cid，P1）
+    info = fetch_video("BVxxxx?p=2")              # 多 P 视频取第 2 个分 P
     subs = fetch_subtitles("BV1GJ411x7h7")        # 字幕链路（未登录实测恒空列表，见下）
 
 CLI:
@@ -349,15 +350,54 @@ def _extract_bvid(video: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _extract_part(video: str) -> Optional[int]:
+    """从 URL 提取分 P 号（...?p=2 / &p=3）；无分 P 标记返回 None。
+
+    只认 query 里的 p 参数（B 站网页分 P 的标准形态）。
+    """
+    m = re.search(r"[?&]p=(\d+)", video or "")
+    return int(m.group(1)) if m else None
+
+
+def _resolve_cid(v: Dict, part: int) -> "Tuple[Optional[int], int, str]":
+    """从 view 响应解析第 part 个分 P 的 (cid, 总P数, 分P标题)。
+
+    分 P 超界（part<1 或 > 总P数）抛 BilibiliApiError（含合法范围，
+    如实报错不静默回退 P1）。view 未下发 pages 时按单 P 处理，cid 原样
+    取 data.cid（旧形态行为不变，缺失时返回 None 由调用方定语义）。
+    """
+    pages = v.get("pages") or []
+    pages_count = len(pages) if pages else 1
+    if part < 1 or part > pages_count:
+        raise BilibiliApiError(
+            f"分 P {part} 不存在（该视频共 {pages_count} 个分 P，合法范围 "
+            f"1~{pages_count}）")
+    if not pages:
+        return v.get("cid"), 1, ""
+    for pg in pages:
+        if int(pg.get("page") or 0) == part:
+            cid = pg.get("cid")
+            if cid:
+                return int(cid), pages_count, str(pg.get("part") or "")
+            break   # pages 条目缺 cid = API 形态变化，走下方统一报错
+    raise BilibiliApiError(
+        f"view 响应解析分 P {part} 的 cid 失败（API 形态变化？）")
+
+
 def fetch_video(video: str, vendor: str = "?", role: str = "primary",
+                part: Optional[int] = None,
                 on_error: str = "report") -> Dict:
     """视频结构化详情：官方 view API（公开、免 wbi）。
 
-    video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL。成功返回 Dict；
-    on_error="report" 时错误返回 List（统一错误协议）——两种返回形态；
-    风控/不存在按统一错误协议处理。cid 为 P1 的 cid（多 P 视频各分 P 的
-    cid 见 view 原始响应 data.pages，本工具不展开）。desc 截 2000 字符时
-    输出带 truncated=true（v3.12 截断可见化）。
+    video 接受纯 bvid（BV1xx…）或任意含 BV 号的 URL；URL 带 ?p=N 时取
+    第 N 个分 P（显式 part 参数优先于 URL 标记，默认 P1）。成功返回
+    Dict；on_error="report" 时错误返回 List（统一错误协议）——两种返回
+    形态；风控/不存在/分 P 超界按统一错误协议处理。
+
+    多 P 展开（v3.13）：输出带 page（解析到的分 P 号）、part_title（该
+    分 P 标题）、pages_count（总 P 数）；cid 为该分 P 的 cid（原"本工具
+    不展开 pages"的声明就此作废）；分 P>1 时 url 带 ?p=N 便于回跳。
+    desc 截 2000 字符时输出带 truncated=true（v3.12 截断可见化）。
     """
     bvid = _extract_bvid(video)
     if not bvid:
@@ -368,6 +408,8 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
             return [{"error": f"ValueError: {err}", "tool": _TOOL,
                      "query": video, "platform": _PLATFORM}]
         return []
+    if part is None:
+        part = _extract_part(video) or 1
     try:
         s = _get_session()
         _wait_turn()
@@ -379,22 +421,29 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
             raise BilibiliApiError(
                 f"code={data.get('code')} message={data.get('message')}")
         v = data.get("data") or {}
+        cid, pages_count, part_title = _resolve_cid(v, int(part))
         from datetime import datetime as _dt
         desc, desc_truncated = (v.get("desc") or "").strip(), False
         if len(desc) > DESC_LIMIT:
             desc, desc_truncated = desc[:DESC_LIMIT], True
+        url = f"https://www.bilibili.com/video/{bvid}"
+        if part > 1:
+            url += f"?p={part}"
         return {
             "title": _clean_title(v.get("title", "")),
             "desc": desc,
             "truncated": desc_truncated,
             "owner": (v.get("owner") or {}).get("name", ""),
-            "cid": v.get("cid"),
+            "cid": cid,
+            "page": part,
+            "part_title": part_title,
+            "pages_count": pages_count,
             "view": v.get("stat", {}).get("view", 0),
             "danmaku": v.get("stat", {}).get("danmaku", 0),
             "like": v.get("stat", {}).get("like", 0),
             "favorite": v.get("stat", {}).get("favorite", 0),
             "pubdate": _fmt_pubdate(int(v.get("pubdate") or 0)),
-            "url": f"https://www.bilibili.com/video/{bvid}",
+            "url": url,
             "platform": _PLATFORM,
             "engine": "bilibili-api",
             "vendor": vendor,
@@ -413,12 +462,15 @@ def fetch_video(video: str, vendor: str = "?", role: str = "primary",
 _API_PLAYER = "https://api.bilibili.com/x/player/wbi/v2"
 
 
-def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
+def fetch_subtitles(video: str, part: Optional[int] = None,
+                    on_error: str = "report") -> Dict:
     """B 站视频 CC 字幕读取（v3.9）：view API 拿 cid → player/wbi/v2（wbi
     签名，密钥复用引擎内置缓存）拿 subtitle.subtitles 列表 → 字幕逐个
     拉 JSON 正文（{"from","to","content"} 行列表）。
 
-    video 接受纯 bvid 或任意含 BV 号的 URL；取 P1（view 响应的 data.cid）。
+    video 接受纯 bvid 或任意含 BV 号的 URL；URL 带 ?p=N 时取第 N 个分 P
+    （显式 part 参数优先于 URL 标记，v3.13 起支持，默认 P1）；分 P 超界
+    如实报错含合法范围。
 
     **实测上限（2026-09-16，如实报告）**：未登录访客请求 subtitle 列表
     **恒为空**——三个视频实测（含标题自带"CC字幕更新完毕"、确有 CC 字幕
@@ -440,6 +492,8 @@ def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
             return [{"error": f"ValueError: {err}", "tool": _TOOL,
                      "query": video, "platform": _PLATFORM}]
         return []
+    if part is None:
+        part = _extract_part(video) or 1
     try:
         s = _get_session()
         # 1) view 拿 cid（顺带 title/owner 方便核对拿对了视频）
@@ -453,7 +507,7 @@ def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
                 f"view code={data.get('code')} "
                 f"message={data.get('message')}")
         v = data.get("data") or {}
-        cid = v.get("cid")
+        cid, pages_count, part_title = _resolve_cid(v, int(part))
         if not cid:
             raise BilibiliApiError("view 响应无 cid（API 形态变化？）")
         # 2) player/wbi/v2 拿字幕列表（wbi 签名；wbi 键带 1h TTL 缓存）
@@ -511,11 +565,15 @@ def fetch_subtitles(video: str, on_error: str = "report") -> Dict:
         return {
             "bvid": bvid,
             "cid": cid,
+            "page": part,
+            "part_title": part_title,
+            "pages_count": pages_count,
             "title": _clean_title(v.get("title", "")),
             "owner": (v.get("owner") or {}).get("name", ""),
             "has_subtitles": bool(out),
             "subtitles": out,
-            "url": f"https://www.bilibili.com/video/{bvid}",
+            "url": (f"https://www.bilibili.com/video/{bvid}"
+                    + (f"?p={part}" if part > 1 else "")),
             "platform": _PLATFORM,
             "engine": "bilibili-api",
             # 空列表不是故障，note 把实测结论讲清楚，防调用方误判真空/故障

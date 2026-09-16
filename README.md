@@ -2,14 +2,17 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.12.0](https://img.shields.io/badge/release-v3.12.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.12.0)
+[![Release: v3.13.0](https://img.shields.io/badge/release-v3.13.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.13.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 201 passing](https://img.shields.io/badge/tests-201%20passing-success.svg)](tests/)
+[![Tests: 227 passing](https://img.shields.io/badge/tests-227%20passing-success.svg)](tests/)
 
-**v3.12.0（2026-09-16）**：v3.0 全面审计大修之后连续十三轮迭代——百度搜索
-翻页、截断可见化扫尾（详见 [CHANGELOG.md](CHANGELOG.md)）。此前
-十二轮：B站搜索翻页、doctor GitHub 检查修复、zhihu_content 截断可见化、
+**v3.13.0（2026-09-16）**：v3.0 全面审计大修之后连续十四轮迭代——搜狗连发
+风控阈值标定（实测连发阈值 4 发）、B站多 P 展开（详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十三轮：百度搜索
+翻页、截断可见化扫尾、B站搜索翻页、doctor GitHub 检查修复、zhihu_content
+截断可见化、
 错误协议统一、
 知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
 MCP stdio 接入层（14 工具）、文心 AI 搜索、cookie 寿命标定 + 定时续期、
@@ -153,7 +156,8 @@ cookie 亦然**（自愈+重试无法救回，v3.4 起的旧形态已死）。v3
   截断口扫完——wenxin `answer`（截 4000 标 `truncated=true`）与
   `citations[].abstract`（截 500 每条标 `truncated`）、bilibili
   `fetch_video` 的 `desc`（截 2000 标 `truncated`）。全部增量字段，向后
-  兼容。搜狗（降级环，风控阈值未测）与知乎链保持单页如实截断，不做翻页。
+  兼容。搜狗（降级环）与知乎链保持单页如实截断，不做翻页——搜狗连发
+  风控阈值已标定（v3.13）：连发阈值 4 发，翻页必然触发，维持单页。
 
 ## 路由速查（详细见 SOP.md）
 

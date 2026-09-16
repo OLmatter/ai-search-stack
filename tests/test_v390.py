@@ -308,7 +308,8 @@ class TestMcpSubtitlesPassthrough(unittest.TestCase):
                 "subtitles": [], "note": "无字幕"}
         with mock.patch.object(be, "fetch_subtitles", return_value=want) as m:
             out = self.mcp_server.bilibili_subtitles(video="BV1xx411c7mD")
-        m.assert_called_once_with("BV1xx411c7mD", on_error="report")
+        # v3.13 起新增可选 part 参数（多 P 展开），默认 None 行为不变
+        m.assert_called_once_with("BV1xx411c7mD", part=None, on_error="report")
         self.assertEqual(json.loads(out), want)   # JSON round-trip 保真
 
     def test_error_reported_not_raised(self):

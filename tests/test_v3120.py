@@ -388,10 +388,13 @@ class TestBilibiliCrossPageDedupV312(unittest.TestCase):
 # ---- 3. 版本一致性 ----------------------------------------------------------
 
 class TestVersionSyncV312(unittest.TestCase):
-    def test_mcp_server_version_3120(self):
+    def test_mcp_server_version_not_older_than_3120(self):
+        # 3.13 起改为常青下限：精确锁当前版本是 test_v3130 的职责
         sys.path.insert(0, str(REPO / "tools"))
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.12.0")
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 12, 0))
 
 
 if __name__ == "__main__":

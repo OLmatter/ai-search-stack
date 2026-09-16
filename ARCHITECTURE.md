@@ -89,6 +89,7 @@ tools/chat-scraper/     ← 依赖 requests + bs4
 - **百度软风控的开关变量是请求头指纹**（v3.2 实测）：Chrome UA + requests 默认 `Accept: */*` 是机器人指纹（被封），补完整 Chrome Accept 后同 IP 直连过审；首页预热 cookie 不解决 IP 级封禁；移动端 m.baidu.com 是独立风控桶（桌面被锁时可用，注意其内联 JS 含 wappass 会污染桌面判据）；Clash 规则分流下走代理不换百度出口 IP。百度双桶穷尽后由搜狗第三环兜底（vrwrap 的 data-url 即直链）
 - **知乎官方 API 对纯 HTTP 访客不可用**（v3.1 实测）：x-zse-96（`101_3_3.0`）签名已移植且服务器验签通过（错误码 10003→40353 跃迁为证），但 search_v3 有边缘 WAF、访客 cookie 由 zse-ck VMP 浏览器挑战签发 → 知乎走专用降级链：本机 SearXNG（brave 尊重 site:、直链零验证码）→ 搜狗（尊重 site: 但 /link 跳转需二次解析）→ 百度 site: 保底
 - **bilibili 官方搜索 API**：buvid3 一个 cookie 裸调即 code=0，返回搜索引擎给不了的结构化字段（author/play/pubdate/bvid）；风控升级时自动带 wbi 签名重试（已内置完整实现）；必须过滤 bvid 为空的广告条目
+- **搜狗连发风控阈值 = 4 发**（v3.13 标定，2026-09-16 实测，读数 `tools/chat-scraper/state/sogou_throttle_log.jsonl`）：短间隔连发（探测 sleep 2s/发，含请求自身耗时的实测请求节奏 2~4s/发、全程 ~12s 窗口）第 1~4 发全过审（200 + 9 行真结果），第 5 发即 302 到 `antispider/?m=1&antip=web_sh2`；风控后 ~171s 冷却单发恢复。引擎默认 8s 间隔有余量；搜狗因此**不做翻页**（翻页必然连发触发阈值，第三环保底定位与单页上限一致）。标定入口 `python sogou_engine.py --probe N --probe-interval S`，读数随探测累积
 
 ## 复用边界
 

@@ -1,5 +1,74 @@
 # Changelog
 
+## [3.13.0] - 2026-09-16
+
+### 🎯 标定补齐批：搜狗连发风控阈值标定（架构图最后一个无标定引擎）+ B站多 P 展开
+
+上轮下一环建议两项全部落地。全程实测取证：搜狗探测 6 请求（预算 ≤8）、
+bilibili 多 P 验证 8 请求（预算 ≤8），均为单进程/低成本探测模式。
+
+### Added
+- `tools/chat-scraper/sogou_engine.py`：**连发风控阈值标定**（参照 doctor
+  `--cookie-probe` 的低成本标定模式）——新增 `probe_burst()` + CLI
+  `--probe N --probe-interval S`：短间隔连发探测（绕过引擎默认 8s 节流，
+  但逐请求如实更新引擎级时间戳），每请求读数一行追加
+  `state/sogou_throttle_log.jsonl`（{ts, seq, interval, http, rows,
+  blocked, note}），首个风控读数即停（证据到手不烧多余请求），网络异常
+  记 error 读数即停，`log_path=None` 只测不落账（测试用）。
+  **实测标定（2026-09-16 本机，读数见 jsonl）**：短间隔连发（探测
+  sleep 2s/发，含请求自身耗时的实测请求节奏 2~4s/发、全程 ~12s 窗口）
+  第 1~4 发
+  全过审（HTTP 200、9 行真结果），第 5 发即 302 到
+  `antispider/?m=1&antip=web_sh2`——**连发阈值 = 4 发**；风控后
+  ~171s 冷却单发恢复。引擎默认 8s 间隔据此确认有余量、维持不变；搜狗
+  维持单页不翻页的定位由"阈值未测"升级为"翻页必然触发阈值"的实证结论。
+  判据抽 helper（`_blocked`/`_soft_blocked`）与 `search()` 逐字共用，
+  search 行为零漂移（回归钉死）；会话构造抽 `_new_session()` 复用
+- `tools/chat-scraper/bilibili_engine.py`：**多 P 展开**——`fetch_video`
+  /`fetch_subtitles` 新增 `part` 参数，且 URL 带 `?p=N` 自动提取（显式
+  part 优先，默认 P1）：输出新增 `page`（解析到的分 P 号）、
+  `part_title`（该分 P 标题）、`pages_count`（总 P 数），cid 为该分 P 的
+  cid（v3.9 起的"本工具不展开 pages"声明就此作废）；分 P>1 时 url 带
+  `?p=N` 便于回跳。分 P 超界如实抛 `BilibiliApiError` 含合法范围
+  （"分 P 99 不存在（共 3 个分 P，合法范围 1~3）"），不静默回退 P1。
+  `_resolve_cid()`：无 pages 的旧形态 view 响应回退 `data.cid`（v3.4/
+  v3.9 fixture 行为原样）；**live 验证（BV1EW411u7th，40P 课程）**：P1
+  cid=38442945 / P2 cid=35533224 正确区分，subtitles 的 P2 cid 与
+  fetch_video 交叉一致，超界报错含范围。同进程 8 请求完成全部验证
+  （home 1 + search 1 + view 4 + nav 1 + player 1）
+
+### Changed
+- `tools/mcp_server.py`：`bilibili_video`/`bilibili_subtitles` 描述如实
+  化（多 P 展开 + 超界报错语义）并透传新增可选 `part` 参数（默认 None
+  行为不变）；`china_search` 描述的搜狗声明由"连发风控阈值未测"升级为
+  实测结论（连发阈值 4 发，不做翻页）
+- 版本号 3.12.0 → 3.13.0（`tools/mcp_server.py`、
+  `tools/chat-scraper/__init__.py`）；README 徽章同步
+- 文档标定回写：`ARCHITECTURE.md` 引擎选型实测记录补搜狗阈值条目（架构
+  图上最后一个无标定数据的引擎补齐）；`README.md`、
+  `tools/chat-scraper/README.md` 的"阈值未测"声明全部更新为实测数据
+
+### 测试
+- `tests/test_v3130.py`（26 个测试，全离线零真实请求/零浏览器）：搜狗
+  probe（全过审逐请求落账 / antispider 即停不烧多余请求 / 0 行软风控
+  即停 / 正常结果含风险词不误杀（审查 B2）/ 网络异常记读数即停 /
+  log_path=None 不落账 / sleep 用显式间隔而非引擎默认节流且更新时间戳 /
+  _blocked·_soft_blocked 判据单元 / search 主风控·软风控·正常解析三路
+  回归钉死重构零漂移）+ bilibili 多 P（?p=N 提取六形态 / _resolve_cid
+  四路径 / fetch_video 默认 P1·URL 提取·显式参数优先·超界 report 协议 /
+  fetch_subtitles 用分 P cid 签 player（参数级验证）·超界报错）+ 版本锁
+  （mcp_server 与 chat-scraper __init__ 同步 3.13.0）+ MCP part 透传
+  （显式/默认 None）
+- 适配：`test_v3120` 版本锁改常青下限（≥3.12.0，精确锁移交 test_v3130）；
+  `test_v390` MCP 透传断言补 `part=None`（增量参数，行为不变）
+- 独立审计（headless 子代理，只读）判词 FAIL 扫出两新病，本轮修复：
+  ① 标定间隔声明 "@2s" 与 jsonl 实测请求节奏（4.0/2.0/3.0/3.0s，含请求
+  自身耗时）不符——证据链断裂，全部文档改为实测表述（"探测 sleep 2s/发、
+  实测请求节奏 2~4s/发"，阈值=4 发结论不变；不重跑探测——搜狗预算
+  6/8 不足以再凑一次到块探测）；② README 测试徽章 201 未随 227 更新
+- 全量 227 passed 连续两轮（v3.12.0 基线 201 + 本轮 26）；搜狗标定另附
+  当天真实探测读数（见 Added 节），B站多 P 附同日 live 验证
+
 ## [3.12.0] - 2026-09-16
 
 ### 🎯 架构病扫尾批：百度搜索翻页（num>20 不再静默截断）+ 截断可见化扫尾（wenxin / bilibili desc）

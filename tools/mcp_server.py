@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.12.0"
+__version__ = "3.13.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -172,7 +172,8 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "num 与单页上限（如实声明）：bilibili num>30 自动翻页（护栏 5 页，有效"
     "上限约 150 条）；百度系（general/16站/任意域名）num>20 自动翻页（护栏"
     "3 页，有效上限约 60 条，页间走引擎级 ~20s 节流，翻页耗时按页数放大）；"
-    "sogou（百度降级环）与知乎链（SearXNG→搜狗→百度）单页到顶如实截断。\n"
+    "sogou（百度降级环）与知乎链（SearXNG→搜狗→百度）单页到顶如实截断"
+    "——搜狗连发风控阈值实测 4 发（v3.13 标定），不做翻页。\n"
     "耗时：bilibili 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"
     "错误在返回 JSON 内（{\"error\": ...} 项），区分故障与 0 结果。"))
@@ -281,33 +282,36 @@ def zhihu_comments(target: str,
 
 @mcp.tool(description=(
     "B 站视频结构化详情（官方 view API，公开免签名）：{title, desc(截 2000 "
-    "时带 truncated=true), owner, cid, "
+    "时带 truncated=true), owner, cid, page, part_title, pages_count, "
     "view, danmaku, like, favorite, pubdate, url, engine}。\n"
     "何时用：已知 BV 号或视频 URL，要播放/弹幕/点赞等数据字段。搜索视频用 "
     "china_search(platforms=[\"bilibili\"])；读页面形态用 read_page。\n"
-    "video 接受纯 BV 号或任意含 BV 号的 URL。耗时：秒级。\n"
+    "video 接受纯 BV 号或任意含 BV 号的 URL；URL 带 ?p=N（或配 part 参数）"
+    "取第 N 个分 P（v3.13 多 P 展开，默认 P1；分 P 超界如实报错含合法"
+    "范围）。耗时：秒级。\n"
     "错误在返回 JSON 内（风控/不存在按统一错误协议上报）。"))
-def bilibili_video(video: str) -> str:
+def bilibili_video(video: str, part: Optional[int] = None) -> str:
     """委托 bilibili_engine.fetch_video（Dict 或 List[错误] 双形态归一为 JSON）。"""
     return _run("chat-scraper", video, _bilibili.fetch_video, video,
-                on_error="report")
+                part=part, on_error="report")
 
 
 @mcp.tool(description=(
     "B 站视频字幕读取（view 拿 cid + player/wbi/v2 wbi 签名）：{bvid, cid, "
-    "title, has_subtitles, subtitles:[{lan, lan_doc, lines:[{from, to, "
-    "content}]}], url, note}。\n"
+    "page, part_title, pages_count, title, has_subtitles, subtitles:"
+    "[{lan, lan_doc, lines:[{from, to, content}]}], url, note}。\n"
     "实测上限（如实报告）：未登录访客请求字幕列表恒为空——B站仅向登录态"
     "（SESSDATA）下发字幕（手动 CC 亦不豁免），本工具不带登录态，故当前 "
     "subtitles 恒为 []，这是真实上限不是故障；链路已按登录态形态实现。\n"
     "何时用：cid 补全（player API 前置）、或未来接入 SESSDATA 后取字幕"
     "文稿。只要播放数据用 bilibili_video。\n"
-    "video 接受纯 BV 号或任意含 BV 号的 URL，取 P1。耗时：秒级（2 个"
-    "请求）。错误在返回 JSON 内（按统一错误协议上报）。"))
-def bilibili_subtitles(video: str) -> str:
+    "video 接受纯 BV 号或任意含 BV 号的 URL；URL 带 ?p=N（或配 part 参数）"
+    "取第 N 个分 P（v3.13 多 P 展开，默认 P1；分 P 超界如实报错）。耗时："
+    "秒级（2 个请求）。错误在返回 JSON 内（按统一错误协议上报）。"))
+def bilibili_subtitles(video: str, part: Optional[int] = None) -> str:
     """委托 bilibili_engine.fetch_subtitles（Dict 或 List[错误] 双形态归一）。"""
     return _run("chat-scraper", video, _bilibili.fetch_subtitles, video,
-                on_error="report")
+                part=part, on_error="report")
 
 
 @mcp.tool(description=(

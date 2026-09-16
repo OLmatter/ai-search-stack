@@ -7,10 +7,21 @@
     - 结果节点 div.vrwrap 的 **data-url 属性即真实直链**，无需解 /link 跳转
       （比 zhihu_engine 里的搜狗备选还省事——那是知乎站深页面，这里数据在
       节点属性上直接拿）；
-    - 连发风控阈值未测，只当保底环用：默认间隔 8s、出错即抛。
+    - 连发风控阈值（v3.13 标定，2026-09-16 本机实测，读数
+      state/sogou_throttle_log.jsonl）：短间隔连发（探测 sleep 2s/发，
+      含请求自身耗时的实测请求节奏 2~4s/发）第 1~4 发全过审
+      （HTTP 200、9 行真结果），第 5 发即被重定向 antispider 页——
+      **连发阈值 = 4 发**；风控后 ~171s 冷却单发即恢复。默认间隔
+      8s 有充足余量，维持不变；更长连发/更高频阈值未测，仍只当保底环。
+
+标定（v3.13）：python sogou_engine.py --probe 6 --probe-interval 2
+    连发探测，每请求读数追加 state/sogou_throttle_log.jsonl，首个风控
+    读数即停（参照 doctor --cookie-probe 的低成本标定模式）。
 
 错误协议与仓库统一：search(..., on_error="report"/"raise"/"empty")。
 """
+import datetime
+import json
 import os
 import re
 import sys
@@ -22,7 +33,7 @@ from typing import Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-__all__ = ["search", "SogouBlocked"]
+__all__ = ["search", "probe_burst", "SogouBlocked"]
 
 _TOOL = "chat-scraper"
 _SEARCH_URL = "https://www.sogou.com/web"
@@ -36,6 +47,9 @@ _ACCEPT_FULL = ("text/html,application/xhtml+xml,application/xml;q=0.9,"
 ENV_MIN_INTERVAL = "CHAT_SCRAPER_SOGOU_MIN_INTERVAL"
 DEFAULT_MIN_INTERVAL = 8.0
 TIMEOUT = 15
+# v3.13 连发阈值标定：读数日志（参照 cookie_lifetime_log.jsonl 的 jsonl 模式）
+_STATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state")
+PROBE_LOG_PATH = os.path.join(_STATE_DIR, "sogou_throttle_log.jsonl")
 
 _throttle_lock = threading.Lock()
 _last_request_ts = 0.0
@@ -112,6 +126,106 @@ def _parse_results(html: str) -> List[Dict[str, str]]:
     return out
 
 
+def _blocked(status: int, url: str, text: str) -> bool:
+    """主风控判定（search 与 probe_burst 共用，判据逐字一致）。"""
+    return status != 200 or "antispider" in url or "验证码" in text[:2000]
+
+
+def _soft_blocked(text: str) -> bool:
+    """0 行结果时的软风控判定：全文有标记 → 软风控不是真空。
+
+    标记可能出现在任意正常结果的标题/摘要里（如搜"反爬虫"主题），
+    只在 0 行时查全文，无条件查会误杀真结果（审查 B2）。"""
+    return "验证码" in text or "antispider" in text.lower()
+
+
+def _new_session() -> requests.Session:
+    """与 search() 同款会话（headers/代理指纹），probe_burst 复用。"""
+    session = requests.Session()
+    session.trust_env = False
+    proxy = os.environ.get("CHAT_SCRAPER_SOGOU_PROXY", "")
+    if proxy:
+        session.proxies.update({"http": proxy, "https": proxy})
+    session.headers.update({
+        "User-Agent": _UA,
+        "Referer": "https://www.sogou.com/",
+        "Accept": _ACCEPT_FULL,
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    })
+    return session
+
+
+def probe_burst(count: int = 6, interval: float = 2.0,
+                query: str = "人工智能",
+                log_path: Optional[str] = PROBE_LOG_PATH) -> List[Dict]:
+    """连发风控阈值标定（v3.13，参照 doctor --cookie-probe 低成本标定模式）。
+
+    以短间隔连发 count 次搜索请求——绕过默认 8s 节流（探测目的就是测短
+    间隔是否触发风控；每次请求前仍如实更新引擎级节流时间戳，同进程内的
+    普通 search 不至于贴脸连发）。每请求读数一行追加 jsonl：
+
+        {ts, tool, seq, interval, http, rows, blocked, note}
+
+    - blocked 判定与 search() 同判据（_blocked / 0 行 + _soft_blocked）；
+    - 首个风控读数即停：证据已到手，不烧多余请求；
+    - 网络异常记一行 error 读数即停（网络不通测不出风控阈值）；
+    - log_path=None 只测不落账（测试用）。
+
+    返回读数列表。阈值声明以 jsonl 实测读数为准（判词只收证据链）。
+    """
+    global _last_request_ts
+    readings: List[Dict] = []
+    session = _new_session()
+    log_f = None
+    try:
+        if log_path:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            log_f = open(log_path, "a", encoding="utf-8")
+        for seq in range(count):
+            if seq:
+                time.sleep(interval)
+            entry: Dict = {
+                "ts": datetime.datetime.now().astimezone()
+                .isoformat(timespec="seconds"),
+                "tool": "sogou_engine --probe",
+                "seq": seq,
+                "interval": interval,
+                "http": None,
+                "rows": None,
+                "blocked": False,
+                "note": "",
+            }
+            try:
+                with _throttle_lock:
+                    _last_request_ts = time.monotonic()
+                resp = session.get(_SEARCH_URL,
+                                   params={"query": query}, timeout=TIMEOUT)
+                rows = _parse_results(resp.text)
+                entry["http"] = resp.status_code
+                entry["rows"] = len(rows)
+                if _blocked(resp.status_code, resp.url, resp.text) or \
+                        (not rows and _soft_blocked(resp.text)):
+                    entry["blocked"] = True
+                    entry["note"] = f"url={resp.url[:80]!r}"
+            except Exception as e:  # noqa: BLE001 —— 读数即产物，不能炸
+                entry["note"] = f"{type(e).__name__}: {str(e)[:140]}"
+                readings.append(entry)
+                if log_f:
+                    log_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    log_f.flush()
+                break
+            readings.append(entry)
+            if log_f:
+                log_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                log_f.flush()
+            if entry["blocked"]:
+                break   # 首个风控读数即停：证据到手，不烧多余请求
+    finally:
+        if log_f:
+            log_f.close()
+    return readings
+
+
 def search(q: str, num: int = 10, since: Optional[str] = None,
            vendor: str = "?", role: str = "fallback",
            site: Optional[str] = None, platform: Optional[str] = None,
@@ -123,32 +237,18 @@ def search(q: str, num: int = 10, since: Optional[str] = None,
     name = platform or site or "general"
     try:
         _wait_turn()
-        session = requests.Session()
-        session.trust_env = False
-        proxy = os.environ.get("CHAT_SCRAPER_SOGOU_PROXY", "")
-        if proxy:
-            session.proxies.update({"http": proxy, "https": proxy})
-        session.headers.update({
-            "User-Agent": _UA,
-            "Referer": "https://www.sogou.com/",
-            "Accept": _ACCEPT_FULL,
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        })
+        session = _new_session()
         query = f"{q} site:{site}" if site else q
         resp = session.get(_SEARCH_URL,
                            params={"query": query}, timeout=TIMEOUT)
-        if resp.status_code != 200 or "antispider" in resp.url or \
-                "验证码" in resp.text[:2000]:
+        if _blocked(resp.status_code, resp.url, resp.text):
             raise SogouBlocked(
                 f"HTTP {resp.status_code}, url={resp.url[:80]!r}")
         rows = _parse_results(resp.text)
-        if not rows:
-            # 结构正常却 0 条 + 全文有风控标记 → 软风控不是真空。
-            # antispider 只在 0 行时查全文：它可能出现在任意正常结果的
-            # 标题/摘要里（如搜"反爬虫"主题），无条件查会误杀真结果（审查 B2）
-            if "验证码" in resp.text or "antispider" in resp.text.lower():
-                raise SogouBlocked("soft-block page (0 parsed rows, "
-                                   "risk markers present)")
+        if not rows and _soft_blocked(resp.text):
+            # 结构正常却 0 条 + 全文有风控标记 → 软风控不是真空（审查 B2）
+            raise SogouBlocked("soft-block page (0 parsed rows, "
+                               "risk markers present)")
         return [{
             "title": r["title"],
             "url": r["url"],
@@ -173,7 +273,7 @@ if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser(
         description="搜狗搜索（site: 站内过滤；百度不可用时的第三环）")
-    p.add_argument("q", help="query")
+    p.add_argument("q", help="query", nargs="?", default=None)
     p.add_argument("--site", default=None,
                    help="站点域名，如 csdn.net；省略为通用搜索")
     p.add_argument("--num", type=int, default=10)
@@ -181,7 +281,24 @@ if __name__ == "__main__":
     p.add_argument("--role", default="fallback")
     p.add_argument("--on-error", default="report",
                    choices=["report", "raise", "empty"])
+    p.add_argument("--probe", type=int, default=0, metavar="N",
+                   help="连发风控阈值标定：短间隔连发 N 次即退出，每请求"
+                        "读数追加 state/sogou_throttle_log.jsonl（首个"
+                        "风控读数即停），不做普通搜索；间隔配 "
+                        "--probe-interval")
+    p.add_argument("--probe-interval", type=float, default=2.0,
+                   help="探测连发间隔秒数（默认 2，远小于默认节流 8s）")
     args = p.parse_args()
+    if args.probe > 0:
+        readings = probe_burst(count=args.probe,
+                               interval=args.probe_interval)
+        print(json.dumps(readings, ensure_ascii=False, indent=2))
+        hits = sum(1 for r in readings if r["blocked"])
+        print(f"[sogou_engine] probe: {len(readings)} 发，风控 {hits} 次"
+              f"（读数已追加 {PROBE_LOG_PATH}）", file=sys.stderr)
+        sys.exit(0)
+    if not args.q:
+        p.error("缺少搜索词 q（或使用 --probe N 做阈值标定）")
     results = search(args.q, num=args.num, vendor=args.vendor,
                      role=args.role, site=args.site, on_error=args.on_error)
     _errors = [r for r in results if "error" in r]
