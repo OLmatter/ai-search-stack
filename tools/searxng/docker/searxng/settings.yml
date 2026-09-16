@@ -17,6 +17,14 @@ search:
 # disabled: true = 默认搜索不调度（实例偏好页仍可单独开启做观察）。
 # 恢复方法：注释掉对应条目 → docker compose restart → python tools/doctor.py
 # 观察 unresponsive_engines 是否清零后再放回。
+#
+# v3.16 恢复观察（2026-09-16，观察后维持禁用）：enabled_engines 单发探活
+# 三引擎全部通过（brave 21 / duckduckgo 21 / startpage 20 条，unresponsive
+# 均空），但按恢复方法回滚启用 + restart 后首次聚合搜索三引擎即全部复发
+# （brave too many requests / duckduckgo CAPTCHA / startpage parsing error
+# —— doctor 21 条结果同场实测）。结论：单发探活通过 ≠ 可回滚，上游侧
+# 仍不稳定，恢复判据必须是 restart 后聚合搜索 unresponsive 清零。
+# 再次评估时先单发探活，再回滚 + restart 实测，两关都过才放回。
 engines:
   - name: brave
     disabled: true
