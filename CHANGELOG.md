@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.15.0] - 2026-09-16
+
+### 🎯 钩子活性双日志 + mcp doctor 子模式 + SearXNG 实例引擎调优
+
+上轮判词遗留低危项 + 运维优化批次。零业务引擎改动（chat-scraper 本包
+零代码改动，版本对齐 v3.8.2 先例）；真实网络消耗：SearXNG 本地 4 发
+（调优前后 doctor 各 1 + /config 侦察 2），知乎/百度/文心 0 发。
+
+### Added
+- `tools/doctor.py`：**标定钩子活性检查扩展覆盖 sogou_recovery_log**
+  （v3.8.2 只看 cookie_lifetime_log）——有读数后最后一条 >48h 同样报警
+  （开了就必须活着，静默断线同样让恢复曲线数据流死亡）；文件缺失/无
+  有效读数 = 可选观测项未启用，**不报警**（恢复曲线是增值观测，没人跑
+  不算钩子断线）；读数解析加坏行防御（`_last_valid_entry`：坏行/非 dict
+  行跳过取最后一条有效读数，append-only 日志的个别坏行不误报断线）；
+  cookie 侧空日志从裸 JSONDecodeError 改为可读 RuntimeError，v3.10 的
+  四分支钉子（缺文件报警/坏时间戳 ValueError）不回退
+- `tools/mcp_server.py`：**doctor 工具暴露 mode 子模式参数**
+  （`full|cookie|sogou`，默认 full）——cookie/sogou 复用 doctor 的
+  `cmd_cookie_probe` / `cmd_sogou_probe`（v3.8.2/v3.14 的 CLI 单项标定
+  模式原样上 MCP）；退出码语义随模式如实变化（full：0=核心全绿或仅
+  可选未起/1=核心故障；探活模式：0=成功观测（expired/blocked 均为
+  有效标定读数）/1=本地故障）；非法 mode 返回统一错误协议 JSON 不炸
+  server
+- `tools/searxng/docker/searxng/settings.yml`：**上游引擎调优**——长期
+  不健康引擎暂时禁用（2026-09-16 doctor 标定：brave too many requests /
+  duckduckgo CAPTCHA / startpage parsing error，连轮不健康），不让它们
+  每次搜索都拖满 timeout 才判死；`use_default_settings: true` 按名合并
+  语义保留（269 引擎不缩水，禁用=默认不调度非移除，回滚零成本）；恢复
+  方法写进文件注释（注释掉条目 → docker compose restart → doctor 观察）
+  ；**实测**（同机同命令 `python tools/doctor.py`）：调优前「不健康引擎:
+  [['brave', 'too many requests'], ['duckduckgo', 'CAPTCHA'],
+  ['startpage', 'parsing error']]」→ 调优后「引擎全健康」，结果数 21 条
+  前后持平，limiter:false（本机实例免 429）与 json format 基线保留
+
+### Changed
+- `tests/test_v3100.py`：TestCheckHookLiveness 补 patch
+  SOGOU_RECOVERY_LOG_PATH（v3.15 起 check 会读搜狗标定日志，原 setUp
+  只 patch cookie 日志会泄漏到真实 repo state——真实日志过期会让旧
+  测试误红，属测试病非产品病）
+- `tests/test_v3140.py`：版本精确锁转常青下限（≥3.14.0，3.15 起精确锁
+  是 test_v3150 的职责，v3.13→v3.14 先例）
+
+### Tests
+- `tests/test_v3150.py` 新增 22 项钉子（全离线）：钩子活性扩展 10 +
+  mcp doctor mode 6 + settings.yml 调优 5 + 版本锁 1；全量 249→271
+
 ## [3.14.0] - 2026-09-16
 
 ### 🎯 恢复曲线标定机制 + wenxin 声明对齐复查

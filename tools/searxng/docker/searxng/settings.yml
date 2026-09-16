@@ -7,3 +7,20 @@ search:
   formats:
     - html
     - json
+# v3.15 上游引擎调优（2026-09-16 doctor 标定）：长期不健康引擎暂时禁用，
+# 不让它们拖慢每次搜索（每个不健康引擎都要等满 timeout 才判死）。
+#   brave      too many requests
+#   duckduckgo CAPTCHA
+#   startpage  parsing error
+# （三者均见 2026-09-16 调优前实测输出；属上游侧问题，本实例配置修不了，
+#   先禁用止损，恢复方法见下）
+# disabled: true = 默认搜索不调度（实例偏好页仍可单独开启做观察）。
+# 恢复方法：注释掉对应条目 → docker compose restart → python tools/doctor.py
+# 观察 unresponsive_engines 是否清零后再放回。
+engines:
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: startpage
+    disabled: true

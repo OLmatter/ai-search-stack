@@ -133,9 +133,14 @@ class TestCheckHookLiveness(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.log_path = os.path.join(self.tmp.name, "hook_log.jsonl")
-        self._orig = doctor.COOKIE_LOG_PATH
-        doctor.COOKIE_LOG_PATH = self.log_path
-        self.addCleanup(setattr, doctor, "COOKIE_LOG_PATH", self._orig)
+        # v3.15 起 check_hook_liveness 还会读 sogou_recovery_log——一并 patch
+        # 到临时路径，避免依赖真实 repo state（真实日志过期会让本类误红）
+        self.sogou_path = os.path.join(self.tmp.name, "sogou_recovery_log.jsonl")
+        for attr, path in (("COOKIE_LOG_PATH", self.log_path),
+                           ("SOGOU_RECOVERY_LOG_PATH", self.sogou_path)):
+            orig = getattr(doctor, attr)
+            setattr(doctor, attr, path)
+            self.addCleanup(setattr, doctor, attr, orig)
 
     def _write(self, obj):
         with open(self.log_path, "w", encoding="utf-8") as f:

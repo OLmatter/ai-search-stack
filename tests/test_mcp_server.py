@@ -64,8 +64,10 @@ class TestRegistry(unittest.TestCase):
         by_name = {t.name: t for t in tools}
         self.assertIn("q", _schema(by_name["china_search"]).get("required", []))
         self.assertIn("url", _schema(by_name["read_page"]).get("required", []))
-        # doctor 零参数
-        self.assertEqual(_schema(by_name["doctor"]).get("properties"), {})
+        # doctor 唯一可选参数 mode（v3.15：full|cookie|sogou，默认 full）
+        doctor_props = _schema(by_name["doctor"]).get("properties") or {}
+        self.assertEqual(set(doctor_props), {"mode"})
+        self.assertNotIn("mode", _schema(by_name["doctor"]).get("required", []))
 
 
 @unittest.skipUnless(mcp_server, "mcp SDK 未安装，跳过 MCP server 离线测试")

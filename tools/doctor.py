@@ -5,7 +5,9 @@
 巡检项（7 = 5 网络探活 + 2 本地状态）：
     - 本地 SearXNG 实例（zhihu 链第一环）：存活 + unresponsive_engines
     - 知乎 cookie：文件存在性 + 年龄（v3.4 起过期可自愈，但仍值得观测）
-    - 标定钩子活性（v3.8.2）：每日探活的最后读数 >48h = 钩子疑似断线
+    - 标定钩子活性（v3.8.2，v3.15 扩展）：周期探活的最后读数 >48h = 钩子
+      疑似断线——覆盖 cookie_lifetime_log（缺文件报警）与 sogou_recovery_log
+      （v3.15；缺文件=可选观测项未启用不报警，有读数后 >48h 报警）
     - bilibili 官方 API：用一个知名 bvid 探活（只读、无风控压力）
     - 百度直连：首页探活（搜索风控与首页可达是两回事，这里只测通道）
     - google-bridge 服务：/health（通常按需启动，未起不算故障）
@@ -101,26 +103,71 @@ def check_cookie():
             f"{'（>24h 建议跑一次 zhihu_bootstrap.py 续期）' if age_h > 24 else ''}")
 
 
+def _last_valid_entry(path):
+    """jsonl 最后一条可解析为 dict 的读数（坏行跳过）；文件缺失/空/全坏返回 None。
+
+    与 sogou_engine 探活读数解析同款防御：标定日志是 append-only 观测
+    产物，个别坏行不应让钩子活性检查对"其实活着"的钩子误报断线。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = [ln for ln in f if ln.strip()]
+    except OSError:
+        return None
+    for ln in reversed(lines):
+        try:
+            entry = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            return entry
+    return None
+
+
+def _reading_age_h(entry):
+    """读数距今的小时数（坏时间戳原样抛 ValueError，由 _check 包装显示）。"""
+    ts = entry.get("ts") or entry.get("time") or ""
+    return (time.time() - datetime.fromisoformat(ts).timestamp()) / 3600
+
+
 def check_hook_liveness():
-    """标定钩子活性：每日探活的最后读数超过 ~48h = 钩子疑似断线
-    （定时任务没跑/机器没开/自动化被禁）。断线时标定数据流静默死亡，
-    这里是唯一的报警点。"""
+    """标定钩子活性（v3.15 扩展：覆盖两个标定日志）：周期探活的最后读数
+    超过 ~48h = 钩子疑似断线（定时任务没跑/机器没开/自动化被禁）。断线时
+    标定数据流静默死亡，这里是唯一的报警点。
+
+    - cookie_lifetime_log：文件缺失 = 每日探活从未执行 → 报警
+      （v3.8.2 既有行为，cookie 寿命标定是自愈策略的数据基座）
+    - sogou_recovery_log（v3.15）：文件缺失/无读数 = 可选观测项未启用
+      → **不报警**（恢复曲线标定是增值观测，没人跑不算钩子断线）；
+      但有读数后最后一条 >48h → 同样报警（开了就必须活着，静默断线
+      同样会让恢复曲线数据流死亡）
+    """
     if not os.path.exists(COOKIE_LOG_PATH):
         raise RuntimeError("标定日志不存在（每日探活从未执行："
                            "python tools/doctor.py --cookie-probe）")
-    last_line = ""
-    with open(COOKIE_LOG_PATH, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                last_line = line
-    entry = json.loads(last_line)
-    ts = entry.get("ts") or entry.get("time") or ""
-    age_h = (time.time() - datetime.fromisoformat(ts).timestamp()) / 3600
+    entry = _last_valid_entry(COOKIE_LOG_PATH)
+    if entry is None:
+        raise RuntimeError("标定日志存在但无有效读数（检查日志内容/磁盘写入）")
+    age_h = _reading_age_h(entry)
     if age_h > 48:
         raise RuntimeError(
-            f"最后读数已是 {age_h:.0f}h 前——每日探活钩子疑似断线"
+            f"cookie 标定最后读数已是 {age_h:.0f}h 前——每日探活钩子疑似断线"
             f"（定时任务没跑？检查自动化/机器开关机）")
-    return f"最后读数 {age_h:.1f}h 前（{entry.get('status', '?')}）"
+    parts = [f"cookie 最后读数 {age_h:.1f}h 前（{entry.get('status', '?')}）"]
+
+    sogou = _last_valid_entry(SOGOU_RECOVERY_LOG_PATH)
+    if sogou is None:
+        parts.append("sogou 无读数（可选观测项未启用，不报警；"
+                     "python tools/doctor.py --sogou-probe 可启用）")
+    else:
+        sogou_age_h = _reading_age_h(sogou)
+        if sogou_age_h > 48:
+            raise RuntimeError(
+                f"sogou 恢复曲线最后读数已是 {sogou_age_h:.0f}h 前——搜狗探活"
+                f"钩子疑似断线（--sogou-probe 定时任务没跑？）")
+        parts.append(f"sogou 最后读数 {sogou_age_h:.1f}h 前"
+                     f"（{'blocked' if sogou.get('blocked') else 'ok'}）")
+    return "; ".join(parts)
 
 
 def check_bilibili():

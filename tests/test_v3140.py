@@ -21,6 +21,7 @@ probe_once）+ wenxin 声明对齐复查修复 + doctor SearXNG 引擎健康输�
 import datetime
 import json
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -323,15 +324,20 @@ class TestWenxinAlignmentDocs(unittest.TestCase):
 
 
 class TestVersionSyncV314(unittest.TestCase):
-    def test_versions_3140(self):
+    def test_versions_not_older_than_3140(self):
+        # 3.15 起改为常青下限：精确锁当前版本是 test_v3150 的职责
         sys.path.insert(0, str(REPO / "tools"))
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.14.0")
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 14, 0))
         # chat-scraper 目录名带连字符不可 import，源码级断言（v3.12 先例）
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.14.0"', init_src)
-        self.assertIn("chat-scraper v3.14.0", init_src)   # docstring 首行同步
+        self.assertGreaterEqual(
+            tuple(int(x) for x in re.search(
+                r'__version__ = "([^"]+)"', init_src).group(1).split(".")),
+            (3, 14, 0))
 
 
 if __name__ == "__main__":

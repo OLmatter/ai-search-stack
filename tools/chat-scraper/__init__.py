@@ -1,4 +1,4 @@
-"""chat-scraper v3.14.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.15.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -47,8 +47,14 @@ state/sogou_recovery_log.jsonl——连发标定测"多快触发"，恢复曲线
 风控后周期性单发积累"多久恢复"）+ wenxin 声明对齐复查（README v3.7
 输出契约补 v3.12 的 truncated 字段；mcp china_search 描述补 wenxin
 单条聚合行声明；零真实文心调用）。
+
+v3.15.0：doctor 钩子活性检查扩展覆盖 sogou_recovery_log（有读数后
+最后一条 >48h 报警；文件缺失=可选观测项未启用不报警——恢复曲线是
+增值观测，开了就必须活着）；mcp doctor 工具暴露 mode 子模式参数
+（full|cookie|sogou，默认 full，cookie/sogou 复用 doctor 对应探活
+函数）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.14.0"
+__version__ = "3.15.0"
 __all__ = ["search", "list_platforms", "__version__"]

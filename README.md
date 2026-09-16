@@ -2,12 +2,17 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.14.0](https://img.shields.io/badge/release-v3.14.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.14.0)
+[![Release: v3.15.0](https://img.shields.io/badge/release-v3.15.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.15.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 249 passing](https://img.shields.io/badge/tests-249%20passing-success.svg)](tests/)
+[![Tests: 271 passing](https://img.shields.io/badge/tests-271%20passing-success.svg)](tests/)
 
-**v3.14.0（2026-09-16）**：v3.0 全面审计大修之后连续十五轮迭代——搜狗
+**v3.15.0（2026-09-16）**：v3.0 全面审计大修之后连续十六轮迭代——doctor
+标定钩子活性扩展覆盖搜狗恢复曲线日志、mcp doctor 工具 mode 子模式
+（full|cookie|sogou）、SearXNG 实例上游引擎调优（实测不健康引擎清零，
+详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十五轮：搜狗
 恢复曲线标定机制（doctor --sogou-probe 单发探活，读数自带距上次风控秒
 数）、wenxin 声明对齐复查修复（详见 [CHANGELOG.md](CHANGELOG.md)）。
 此前
@@ -199,7 +204,7 @@ anaconda python 的绝对路径。
 | `github_advisories` | `github_client.get_advisories` | 安全通告（按生态） | 秒级 |
 | `searxng_search` | `searxng_client.search` | SearXNG 聚合搜索（默认本地 8888） | 秒级；实例未起返回可读错误 |
 | `googlebridge_search` | HTTP 转发 `127.0.0.1:18799/search` | 真 Google（需先起 search_helper + Chrome 代理） | 数十秒级；服务未起返回可读错误 |
-| `doctor` | `tools/doctor.py` check 体系 | 全通道体检，文本报告 | 5-10s |
+| `doctor` | `tools/doctor.py` check/探活体系 | 全通道体检 + 标定探活子模式（mode: full\|cookie\|sogou，默认 full） | full 5-10s；cookie/sogou 单发秒级~十几秒 |
 
 **GitHub 为何拆两个工具**：MCP 的工具描述就是模型的路由提示。两个正交参数集
 （`repo` vs `ecosystem`）合成一个带 `kind` 判别参数的工具，模型更容易填错参数；

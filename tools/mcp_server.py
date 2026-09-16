@@ -34,7 +34,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     github_advisories   GitHub Security Advisories
     searxng_search      SearXNG 聚合搜索（本地实例默认 127.0.0.1:8888）
     googlebridge_search 真 Google（转发本地 search_helper HTTP 18799）
-    doctor              工具箱体检（文本报告）
+    doctor              工具箱体检（文本报告；mode: full|cookie|sogou）
 
 耗时预期（客户端请据此设 read_timeout，建议 ≥120s 覆盖 read_page/googlebridge）:
     read_page        可能触发无头浏览器（10-15s）；知乎 cookie 过期自动引导更久
@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.14.0"
+__version__ = "3.15.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -438,26 +438,45 @@ def googlebridge_search(q: str,
 
 @mcp.tool(description=(
     "ai-search-stack 工具箱体检：巡检全部通道健康并返回文本报告。\n"
-    "巡检项（7 = 5 网络探活 + 2 本地状态）：本地 SearXNG 实例（可选）、"
-    "知乎 cookie（可选）、标定钩子活性（可选）、bilibili 官方 API、"
-    "百度直连、google-bridge 服务（可选）、GitHub API。\n"
-    "何时用：某工具连续报错时先跑一次定位是通道故障还是真空；部署后自检。\n"
-    "耗时：约 5-10s（5 项网络探活）。返回纯文本报告，末行含退出码语义"
-    "（0=核心全绿或仅可选服务未起；1=有核心通道故障）。"))
-def doctor() -> str:
-    """复用 tools/doctor.py 的 check 体系：捕获 stdout 得到报告文本（不 subprocess）。"""
+    "mode 三态（默认 full）：full=全量巡检（7 项：本地 SearXNG 实例、知乎 "
+    "cookie、标定钩子活性[覆盖 cookie+sogou 两个标定日志]、bilibili 官方 "
+    "API、百度直连、google-bridge 服务、GitHub API）；cookie=只跑知乎 cookie "
+    "寿命标定探活（真实调一次 questions API，读数追加 "
+    "state/cookie_lifetime_log.jsonl，禁自愈保真实寿命）；sogou=只跑搜狗恢复"
+    "曲线单发探活（真实发一次搜索，读数含距上次风控秒数追加 "
+    "state/sogou_recovery_log.jsonl）。\n"
+    "何时用：某工具连续报错时先跑一次定位是通道故障还是真空；部署后自检；"
+    "标定钩子排查用 cookie/sogou 子模式。\n"
+    "耗时：full 约 5-10s（5 项网络探活）；cookie/sogou 单发秒级~十几秒。\n"
+    "返回纯文本报告，末行含退出码语义：full 0=核心全绿或仅可选服务未起/"
+    "1=有核心通道故障；cookie/sogou 0=成功观测（expired/blocked 均为有效"
+    "标定读数）/1=本地故障。非法 mode 返回 error JSON。"))
+def doctor(mode: str = "full") -> str:
+    """复用 tools/doctor.py 的 check/探活体系：捕获 stdout 得到报告文本（不 subprocess）。"""
+    if mode not in ("full", "cookie", "sogou"):
+        return _dumps([{"error": f"ValueError: mode 须为 full|cookie|sogou，"
+                                 f"收到 {mode!r}",
+                         "tool": "doctor", "query": mode}])
     buf = io.StringIO()
     try:
         if hasattr(_doctor, "_results"):
             _doctor._results.clear()  # 模块级累积列表，多次调用前清空
         with _stdout_to_stderr():
             with contextlib.redirect_stdout(buf):
-                code = _doctor.main()
+                if mode == "cookie":
+                    code = _doctor.cmd_cookie_probe()
+                elif mode == "sogou":
+                    code = _doctor.cmd_sogou_probe()
+                else:
+                    code = _doctor.main()
     except Exception as e:  # noqa: BLE001
-        return _dumps([_err("doctor", "health-check", e)])
-    return (buf.getvalue().rstrip()
-            + f"\n(退出码: {code} —— 0=核心通道全绿或仅可选服务未启动; "
-              f"1=有核心通道故障)")
+        return _dumps([_err("doctor", mode, e)])
+    if mode == "full":
+        tail = "0=核心通道全绿或仅可选服务未启动; 1=有核心通道故障"
+    else:
+        # 探活模式只观测不判故障：expired/blocked 都是成功标定读数（v3.14 语义）
+        tail = "0=成功观测（expired/blocked 均为有效标定读数）; 1=本地故障"
+    return (buf.getvalue().rstrip() + f"\n(退出码: {code} —— {tail})")
 
 
 def main() -> None:
