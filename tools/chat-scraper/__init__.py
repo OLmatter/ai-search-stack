@@ -1,4 +1,4 @@
-"""chat-scraper v3.16.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.17.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -60,8 +60,18 @@ v3.16.0：doctor 新增值班巡检趋势检查（shift_log.md 近 7 天记录�
 单发探活全部通过，但回滚启用 + restart 后聚合搜索即全部复发——
 单发探活通过 ≠ 可回滚，维持禁用，观察记录与再评估方法写进
 settings.yml 注释）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
+
+v3.17.0：新增 worker_queue 模块——worker_queue.json 派工队列认领机制
+（多 worker 并行领同一队列互踩的修复，848065c 与并行班次工作树编辑逐字
+一致即互踩实证，本版实施期间工作树第二次实时互踩、对侧已 stash 为
+v318-batch-wip 让出工作区）：claim 先 O_EXCL 原子建伴生标记
+<queue>.claim.json（绝不写队列文件本身），他人见有效认领即 skipped
+（可见持有者与 age）；超时（默认 30 分钟无 complete）或标记损坏走
+接管——tmp + os.replace 原子覆盖 + 读回校验保并发接管单一赢家；
+complete 只删自己的标记（别人的删不掉）；clear 原子清空队列。
+Windows/POSIX 双兼容纯标准库。
 """
 from .search import list_platforms, search
 
-__version__ = "3.16.0"
+__version__ = "3.17.0"
 __all__ = ["search", "list_platforms", "__version__"]

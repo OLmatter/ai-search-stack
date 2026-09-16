@@ -25,6 +25,14 @@ search:
 # —— doctor 21 条结果同场实测）。结论：单发探活通过 ≠ 可回滚，上游侧
 # 仍不稳定，恢复判据必须是 restart 后聚合搜索 unresponsive 清零。
 # 再次评估时先单发探活，再回滚 + restart 实测，两关都过才放回。
+#
+# v3.17 恢复复跑（2026-09-16 晚，第一关即未过，维持禁用）：engines= 参数
+# 单发探活三发（预算 3/5）全部复发——brave too many requests / duckduckgo
+# CAPTCHA / startpage parsing error，rows 均 0，与 v3.16 回滚后聚合复发
+# 症状逐字一致。较 v3.16 更强：这次连单发都不过（上游封锁持续未解除），
+# 第二关（回滚启用 + restart 聚合）按两关判据不再执行——必败动作不做，
+# 省下预算。两关判据不变：单发 + restart 后聚合 unresponsive 清零，
+# 双过才回滚。
 engines:
   - name: brave
     disabled: true

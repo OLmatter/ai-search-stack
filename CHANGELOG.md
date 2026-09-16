@@ -1,5 +1,49 @@
 # Changelog
 
+## [3.17.0] - 2026-09-16
+
+### 🎯 worker_queue 派工队列认领机制（多 worker 互踩的修复）+ SearXNG 恢复复跑（第一关未过，维持禁用）
+
+职业团队循环批次。真实网络消耗：SearXNG 本地 3 发（brave/duckduckgo/
+startpage 单发探活各 1，预算 3/5），知乎/百度/文心 0 发。
+
+### Added
+- `tools/chat-scraper/worker_queue.py`：**派工队列认领机制**——多 worker
+  并行领同一 `~/.zcode/worker_queue.json` 互踩的修复（上轮实证：v3.16
+  的 848065c 与并行班次工作树编辑逐字一致即互踩证据；本版实施期间工作
+  树第二次实时互踩，对侧 worker 主动 stash 为 `v318-batch-wip` 让出工作
+  区——机制动机两次实证）。API：`claim()` 先 `O_EXCL` 原子创建伴生认领
+  标记 `<queue>.claim.json`（Windows/POSIX 双平台原子，绝不写队列文件
+  本身），他人见有效认领即 `skipped`（可见持有者与 age）；认领超时
+  （默认 30 分钟无 complete）或标记损坏（坏 JSON/缺字段/时间戳非数字）
+  走接管——tmp + `os.replace` 原子覆盖 + **读回校验**保证并发接管单一
+  赢家；`complete()` 只删自己的标记（读回校验，别人的删不掉，超时被
+  接管后原持有者 complete 如实 False）；`clear()` 原子清空队列；
+  `read_claim()` 诊断视图。纯标准库，全部离线可测
+- `tests/test_v3170.py`：认领机制 13 钉（互斥/超时重认领/完成清空/
+  损坏自愈/接管后原持有者失去删除权/标记为伴生文件不碰队列本体）+
+  版本锁 3.17.0，套件 289→305
+
+### Changed
+- `tools/searxng/docker/searxng/settings.yml`：**v3.17 恢复复跑（第一关
+  即未过，维持禁用）**——`engines=` 参数单发探活三发全部复发（brave
+  too many requests / duckduckgo CAPTCHA / startpage parsing error，
+  rows 均 0），与 v3.16 回滚后聚合复发症状逐字一致；较 v3.16 更强：
+  这次连单发都不过（上游封锁持续未解除），第二关（回滚启用 + restart
+  聚合）按两关判据不再执行——必败动作不做，省下预算。两关判据不变：
+  单发 + restart 后聚合 unresponsive 清零，双过才回滚
+- `tests/test_v3160.py`：3.16.0 精确版本锁降为常青下限（v3.13→v3.14
+  先例），精确锁移交 test_v3170
+- 版本 bump：mcp_server + chat-scraper `__init__` → 3.17.0，README
+  badge/版本行同步
+
+### 评估未立项（先取证再立项，证据不足不动手）
+- 认领机制接入 mcp 工具层（如 queue_status 工具）：当前消费方是
+  ZCode worker 会话（读 ~/.zcode/worker_queue.json），MCP 客户端无
+  派工场景证据，先落模块与测试，接入待真实需求出现
+- 并行 worker 的 doctor shift_log 统计 v2 + GITHUB_TOKEN（stash
+  v318-batch-wip）：对侧已声明 v3.18 批次（mine only），不越权代发
+
 ## [3.16.0] - 2026-09-16
 
 ### 🎯 值班巡检趋势进 doctor + SearXNG 禁用引擎恢复观察（维持禁用）

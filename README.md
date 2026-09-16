@@ -2,12 +2,18 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.16.0](https://img.shields.io/badge/release-v3.16.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.16.0)
+[![Release: v3.17.0](https://img.shields.io/badge/release-v3.17.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.17.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 289 passing](https://img.shields.io/badge/tests-289%20passing-success.svg)](tests/)
+[![Tests: 305 passing](https://img.shields.io/badge/tests-305%20passing-success.svg)](tests/)
 
-**v3.16.0（2026-09-16）**：v3.0 全面审计大修之后连续十七轮迭代——doctor
+**v3.17.0（2026-09-16）**：v3.0 全面审计大修之后连续十八轮迭代——新增
+worker_queue 派工队列认领机制（多 worker 并行领同一队列互踩的修复：
+O_EXCL 原子认领/超时重新认领/完成清空，Windows/POSIX 双兼容）；
+SearXNG 禁用引擎恢复复跑（三引擎单发探活全部复发，第一关即未过，
+维持禁用并记录观察，详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十七轮：doctor
 新增值班巡检趋势检查（shift_log.md 近 7 天记录/覆盖天数/疑似异常，
 趋势可见）、SearXNG 禁用引擎恢复观察（单发探活全过但回滚启用后聚合
 搜索即复发——单发探活通过 ≠ 可回滚，维持禁用并记录再评估方法，
