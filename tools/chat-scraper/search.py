@@ -11,9 +11,15 @@
     未知但形如域名的字符串          -> 百度 + site:<该域名>（透传）
     "general" / platforms=None     -> 百度无 site: 通用搜索
 
+热榜（v3.29，无查询词的监控原语）:
+    hot(platforms=["bilibili", "weibo"])  -> bilibili 热门/微博热搜
+    （独立 hotlist_engine.py；知乎热榜实测需登录态，平台位保留但恒报
+    zhihu_hotlist_needs_login——详见 hotlist_engine docstring）
+
 用法:
-    from search import search, list_platforms
+    from search import search, list_platforms, hot
     results = search("claude", platforms=["zhihu", "bilibili"], num=10)
+    rows = hot(platforms=["bilibili", "weibo"], num=20)
 
 CLI:
     python search.py "claude" --platforms zhihu,bilibili --num 10
@@ -36,17 +42,19 @@ import sys
 from typing import Dict, List, Optional
 
 try:
-    from . import baidu_engine, bilibili_engine, juejin_engine, sogou_engine  # 包内导入
+    from . import baidu_engine, bilibili_engine, hotlist_engine, juejin_engine
+    from . import sogou_engine
     from . import wenxin_engine, zhihu_engine
 except ImportError:  # 直接把本目录加进 sys.path 的扁平导入
     import baidu_engine  # type: ignore
     import bilibili_engine  # type: ignore
+    import hotlist_engine  # type: ignore
     import juejin_engine  # type: ignore
     import sogou_engine  # type: ignore
     import wenxin_engine  # type: ignore
     import zhihu_engine  # type: ignore
 
-__all__ = ["search", "list_platforms"]
+__all__ = ["search", "list_platforms", "hot"]
 
 _TOOL = "chat-scraper"
 GENERAL = "general"
@@ -218,6 +226,25 @@ def search(
     return results
 
 
+def hot(
+    platforms: Optional[List[str]] = None,
+    num: int = 10,
+    vendor: str = "?",
+    role: str = "primary",
+    on_error: str = "report",
+) -> List[Dict]:
+    """热榜聚合（v3.29，无查询词的监控原语）——委托 hotlist_engine。
+
+    平台：bilibili 热门/微博热搜（实测可用）+ zhihu（实测需登录态，
+    恒报 zhihu_hotlist_needs_login，零网络请求）。None/空 -> 默认可用集。
+    何时用：vendor 官宣/事件首发地监控、舆情雷达——榜单是「正在发生」
+    的信号源，与 search(q) 的「找已知词」互补。
+    错误协议同 search()；错误记录带 platform 无 query（热榜无查询词）。
+    """
+    return hotlist_engine.hot(platforms=platforms, num=num, vendor=vendor,
+                              role=role, on_error=on_error)
+
+
 def _main() -> int:
     parser = argparse.ArgumentParser(
         description="chat-scraper: 中国平台聚合搜索（bilibili API + 百度 site:）")
@@ -227,6 +254,9 @@ def _main() -> int:
     parser.add_argument("--num", type=int, default=10)
     parser.add_argument("--since", default=None,
                         help="24h/7d/30d（best-effort），省略不过滤")
+    parser.add_argument("--hot", action="store_true",
+                        help="热榜模式（无查询词）：q 省略，--platforms "
+                             "为 bilibili/weibo/zhihu，省略为默认可用集")
     parser.add_argument("--vendor", default="?")
     parser.add_argument("--role", default="primary")
     parser.add_argument("--on-error", default="report",
@@ -238,14 +268,19 @@ def _main() -> int:
     if args.list_platforms:
         print(json.dumps(list_platforms(), ensure_ascii=False, indent=2))
         return 0
-    if not args.q:
-        parser.error("the following arguments are required: q")
 
     platforms = ([p for p in args.platforms.split(",") if p.strip()]
                  if args.platforms else None)
-    results = search(args.q, platforms=platforms, num=args.num,
-                     since=args.since, vendor=args.vendor, role=args.role,
-                     on_error=args.on_error)
+    if args.hot:
+        # 热榜模式：无查询词，错误协议/退出码与搜索模式一致
+        results = hot(platforms=platforms, num=args.num, vendor=args.vendor,
+                      role=args.role, on_error=args.on_error)
+    else:
+        if not args.q:
+            parser.error("the following arguments are required: q")
+        results = search(args.q, platforms=platforms, num=args.num,
+                         since=args.since, vendor=args.vendor,
+                         role=args.role, on_error=args.on_error)
     errors = [r for r in results if "error" in r]
     if errors:
         # 任一平台故障即 stderr + exit 1（与仓库统一错误协议一致）；

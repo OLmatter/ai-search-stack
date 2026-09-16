@@ -20,8 +20,9 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     }
     依赖：pip install "mcp>=2.1"（1.x SDK 亦兼容，见下方双版本导入）。
 
-工具清单（14）:
+工具清单（15）:
     china_search        中国平台聚合搜索（知乎/B站/微信/百度16站）
+    china_hotlist       中国平台热榜聚合（B站热门/微博热搜；知乎实测需登录态）
     read_page           通用阅读器（知乎 API 线 + 外域 HTTP/浏览器兜底）
     zhihu_question      知乎问题详情（官方 API）
     zhihu_answers       知乎回答列表（官方 API）
@@ -61,7 +62,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.28.0"
+__version__ = "3.29.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -108,6 +109,7 @@ def _make_server():
 
 _INSTRUCTIONS = """ai-search-stack 工具箱路由：
 - 中国平台内容/社区（知乎、B站、微信公众号、百度16站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles
+- 中国平台热榜监控（vendor 官宣/事件首发地/舆情雷达）-> china_hotlist
 - 国际技术社区反应验证 -> hn_search
 - GitHub release / 安全通告 -> github_releases / github_advisories
 - 通用网页兜底聚合 -> searxng_search（本地实例）/ googlebridge_search（本地服务+Chrome 代理，真 Google）
@@ -157,7 +159,7 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 14 个 MCP tools —— 每个都是对现有模块函数的透传委托
+# 15 个 MCP tools —— 每个都是对现有模块函数的透传委托
 # ---------------------------------------------------------------------------
 @mcp.tool(description=(
     "中国平台聚合搜索：知乎/B站/掘金官方 API + 百度 site: 路由 16 站"
@@ -190,6 +192,31 @@ def china_search(q: str,
     return _run("chat-scraper", q, _chat.search, q, platforms=platforms,
                 num=num, since=since, vendor=vendor, role=role,
                 on_error="report")
+
+
+@mcp.tool(description=(
+    "中国平台热榜聚合（无查询词的监控原语）：bilibili 热门 + 微博热搜的"
+    "结构化榜单（rank/title/url），知乎热榜实测需登录态（平台位保留，恒报 "
+    "zhihu_hotlist_needs_login，零网络请求）。\n"
+    "bilibili 行：author/views/danmaku/likes/category/pubdate（官方 "
+    "popular API，裸调即通，num>20 自动翻页护栏 5 页）；微博行：hot_value"
+    "（热度值）+ label（爆/热/新/沸）（ajax/side/hotSearch + passport "
+    "访客 incarnate 流，纯 HTTP 无浏览器，cookie 缓存复用；首调多 2 个 "
+    "passport 请求）。\n"
+    "何时用：vendor 官宣/事件首发地监控、舆情雷达——榜单是「正在发生」的"
+    "信号源，与 china_search(q) 的「找已知词」互补。何时不用：找具体内容"
+    "用 china_search；国际热点用 hn_search。\n"
+    "platforms 可选 bilibili/weibo/zhihu，省略=默认可用集（bilibili+weibo）。"
+    "耗时：秒级（微博首调约 10s，含节流间隔）。错误在返回 JSON 内"
+    "（{\"error\": ..., \"platform\": ...} 项，无 query——热榜无查询词），"
+    "区分故障与空榜。"))
+def china_hotlist(platforms: Optional[List[str]] = None,
+                  num: int = 10,
+                  vendor: str = "?",
+                  role: str = "primary") -> str:
+    """委托 chat-scraper search 门面 hot()（on_error 固定 report）。"""
+    return _run("chat-scraper", "", _chat.hot, platforms=platforms, num=num,
+                vendor=vendor, role=role, on_error="report")
 
 
 @mcp.tool(description=(

@@ -2,13 +2,23 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.28.0](https://img.shields.io/badge/release-v3.28.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.28.0)
+[![Release: v3.29.0](https://img.shields.io/badge/release-v3.29.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.29.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 468 passing](https://img.shields.io/badge/tests-468%20passing-success.svg)](tests/)
+[![Tests: 491 passing](https://img.shields.io/badge/tests-491%20passing-success.svg)](tests/)
 
-**v3.28.0（2026-09-17）**：v3.0 全面审计大修之后连续二十九轮迭代——
-**三轴批次**：A1 掘金官方搜索 API 专用引擎（juejin_engine.py，实测裸调免
+**v3.29.0（2026-09-17）**：v3.0 全面审计大修之后连续三十轮迭代——
+**A2 热榜聚合**：hotlist_engine.py（bilibili 热门/微博热搜/知乎诚实上限）
++ 门面 search.hot() 路由 + MCP china_hotlist 工具（第 15 个工具，无查询词
+的监控原语：vendor 官宣/事件首发地/舆情雷达）。实测（逻辑探测 8 发）：
+B 站 popular API 裸调即通（连 buvid3 都不需要）；微博 hotSearch 走
+passport 访客 incarnate 流（纯 HTTP 两请求换 SUB/SUBP，无浏览器，cookie
+缓存复用，is_ad 广告位剔除）；知乎热榜端点访客线实测死刑（裸调 401 +
+签名线 401 code=101，需登录态——平台位保留恒报 zhihu_hotlist_needs_login，
+零网络不烧引导，凭据线归主人），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十九轮：**三轴批次**：A1 掘金官方搜索 API 专用引擎（juejin_engine.py，实测裸调免
 cookie + 结构化字段 + cursor 翻页，接管百度 site: 路由）+ B1 google-bridge
 常驻看门狗（watchdog.py + 计划任务注册器，服务死了自动拉起——实机取证
 杀进程后 1 秒恢复、调度链全通）+ C1 zhihu_content 通用阅读线拆分
@@ -138,7 +148,7 @@ B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表�
   SearXNG 本地聚合（compose 一条命令起实例，JSON 已启用）
 - 🐙 **开发者信号**：GitHub Releases / 安全通告（Advisories）、Hacker News
   社区反应验证，零部署
-- 🔌 **MCP 接入层**：整个工具箱挂成 stdio MCP server，14 个工具任何 MCP
+- 🔌 **MCP 接入层**：整个工具箱挂成 stdio MCP server，15 个工具任何 MCP
   客户端（ZCode / Claude Desktop）零代码直接调用
 - 🩺 **doctor 一条命令体检**：巡检全部通道健康（SearXNG / 知乎 cookie /
   标定钩子 / bilibili / 百度 / google-bridge / GitHub / 值班巡检趋势），
@@ -194,7 +204,7 @@ python tools/doctor.py         # 全通道体检，确认环境就绪
 | [`tools/searxng/`](tools/searxng/) | 兜底聚合搜索；`tools/searxng/docker` 一条命令起本地实例（已启用 JSON，公网实例默认禁 JSON 勿用） | 默认主搜 |
 | [`tools/hackernews/`](tools/hackernews/) | 验证社区反应（高赞 = 真信号），零部署 | 中文 / 非技术 |
 | [`tools/github/`](tools/github/) | Release / Advisory / 仓库，零部署（匿名 60 req/h，可选配 `GITHUB_TOKEN` 提额至 5000/h，doctor 同款） | 非 GitHub |
-| [`tools/mcp_server.py`](tools/mcp_server.py) | 全工具箱暴露成 14 个 MCP tools（stdio） | 不用 MCP 客户端时 |
+| [`tools/mcp_server.py`](tools/mcp_server.py) | 全工具箱暴露成 15 个 MCP tools（stdio） | 不用 MCP 客户端时 |
 | [`tools/doctor.py`](tools/doctor.py) | 一条命令巡检全部通道健康 | — |
 
 **实测状态**（详见各 README 与 CHANGELOG）：hackernews / github /
@@ -283,17 +293,18 @@ cookie 亦然**（自愈+重试无法救回，v3.4 起的旧形态已死）。v3
 ## MCP 接入
 
 `tools/mcp_server.py` 把整个工具箱包装成一个 **stdio MCP server**：任何 MCP
-客户端（ZCode / Claude Desktop / 任何 agent 框架）无需写代码即可直接调用 14 个
+客户端（ZCode / Claude Desktop / 任何 agent 框架）无需写代码即可直接调用 15 个
 工具。它只是**接入层**——每个工具原样透传参数给现有模块函数，不做内部 API 统一。
 
 依赖：`pip install "mcp>=2.1"`（1.x SDK 亦兼容）。Windows 下 `command` 可用
 anaconda python 的绝对路径。
 
-**工具清单（14）**：
+**工具清单（15）**：
 
 | MCP 工具 | 委托的模块函数 | 用途 | 耗时预期 |
 |---|---|---|---|
 | `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/掘金/微信/百度16站） | bilibili/juejin 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
+| `china_hotlist` | `chat-scraper/search.hot` | 热榜聚合：B站热门/微博热搜（知乎实测需登录态，恒报诚实错误） | 秒级（微博首调约 10s，含访客 incarnate 与节流间隔） |
 | `read_page` | `zhihu_content.read` | 通用阅读器：知乎 API 线 + B站/微信特化 + 外域 HTTP/无头浏览器兜底 | 可能起无头浏览器 10-15s |
 | `zhihu_question` | `zhihu_content.fetch_question` | 知乎问题详情（官方 API） | 秒级 |
 | `zhihu_answers` | `zhihu_content.fetch_answers` | 知乎回答列表（官方 API；cursor 翻页，num≤500；访客配额墙按 is_end 如实截断，见下） | 秒级~数秒（翻页按需） |
@@ -360,7 +371,7 @@ ai-search-stack/
 ├── LICENSE
 ├── tests/                ← 离线单测（含 NUL 空壳/撞名防回归）+ 真冒烟
 ├── tools/
-│   ├── mcp_server.py     # MCP stdio server（全工具箱暴露成 14 个 MCP tools）
+│   ├── mcp_server.py     # MCP stdio server（全工具箱暴露成 15 个 MCP tools）
 │   ├── doctor.py         # 工具箱体检（一条命令巡检全部通道）
 │   ├── google-bridge/    # Chrome 桥（search_helper v23.10，Windows/Linux 可用）
 │   │   ├── search_helper.py

@@ -1,5 +1,55 @@
 # Changelog
 
+## [3.29.0] - 2026-09-17
+
+### 🎯 热榜聚合批次：hotlist_engine（A2）——B站热门/微博热搜/知乎诚实上限
+
+- **A2 热榜聚合（`tools/chat-scraper/hotlist_engine.py` + 门面
+  `search.hot()` 路由 + MCP `china_hotlist` 工具，第 15 个工具）**：
+  无查询词的监控原语（vendor 官宣/事件首发地监控、舆情雷达），与
+  search(q) 语义不同构，故独立引擎 + 独立动词（bilibili_video 与
+  search 分工具同款先例）。实测（2026-09-17，逻辑探测预算 8 发实耗 8：
+  评估 6 发 + 微博 incarnate 全链实跑 1 发 + 聚合验收实跑 1 发）：
+  - **bilibili 热门线**：`/x/web-interface/popular` API **裸调即通**
+    （连 buvid3 都不需要——对照搜索接口必须有；探测 #3 HTTP 200 +
+    code=0，20 条全结构化字段）。ps=20/pn=N 分页（no_more=true 或空页
+    即停，护栏 5 页约 100 条，跨页去重 v3.12 同款）；会话/节流复用
+    bilibili_engine 进程级单例（不重复领 buvid3）；输出 author/views/
+    danmaku/likes/category/pubdate；**热门页无热度值字段——如实不造
+    hot_value**
+  - **微博热搜线**：`ajax/side/hotSearch` 需访客身份（裸 UA 403 探测
+    #2、m.weibo.cn container API ok=-100 弹 passport 登录墙探测
+    #5/#6 均实测排除）——实现 passport **访客 incarnate 流**：
+    genvisitor POST 领 tid → incarnate GET 换 SUB/SUBP（纯 HTTP 两
+    请求，无浏览器；JSONP 壳实测为 `window.gen_callback &&
+    gen_callback({...})` 形态）。cookie 缓存
+    `state/weibo_visitor_cookies.json` 复用；HTTP 级（401/403）与
+    信封级（ok!=1）失效均自动重领一次，重领后仍失败如实抛；is_ad=1
+    广告位剔除（宁缺勿错）；输出 hot_value 热度值 + label
+    （爆/热/新/沸）+ s.weibo.com 检索 URL
+  - **知乎热榜线：访客不可用（诚实上限非故障）**——官方端点
+    `/api/v3/feed/topstory/hot-lists/total` 裸调 401（探测 #1）；
+    zhihu_content cookie+签名线（自愈引导刚刷新的全套新访客 cookie +
+    x-zse-96 签名）仍 **401 code=101「身份未经过验证」**（探测 #4）——
+    端点需登录态。平台位保留恒报 `zhihu_hotlist_needs_login`，
+    **零网络请求**（不烧引导）；凭据线归主人，本引擎不带登录态
+  - 错误协议统一（report/raise/empty 三态）；错误记录带 platform 无
+    query（热榜无查询词）；`CHAT_SCRAPER_WEIBO_MIN_INTERVAL` 微博节流
+    （默认 5s）；门面 `search.py` 新增 `hot()` + CLI `--hot`（q 省略）
+- test_v3290 23 新钉（bilibili 线 7 + weibo 线 6 + zhihu 诚实上限 2 +
+  聚合路由/门面/CLI/MCP 5 + 版本锁/诚实文档证据链 3，全部离线零榜单
+  请求）；test_v3280 精确版本锁降常青下限交接（v3.26→v3.27→v3.28
+  先例）；468→491 tests 连续两轮绿
+- **同批：ONLOGON 管理员重试成功**（2026-09-17，PowerShell
+  Start-Process -Verb RunAs 重跑 register，ExitCode=0）——
+  `ai-search-gbridge-boot` 已落地（schtasks /Query /TN exit=0 就绪，
+  ONLOGON 触发器下次运行 N/A 属正常显示），v3.28 的 DEGRADED 降级补齐；
+  承重 MINUTE 任务 /F 覆盖重注册不受影响。C1 扫尾观察（只评估不动）：
+  comments 聚簇 ~204 行（占 23%），zhihu_content 893 vs
+  bilibili_engine 592 = 1.51x < 2x 拆分判据，且本轮 zhihu_content
+  零改动——未到二次拆分点，继续观察
+
+
 ## [3.28.0] - 2026-09-17
 
 ### 🎯 三轴批次：掘金官方 API 专用引擎（A1）+ google-bridge 常驻看门狗（B1）+ 通用阅读线拆分 read_page（C1）

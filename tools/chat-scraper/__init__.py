@@ -1,5 +1,5 @@
-"""chat-scraper v3.28.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
-+ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
+"""chat-scraper v3.29.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
++ 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
 实测覆盖与已知限制见 README.md，不要按平台数量估算本工具能力。
@@ -113,8 +113,18 @@ result_type=2 + result_model dict（article_info/author_user_info/category），
 原百度 site:juejin.cn 路由由专用引擎接管（zhihu 先例）。同批：google-bridge
 Windows 常驻看门狗（watchdog.py + schtasks 注册器）；zhihu_content 通用
 阅读器拆分至 read_page.py（1109 行双关注点解耦，行为零变更）。
-"""
-from .search import list_platforms, search
 
-__version__ = "3.28.0"
-__all__ = ["search", "list_platforms", "__version__"]
+v3.29.0：新增热榜聚合 hotlist_engine.py + 门面 hot() 路由 + MCP
+china_hotlist 工具（无查询词的监控原语：vendor 官宣/事件首发地/舆情雷达）。
+实测（2026-09-17，逻辑探测 8 发）：bilibili 热门 popular API 裸调即通
+（连 buvid3 都不需要，对照搜索接口必须有）；微博热搜 ajax/side/hotSearch
+走 passport 访客 incarnate 流（genvisitor->incarnate 纯 HTTP 两请求换
+SUB/SUBP cookie，无浏览器，缓存 state/weibo_visitor_cookies.json 复用，
+is_ad 广告位剔除）；知乎热榜官方端点访客线实测死刑（裸调 401 + 签名线
+401 code=101，端点需登录态——平台位保留恒报 zhihu_hotlist_needs_login，
+零网络请求不烧引导，凭据线归主人）。
+"""
+from .search import list_platforms, search, hot
+
+__version__ = "3.29.0"
+__all__ = ["search", "list_platforms", "hot", "__version__"]

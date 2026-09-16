@@ -547,13 +547,16 @@ class TestReadPageSplit(unittest.TestCase):
 
 class TestVersionSyncV328(unittest.TestCase):
     def test_versions_3280(self):
+        # v3.29 起精确锁移交 test_v3290，此处降常青下限（v3.26→v3.27、
+        # v3.27→v3.28 先例）：双 __version__ 同步本身不许破
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.28.0")
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 28, 0])
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)
@@ -565,9 +568,17 @@ class TestVersionSyncV328(unittest.TestCase):
         self.assertIn("juejin", changelog)
         self.assertIn("看门狗", changelog)
         self.assertIn("read_page", changelog)
+        # v3.29 起精确徽章/状态行锁移交 test_v3290，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防止换版时徽章漂移回退）
+        if mcp_server is None:
+            src2 = (REPO / "tools" / "mcp_server.py").read_text(
+                encoding="utf-8")
+            ver = re.search(r'__version__ = "([^"]+)"', src2).group(1)
+        else:
+            ver = mcp_server.__version__
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.28.0", readme)
-        self.assertIn("v3.28.0（2026-09-17）", readme)
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)   # 状态行「vX.Y.Z（日期）」头部在场
 
     def test_watchdog_contract_doc_pinned(self):
         # 退出码契约写死在 help/docstring（测试钉死文本存在）
