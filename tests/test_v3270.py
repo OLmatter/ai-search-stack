@@ -161,14 +161,17 @@ class TestSettingsV327Sampling(unittest.TestCase):
 
 class TestVersionSyncV327(unittest.TestCase):
     def test_versions_3270(self):
-        # v3.27 起精确锁自 test_v3260 接管（降常青先例延续）
+        # v3.28 起精确锁移交 test_v3280，此处降常青下限（v3.17→v3.19、
+        # v3.23→v3.24、v3.24→v3.25、v3.25→v3.26、v3.26→v3.27 先例）：
+        # 双 __version__ 同步本身不许破
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.27.0")
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 27, 0])
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)
@@ -176,12 +179,21 @@ class TestVersionSyncV327(unittest.TestCase):
 
     def test_changelog_and_readme_3270(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        # CHANGELOG 历史段是 append-only，3.27.0 条目钉保持精确
         self.assertIn("## [3.27.0] - 2026-09-17", changelog)
         self.assertIn("症状漂移观察轮", changelog)
         self.assertIn("退出码契约钉", changelog)
+        # v3.28 起精确徽章/状态行锁移交 test_v3280，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防止换版时徽章漂移回退）
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.27.0", readme)
-        self.assertIn("v3.27.0（2026-09-17）", readme)
+        if mcp_server is None:
+            src = (REPO / "tools" / "mcp_server.py").read_text(
+                encoding="utf-8")
+            ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
+        else:
+            ver = mcp_server.__version__
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)   # 状态行「vX.Y.Z（日期）」头部在场
 
 
 if __name__ == "__main__":

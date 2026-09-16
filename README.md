@@ -2,13 +2,20 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.27.0](https://img.shields.io/badge/release-v3.27.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.27.0)
+[![Release: v3.28.0](https://img.shields.io/badge/release-v3.28.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.28.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 425 passing](https://img.shields.io/badge/tests-425%20passing-success.svg)](tests/)
+[![Tests: 468 passing](https://img.shields.io/badge/tests-468%20passing-success.svg)](tests/)
 
-**v3.27.0（2026-09-17）**：v3.0 全面审计大修之后连续二十八轮迭代——
-症状漂移观察轮（第九轮采样，预算 3/3）：brave gate-1 fail
+**v3.28.0（2026-09-17）**：v3.0 全面审计大修之后连续二十九轮迭代——
+**三轴批次**：A1 掘金官方搜索 API 专用引擎（juejin_engine.py，实测裸调免
+cookie + 结构化字段 + cursor 翻页，接管百度 site: 路由）+ B1 google-bridge
+常驻看门狗（watchdog.py + 计划任务注册器，服务死了自动拉起——实机取证
+杀进程后 1 秒恢复、调度链全通）+ C1 zhihu_content 通用阅读线拆分
+read_page.py（1109 行双关注点解耦、AST 级零知乎依赖、兼容层保引用不变），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十八轮：症状漂移观察轮（第九轮采样，预算 3/3）：brave gate-1 fail
 "brave: too many requests" **逐字回摆**（v3.26 timeout 漂移单轮即止）、
 ddg gate-1 fail "duckduckgo: CAPTCHA" **逐字复发**（九轮中第八轮，
 漂移确认未持续）——双 streak 维持 0，a) fail 一票否决 + c) 跨度
@@ -191,8 +198,9 @@ python tools/doctor.py         # 全通道体检，确认环境就绪
 | [`tools/doctor.py`](tools/doctor.py) | 一条命令巡检全部通道健康 | — |
 
 **实测状态**（详见各 README 与 CHANGELOG）：hackernews / github /
-searxng(本地实例) / bilibili 引擎 / 知乎官方 API 读取线 / 文心引擎（1 发
-实测成功）/ google-bridge（有代理时）均端到端实测出真实结果；百度引擎因软
+searxng(本地实例) / bilibili 引擎 / 掘金引擎（2 发探测实测信封）/
+知乎官方 API 读取线 / 文心引擎（1 发实测成功）/ google-bridge（有代理时；
+v3.28 看门狗实机取证常驻闭环）均端到端实测出真实结果；百度引擎因软
 风控按错误协议上报（`baidu_soft_blocked`），解析器经真实页面离线复验 19/19；
 微信读取当前自动化环境受限（验证页如实上报，环境友好时可读）。
 
@@ -285,7 +293,7 @@ anaconda python 的绝对路径。
 
 | MCP 工具 | 委托的模块函数 | 用途 | 耗时预期 |
 |---|---|---|---|
-| `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/微信/百度16站） | bilibili 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
+| `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/掘金/微信/百度16站） | bilibili/juejin 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
 | `read_page` | `zhihu_content.read` | 通用阅读器：知乎 API 线 + B站/微信特化 + 外域 HTTP/无头浏览器兜底 | 可能起无头浏览器 10-15s |
 | `zhihu_question` | `zhihu_content.fetch_question` | 知乎问题详情（官方 API） | 秒级 |
 | `zhihu_answers` | `zhihu_content.fetch_answers` | 知乎回答列表（官方 API；cursor 翻页，num≤500；访客配额墙按 is_end 如实截断，见下） | 秒级~数秒（翻页按需） |

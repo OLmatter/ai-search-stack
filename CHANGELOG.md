@@ -1,5 +1,72 @@
 # Changelog
 
+## [3.28.0] - 2026-09-17
+
+### 🎯 三轴批次：掘金官方 API 专用引擎（A1）+ google-bridge 常驻看门狗（B1）+ 通用阅读线拆分 read_page（C1）
+
+- **A1 juejin 专用引擎（`tools/chat-scraper/juejin_engine.py`，仿 bilibili
+  「官方 API 优先于搜索引擎曲线」模式）**：实测（2026-09-16，探测预算
+  8 发实耗 2）裸调免 cookie，信封 `{err_no, err_msg, data[直接列表],
+  count, cursor, has_more}`——data 是直接列表不是 `{result:[]}` 包装；
+  条目 `result_type=2` + `result_model` dict（article_info/
+  author_user_info/category）；分页沿顶层不透明游标串（如
+  `"20_20260917..."`），`has_more=False` 或游标缺失即停。结构化输出
+  title/url/snippet/author/views/diggs/comments/category/pubdate；类型
+  显式过滤（result_type=2 + article_id 非空，其余形态宁缺勿错如实暴露）
+  + 跨页去重（v3.12 审查 A1 同款）+ since 客户端 ctime 过滤
+  （24h/7d/30d/90d）；num>20 自动翻页（护栏 5 页约 100 条，页间引擎级
+  `_wait_turn` 节流，`CHAT_SCRAPER_JUEJIN_MIN_INTERVAL` 默认 2s）；错误
+  协议统一（`juejin_api_error`）。门面接管：`platforms=["juejin"]` 不再
+  落百度 site:juejin.cn（zhihu 先例）；mcp china_search 描述、README
+  覆盖表、list_platforms 同步（juejin 升 ✅ 实测行）
+- **B1 google-bridge 常驻看门狗（服务死了自动拉起，「真 Google」通道常亮；
+  `tools/google-bridge/watchdog.py` + `watchdog_task.py`）**：
+  - watchdog.py：`/health` 检查（任何 HTTP 应答=活，503 语义态也算；
+    连接拒绝/超时=死）→ 不可达即分离进程拉起 search_helper.py
+    （Windows DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP；POSIX
+    start_new_session），宽限 20s 轮询恢复（helper 先绑端口后懒加载
+    Chrome，恢复是秒级）；决策流水 `state/watchdog.log` append-only；
+    .env setdefault 兜底加载（永不覆盖已导出变量，:= 语义）
+  - 退出码契约钉死：0=健康无动作 / 1=拉起且宽限内恢复 / 2=拉起但宽限
+    未达（进程层看门狗只保进程，代理断/Chrome 坏走 /chrome_ready 与
+    自愈）/ 3=--check-only 且不健康
+  - watchdog_task.py 计划任务注册器：承重任务 `ai-search-gbridge-watchdog`
+    （MINUTE 默认 15 分钟，死亡恢复上限=间隔）+ 增强任务
+    `ai-search-gbridge-boot`（ONLOGON 开机即拉）；**实测普通权限令牌
+    注册 ONLOGON 被系统拒绝（「拒绝访问」，限当前用户+/IT 亦然）→
+    降级语义**：承重成败定退出码，开机任务缺失只响亮告警（管理员重跑
+    register 可补）
+  - 实机取证（2026-09-17）：check-only 健康路径 exit=0 + 决策日志落行；
+    杀掉手动进程（pid 32240 含子树）→ watchdog exit=1，02:33:55
+    `restarting pid=36944` → 02:33:56 `restart OK`（1 秒恢复）；
+    `schtasks /Run` 强制执行计划任务 → 02:34:13 决策日志落行（调度链
+    全通）；服务自此以分离进程常驻，会话结束不再死
+  - 实机抓虫两枚（当轮修复）：中文 Windows schtasks 输出为 GBK 字节，
+    `text=True` 的 utf-8 读线程直接崩（stdout/stderr 变 None）→ 字节层
+    utf-8→gbk 回退链解码（doctor v3.21 GBK 加固同款教训）；unregister
+    幂等匹配漏中文措辞「系统**找不到**指定的文件」→ 中英三措辞全认
+  - 配套：google-bridge README 新增「Windows 常驻：看门狗」节；
+    mcp `googlebridge_unreachable` 错误提示补看门狗部署指引
+- **C1 zhihu_content 通用阅读线拆分（1109 行双关注点解耦，真重构非搬家）**：
+  - 评估裁决：到拆分点——通用阅读线（SSRF 护栏/错误页判据/HTTP+浏览器
+    双线，六轮叠加 v3.4→v3.11）与知乎 API 线（cookie/签名/自愈/fetch_*）
+    依赖集零交集（bs4/camoufox vs zhihu_sign/zhihu_bootstrap），且 MCP
+    read_page 工具名与新模块天然对齐；全仓最大文件 2 倍于次大者
+  - `read_page.py`（新，273 行）：公开入口 `read_generic`/`check_http_url`/
+    `ReadError`；**AST 级零知乎依赖**钉进测试（边界铁律防回焊）
+  - `zhihu_content.py`（1109→893 行）：保留知乎 API 线 + read() 分流器
+    （知乎 API 分流 + bilibili 特化 + 外域委托 read_generic）+ read_via_browser
+    SEO 线（知乎特有）；按名重导出 ReadError/_check_http_url/CONTENT_LIMIT
+    等（`zc.<name>` 引用路径不变，兼容层同体性钉进测试）；死 import
+    （ipaddress/socket）随迁出清除
+  - 测试适配最小化：requests/socket 模块单例的 patch 天然免疫拆分；
+    仅 3 处 `zc._generic_read` patch 点改 `zc.read_generic` + 5 处 SSRF
+    钉改真源 `rp.socket`（v3.12/v3.18 过时钉适配先例，历史结论钉原样保留）
+- 测试 425→468 通过（test_v3280 共 43 钉：juejin 引擎 12 + 门面路由 3 +
+  watchdog 10 + watchdog_task 10 + C1 拆分 5 + 版本锁 3；test_v3270
+  精确锁降常青移交 test_v3280——v3.24→v3.25→v3.26→v3.27 先例延续），
+  连续两轮全绿 + clean-worktree 收工检查
+
 ## [3.27.0] - 2026-09-17
 
 ### 🎯 症状漂移观察轮：双引擎回摆逐字症状（v3.26 timeout 漂移未持续）+ CLI --probe 退出码契约钉

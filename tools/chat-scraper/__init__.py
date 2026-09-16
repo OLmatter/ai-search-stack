@@ -1,4 +1,4 @@
-"""chat-scraper v3.27.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.28.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -104,8 +104,17 @@ v3.23.0：searxng_client 探活机制固化——search() 新增 engines= 参数
 状态，streak 记账归 settings.yml 观察注释）——v3.16~v3.23 六轮探活
 全是 ad-hoc 裸 HTTP，判据在 settings.yml、调用在习惯里（v3.19
 acquire 根因同构），本轮起第一关只准走 probe()。
+
+v3.28.0：新增 juejin 平台——掘金官方搜索 API 专用引擎（juejin_engine.py，
+仿 bilibili 官方 API 优先模式）。实测（2026-09-16，2 发探测）：裸调免
+cookie，信封 {err_no, data[直接列表], cursor, has_more}，条目
+result_type=2 + result_model dict（article_info/author_user_info/category），
+分页走顶层不透明 cursor；结构化输出 author/views/diggs/comments/category。
+原百度 site:juejin.cn 路由由专用引擎接管（zhihu 先例）。同批：google-bridge
+Windows 常驻看门狗（watchdog.py + schtasks 注册器）；zhihu_content 通用
+阅读器拆分至 read_page.py（1109 行双关注点解耦，行为零变更）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.27.0"
+__version__ = "3.28.0"
 __all__ = ["search", "list_platforms", "__version__"]

@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.27.0"
+__version__ = "3.28.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -160,22 +160,24 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
 # 14 个 MCP tools —— 每个都是对现有模块函数的透传委托
 # ---------------------------------------------------------------------------
 @mcp.tool(description=(
-    "中国平台聚合搜索：知乎/B站官方 API + 百度 site: 路由 16 站"
-    "（CSDN/掘金/简书/豆瓣/微博/V2EX/SegmentFault/博客园/开源中国/51CTO/"
+    "中国平台聚合搜索：知乎/B站/掘金官方 API + 百度 site: 路由 16 站"
+    "（CSDN/简书/豆瓣/微博/V2EX/SegmentFault/博客园/开源中国/51CTO/"
     "Gitee/微信公众号/头条/百度贴吧等）。\n"
     "何时用：找中文社区内容、验证国内舆论/资料。何时不用：英文技术讨论"
     "（用 hn_search）、GitHub release/通告（用 github_*）、通用英文搜索"
     "（用 searxng_search/googlebridge_search）。\n"
-    "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限；返回"
-    "单条聚合行：AI 答案 answer + 引用 citations，不是网页列表）、16 个站名、"
-    "general（百度无 site 通用）、或任意"
+    "platforms 可选 bilibili、juejin（掘金官方搜索 API，结构化字段："
+    "作者/浏览/点赞/评论/分类，裸调免登录）、wenxin（文心 AI 搜索，低频配额"
+    "受限；返回单条聚合行：AI 答案 answer + 引用 citations，不是网页列表）、"
+    "16 个站名、general（百度无 site 通用）、或任意"
     "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
     "num 与单页上限（如实声明）：bilibili num>30 自动翻页（护栏 5 页，有效"
-    "上限约 150 条）；百度系（general/16站/任意域名）num>20 自动翻页（护栏"
+    "上限约 150 条）；juejin num>20 自动翻页（护栏 5 页，有效上限约 100 条）；"
+    "百度系（general/16站/任意域名）num>20 自动翻页（护栏"
     "3 页，有效上限约 60 条，页间走引擎级 ~20s 节流，翻页耗时按页数放大）；"
     "sogou（百度降级环）与知乎链（SearXNG→搜狗→百度）单页到顶如实截断"
     "——搜狗连发风控阈值实测 4 发（v3.13 标定），不做翻页。\n"
-    "耗时：bilibili 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
+    "耗时：bilibili/juejin 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"
     "错误在返回 JSON 内（{\"error\": ...} 项），区分故障与 0 结果。"))
 def china_search(q: str,
@@ -429,7 +431,9 @@ def googlebridge_search(q: str,
         return _dumps([{"error": (
             f"googlebridge_unreachable: 127.0.0.1:{port} 连接失败（{e.reason}）"
             f"——服务未启动。先运行 tools/google-bridge/start_search_helper.sh"
-            f"（需 Chrome + 代理），或改用 searxng_search 兜底"),
+            f"（需 Chrome + 代理），或 python tools/google-bridge/"
+            f"watchdog_task.py register 部署常驻看门狗（v3.28，服务死了自动"
+            f"拉起）；或改用 searxng_search 兜底"),
             "tool": "google-bridge", "query": q}])
     except Exception as e:  # noqa: BLE001
         return _dumps([_err("google-bridge", q, e)])

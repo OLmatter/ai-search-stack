@@ -1,6 +1,6 @@
 # chat-scraper (v3)
 
-中国平台聚合搜索：**bilibili 官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）。
+中国平台聚合搜索：**bilibili/掘金官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）。
 
 ## 版本与诚实声明（先读这段）
 
@@ -12,13 +12,14 @@
 | 平台 | 引擎 | 状态 | 证据 |
 |---|---|---|---|
 | bilibili | 官方 API `search/type`（buvid3 + wbi 兜底） | ✅ 实测 | 3 次真实查询共 18 条结构化结果（title/author/play/pubdate/url 全带），广告卡已过滤 |
+| juejin（v3.28） | 官方 API `search_api/v1/search`（裸调免 cookie，`juejin_engine.py`） | ✅ 实测 | 2026-09-16 两发探测：`err_no=0`，信封 `{err_no, data[直接列表], cursor, has_more}`，20/20 条 `result_type=2`（article）+ `result_model` dict（article_info/author_user_info/category），分页游标 `cursor` 不透明串；输出 author/views/diggs/comments/category |
 | zhihu | **专用引擎链 v3.1**：本机 SearXNG → 搜狗 → 百度 `site:`（`zhihu_engine.py`） | ✅ 实测 | 降级链实测 5 条知乎直链（searxng 路径）；搜狗路径解析器对真实页面（存证 .scratch/r2/）离线复验通过 |
 | zhihu 内容读取（问题/回答/文章） | 官方 API（无头 camoufox 引导 cookie + 纯签名 HTTP + 认证自愈 v3.4） | ✅ 实测 | question 19550227 → HTTP 200 真实 JSON；answers 用 web 同款 /feeds 端点；articles 端点 2026-09-10 实测 200 |
 | zhihu 评论（v3.6，回答/问题） | 官方 comment_v5 API（签名 HTTP + paging.next 翻页 + 子评论展开） | ✅ 实测 | answers/12202014 与 questions 端点、child_comment 子评论端点 2026-09-10 实测 200（含翻页） |
 | wenxin（v3.7 文心 AI 搜索） | camoufox 无头提交 + 截获 chat.baidu.com conversation SSE | ✅ 实测（配额纪律下低频用） | 2026-09-10 真实一发成功：`"智谱 GLM Coding Plan"` → 754 字 AI 答案 markdown + 23 条引用（证据 .scratch/r7_wenxin_engine/）；协议级侦察存证 .scratch/r6/ |
 | 任意 URL（通用阅读器 v3.4） | `read()`：知乎分流 API 线；外域 HTTP 直连 → 无头浏览器兜底 | ✅/⚠️ | 知乎线实测见上；外域 HTTP 线与浏览器兜底见 v3.4 节 |
 | general（无 site:） | 百度通用（失败自动切搜狗） | ⚠️ 真空当日未验证成功过；故障降级链已实测接线 | — |
-| csdn / juejin / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
+| csdn / jianshu / douban / weibo / v2ex / segmentfault / cnblogs / oschina / 51cto / gitee / weixin / toutiao / baidu_tieba | 百度 `site:<域名>` | ⚠️ best-effort：与 zhihu 百度保底同一引擎同一解析法，未逐一实测 | — |
 | 任意 `<域名>` | 百度 `site:<域名>` 透传 | ⚠️ best-effort | platforms 里传形如 `example.com` 的字符串即启用 |
 
 ### zhihu 专用引擎链（v3.1）为什么长这样
@@ -41,7 +42,7 @@
 2. **bilibili 风控可能升级**。当前裸调（带 buvid3 cookie）即通；一旦官方要求 wbi 签名，引擎收到 code=-403/-412 会自动签名重试一次（wbi 完整实现已内置，key 缓存 1h）。若签名后仍 -412/-403，说明风控再加码（如负一层数据加密），需重新逆向。
 3. **weixin（微信公众号）**：百度 `site:mp.weixin.qq.com` 只能搜到被百度收录的文章；公众号历史上有反爬更强的专门方案（sogou 微信搜索等），v3 **未实现**。
 4. **百度时间过滤是 best-effort**：`since=24h/7d/30d` 映射为 `gpc=stf`（stftype 1/2/3，滚动窗口），百度对它的执行并不严格；其他取值不生效（stderr 告警）。bilibili 的 `since` 是客户端按 pubdate 过滤（API 不支持服务端过滤），过滤后可能少于 num 条。
-5. **单页上限**：bilibili 单页约 30 条，bilibili 的 num>30 自 v3.11 起自动翻页（护栏 5 页，有效上限约 150 条；页间走引擎内置 `_wait_turn` 节流，服务端空页即停），护栏耗尽安静返回已收集条数。百度 rn=20（未登录稳定上限），num>20 自 v3.12 起同样自动翻页（护栏 3 页，有效上限约 60 条——百度风控敏感且节流 20s/请求，护栏更保守；半途被风控时如实抛 `baidu_soft_blocked` 含已收集数，0 收获才切移动桶）。两引擎翻页均带跨页去重（v3.12），整页重复 = 排序已穷尽信号，如实停。搜狗与知乎链保持单页如实截断，不做翻页——搜狗连发风控阈值已标定（v3.13，读数 `state/sogou_throttle_log.jsonl`）：**连发阈值 = 4 发**（探测 sleep 2s/发、实测请求节奏 2~4s/发，第 5 发即 antispider 页；风控后 ~171s 冷却恢复），翻页必然触发，`python sogou_engine.py --probe N --probe-interval S` 可复测累积。
+5. **单页上限**：bilibili 单页约 30 条，bilibili 的 num>30 自 v3.11 起自动翻页（护栏 5 页，有效上限约 150 条；页间走引擎内置 `_wait_turn` 节流，服务端空页即停），护栏耗尽安静返回已收集条数。百度 rn=20（未登录稳定上限），num>20 自 v3.12 起同样自动翻页（护栏 3 页，有效上限约 60 条——百度风控敏感且节流 20s/请求，护栏更保守；半途被风控时如实抛 `baidu_soft_blocked` 含已收集数，0 收获才切移动桶）。两引擎翻页均带跨页去重（v3.12），整页重复 = 排序已穷尽信号，如实停。掘金（v3.28）单页 20 条，num>20 自动翻页（护栏 5 页，有效上限约 100 条；页间走引擎内置 `_wait_turn` 节流，`has_more=False` 或游标缺失即停），同样跨页去重。搜狗与知乎链保持单页如实截断，不做翻页——搜狗连发风控阈值已标定（v3.13，读数 `state/sogou_throttle_log.jsonl`）：**连发阈值 = 4 发**（探测 sleep 2s/发、实测请求节奏 2~4s/发，第 5 发即 antispider 页；风控后 ~171s 冷却恢复），翻页必然触发，`python sogou_engine.py --probe N --probe-interval S` 可复测累积。
 6. **本地代理会污染结果**：引擎强制直连（`trust_env=False`）。本机实测系统代理（如 Clash 7897 端口）半死不活时会伪造 ProxyError 或 timeout 页。如需经代理访问百度/bilibili，请自行改代码。
 7. cn.bing.com 对纯 HTTP 客户端**会剥离 `site:` 操作符**（前序侦察 4 组对照全部复现），故 v3 不用 bing 做 `site:` 引擎；`format=rss` 备胎通道也未启用（百度可用时无必要）。
 8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。

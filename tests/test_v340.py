@@ -287,7 +287,7 @@ class TestReadRouting(unittest.TestCase):
         self.fq.assert_not_called()
 
     def test_non_zhihu_routes_to_generic_read(self):
-        with mock.patch.object(zc, "_generic_read",
+        with mock.patch.object(zc, "read_generic",
                                return_value={"title": "t", "content": "c",
                                              "url": "u", "engine": "http"}) \
                 as gr:
@@ -356,9 +356,9 @@ class TestGenericRead(unittest.TestCase):
                 zc._generic_read_http("https://x.com/404")
 
     def test_soft_fail_triggers_browser_fallback_via_read(self):
-        with mock.patch.object(zc, "_generic_read_http",
+        with mock.patch.object(zc._read_page, "_generic_read_http",
                                side_effect=zc._HttpSoftFail("疑似反爬")), \
-             mock.patch.object(zc, "_generic_read_browser",
+             mock.patch.object(zc._read_page, "_generic_read_browser",
                                return_value={"title": "B", "content": "C",
                                              "url": "u",
                                              "engine": "browser"}) as gb:
@@ -573,7 +573,7 @@ class TestAuditV350Round(unittest.TestCase):
                        "engine": "http"}
         fake_be = mock.MagicMock()
         fake_be.fetch_video.side_effect = be.BilibiliApiError("code=-404")
-        with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}),              mock.patch.object(zc, "_generic_read",
+        with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}),              mock.patch.object(zc, "read_generic",
                                return_value=generic_row) as gr,              mock.patch.object(zc, "read_via_browser") as rb:
             out = zc.read("https://www.bilibili.com/video/BV1GJ411x7h7")
         self.assertEqual(out["engine"], "http")
@@ -587,7 +587,7 @@ class TestAuditV350Round(unittest.TestCase):
                        "engine": "http"}
         fake_be = mock.MagicMock()
         with mock.patch.dict(sys.modules, {"bilibili_engine": fake_be}), \
-             mock.patch.object(zc, "_generic_read",
+             mock.patch.object(zc, "read_generic",
                                return_value=generic_row) as gr:
             out = zc.read("https://space.bilibili.com/123")
         self.assertEqual(out["engine"], "http")

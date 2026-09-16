@@ -54,6 +54,39 @@ python search_helper.py          # Git Bash / cmd 通用；默认监听 127.0.0.
 
 `bash start_search_helper.sh` 在 Git Bash 下也能用：识别 MINGW 后自动跳过 Xvfb/pkill 流程，直接前台拉起 `python search_helper.py`。注意 Windows 侧脚本不做守护、不做进程清理。
 
+## Windows 常驻：看门狗（v3.28）
+
+`search_helper.py` 是前台/手动后台进程——**会话结束就死**，此后
+`googlebridge_search` 一直报 `googlebridge_unreachable` 直到有人手动重启。
+看门狗把「服务死了 → 拉起」闭环自动化：
+
+```bash
+python watchdog_task.py register      # 注册计划任务（幂等，/F 覆盖）
+python watchdog_task.py status        # 查询
+python watchdog_task.py unregister    # 一键回滚
+python watchdog.py --check-only       # 只观测不拉起（手动诊断用）
+```
+
+工作方式：
+- 周期计划任务 `ai-search-gbridge-watchdog`（默认每 15 分钟）跑
+  `watchdog.py`：`GET /health` 可达即秒退（零动作）；不可达就分离进程
+  拉起 `search_helper.py`，宽限 20s 内等 /health 恢复（helper 先绑端口
+  后懒加载 Chrome，恢复是秒级）
+- 决策流水：`state/watchdog.log`（每次观测一行）；子进程输出：
+  `state/service.log`
+- 退出码契约（测试钉死）：0=健康无动作；1=已拉起且恢复；2=拉起了但
+  宽限期内未恢复（进程层看门狗只保进程——代理断/Chrome 坏属于
+  /chrome_ready 与自愈的领域，看服务日志）；3=`--check-only` 且不健康
+- `register` 会先注册承重的巡检任务，再尝试 `ai-search-gbridge-boot`
+  （ONLOGON 开机即拉）。**普通权限令牌注册 ONLOGON 会被系统拒绝**
+  （实测 2026-09-17「拒绝访问」）——此时降级不失败：开机后由巡检任务
+  在 ≤interval 分钟内兜底恢复；管理员会话重跑 `register` 可补上开机任务
+- 中文 Windows 的 schtasks 输出按 GBK 解码（utf-8→gbk 回退链），
+  `unregister` 幂等（任务已不存在视为回滚完成）
+
+Linux 常驻见上节 cron `@reboot`；看门狗本身跨平台（POSIX 走
+`start_new_session`），但 `watchdog_task.py` 注册器 Windows-only。
+
 ## Linux 部署
 
 ```bash

@@ -605,6 +605,7 @@ class TestSsrfGuard(unittest.TestCase):
 
     def test_private_and_linklocal_rejected(self):
         import zhihu_content as zc
+        import read_page as rp   # v3.28 拆分后 SSRF 护栏真源
         cases = [("127.0.0.1", "http://127.0.0.1:9/x"),
                  ("10.1.2.3", "http://10.1.2.3/x"),
                  ("172.16.0.1", "http://172.16.0.1/x"),
@@ -613,39 +614,39 @@ class TestSsrfGuard(unittest.TestCase):
                  ("169.254.169.254", "http://169.254.169.254/latest/meta-data"),
                  ("::1", "http://[::1]/x")]
         for ip, url in cases:
-            with mock.patch.object(zc.socket, "getaddrinfo",
+            with mock.patch.object(rp.socket, "getaddrinfo",
                                    self._fake_getaddrinfo(ip)):
                 with self.assertRaises(zc.ReadError, msg=url):
-                    zc._check_http_url(url)
+                    rp._check_http_url(url)
 
     def test_public_ip_passes(self):
-        import zhihu_content as zc
-        with mock.patch.object(zc.socket, "getaddrinfo",
+        import read_page as rp   # v3.28 拆分后 SSRF 护栏真源
+        with mock.patch.object(rp.socket, "getaddrinfo",
                                self._fake_getaddrinfo("93.184.216.34")):
             url = "http://93.184.216.34/x"
-            self.assertEqual(zc._check_http_url(url), url)
+            self.assertEqual(rp._check_http_url(url), url)
 
     def test_legit_public_domain_passes(self):
-        import zhihu_content as zc
-        with mock.patch.object(zc.socket, "getaddrinfo",
+        import read_page as rp   # v3.28 拆分后 SSRF 护栏真源
+        with mock.patch.object(rp.socket, "getaddrinfo",
                                self._fake_getaddrinfo("142.250.196.100")):
             url = "https://example.org/article"
-            self.assertEqual(zc._check_http_url(url), url)
+            self.assertEqual(rp._check_http_url(url), url)
 
     def test_dns_failure_fails_closed(self):
         # 解析失败按私网处理（fail-closed）：不给内网探测留旁路
-        import zhihu_content as zc
-        with mock.patch.object(zc.socket, "getaddrinfo",
-                               side_effect=zc.socket.gaierror("nx")):
-            with self.assertRaises(zc.ReadError):
-                zc._check_http_url("http://no-such-host.invalid/x")
+        import read_page as rp   # v3.28 拆分后 SSRF 护栏真源
+        with mock.patch.object(rp.socket, "getaddrinfo",
+                               side_effect=rp.socket.gaierror("nx")):
+            with self.assertRaises(rp.ReadError):
+                rp._check_http_url("http://no-such-host.invalid/x")
 
     def test_error_slug_is_read_failed(self):
-        import zhihu_content as zc
-        with mock.patch.object(zc.socket, "getaddrinfo",
+        import read_page as rp   # v3.28 拆分后 SSRF 护栏真源
+        with mock.patch.object(rp.socket, "getaddrinfo",
                                self._fake_getaddrinfo("127.0.0.1")):
-            with self.assertRaises(zc.ReadError) as cm:
-                zc._check_http_url("http://127.0.0.1/x")
+            with self.assertRaises(rp.ReadError) as cm:
+                rp._check_http_url("http://127.0.0.1/x")
         self.assertEqual(type(cm.exception).slug, "read_failed")
 
 

@@ -4,6 +4,7 @@
 
 路由:
     "bilibili"                     -> bilibili 官方 API（结构化字段）
+    "juejin"                       -> 掘金官方搜索 API（结构化字段，v3.28）
     "wenxin"                       -> 文心 AI 搜索（camoufox 无头 + SSE；
                                       低频 AI 信号源，单条聚合行）
     SITE_MAP 里的平台名（zhihu 等） -> 百度 + site: 站内过滤
@@ -35,14 +36,15 @@ import sys
 from typing import Dict, List, Optional
 
 try:
-    from . import baidu_engine, bilibili_engine, sogou_engine, zhihu_engine  # 包内导入
-    from . import wenxin_engine
+    from . import baidu_engine, bilibili_engine, juejin_engine, sogou_engine  # 包内导入
+    from . import wenxin_engine, zhihu_engine
 except ImportError:  # 直接把本目录加进 sys.path 的扁平导入
     import baidu_engine  # type: ignore
     import bilibili_engine  # type: ignore
+    import juejin_engine  # type: ignore
     import sogou_engine  # type: ignore
-    import zhihu_engine  # type: ignore
     import wenxin_engine  # type: ignore
+    import zhihu_engine  # type: ignore
 
 __all__ = ["search", "list_platforms"]
 
@@ -100,6 +102,7 @@ def list_platforms() -> Dict[str, str]:
         GENERAL: "baidu (no site:, general web search)",
         "bilibili": "bilibili official API (structured fields)",
         # 专用引擎链（非裸百度）：路由见 search()
+        "juejin": "juejin official search API (structured fields, v3.28)",
         "zhihu": "dedicated chain: searxng -> sogou -> baidu site:zhihu.com",
         "zhuanlan": "dedicated chain: searxng -> sogou -> baidu "
                     "site:zhuanlan.zhihu.com",
@@ -108,7 +111,7 @@ def list_platforms() -> Dict[str, str]:
                   "low-frequency, quota-gated)",
     }
     for name, domain in sorted(SITE_MAP.items()):
-        if name in ("zhihu", "zhuanlan"):
+        if name in ("juejin", "zhihu", "zhuanlan"):
             continue    # 已由专用引擎链接管，避免误导消费者
         out[name] = f"baidu site:{domain}"
     return out
@@ -169,6 +172,12 @@ def search(
         try:
             if name == "bilibili":
                 results.extend(bilibili_engine.search(
+                    q, num=num, since=since, vendor=vendor, role=role,
+                    on_error="raise"))
+            elif name == "juejin":
+                # 掘金官方搜索 API（v3.28）：裸调即通、结构化字段
+                # （作者/浏览/点赞/评论/分类），接管原百度 site:juejin.cn 路由
+                results.extend(juejin_engine.search(
                     q, num=num, since=since, vendor=vendor, role=role,
                     on_error="raise"))
             elif name in ("zhihu", "zhuanlan"):
