@@ -348,15 +348,13 @@ class TestBilibiliMultiPage(unittest.TestCase):
 
 
 class TestVersionSyncV313(unittest.TestCase):
-    def test_versions_3130(self):
+    def test_mcp_server_version_not_older_than_3130(self):
+        # 3.14 起改为常青下限：精确锁当前版本是 test_v3140 的职责
         sys.path.insert(0, str(REPO / "tools"))
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.13.0")
-        # chat-scraper 目录名带连字符不可 import，源码级断言（v3.12 先例）
-        init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
-                    ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.13.0"', init_src)
-        self.assertIn("chat-scraper v3.13.0", init_src)   # docstring 首行同步
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 13, 0))
 
 
 class TestMcpVideoPassthroughV313(unittest.TestCase):

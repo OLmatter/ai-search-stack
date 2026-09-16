@@ -1,5 +1,80 @@
 # Changelog
 
+## [3.14.0] - 2026-09-16
+
+### 🎯 恢复曲线标定机制 + wenxin 声明对齐复查
+
+上轮下一环建议落地：搜狗恢复曲线标定机制（连发标定测"多快触发"之后的
+另一半——"多久恢复"）。wenxin 对齐复查零真实文心调用（纯代码审查扫法），
+真实网络消耗仅搜狗探活 2 发（预算 ≤3）。
+
+### Added
+- `tools/chat-scraper/sogou_engine.py`：**恢复曲线单发探活**
+  `probe_once()`——真实一发搜索，判定与 `search()` 逐字同判据
+  （`_blocked` / 0 行 + `_soft_blocked`），走引擎默认节流 `_wait_turn`
+  （探活不是攻击，与 `probe_burst` 的绕节流连发相反）；读数
+  {ts, tool, http, rows, blocked, since_last_block_s, note} 一行追加
+  `state/sogou_recovery_log.jsonl`，其中 `since_last_block_s` =
+  距连发标定日志（`sogou_throttle_log.jsonl`）末条 blocked 读数的秒数，
+  是恢复曲线的 x 轴（无记录/文件缺失/坏行如实 null，best-effort 不阻塞
+  探活本体）；网络异常也记读数落账（风控期 RST/超时是真实数据点）；
+  `log_path=None` 只测不落账（测试用）
+- `tools/doctor.py`：`--sogou-probe` 模式——只跑搜狗恢复曲线单发探活
+  （独立于全量巡检，参照 `--cookie-probe` 的单项标定模式），读数追加
+  `state/sogou_recovery_log.jsonl`；观测不判故障：blocked/正常均为成功
+  数据点 exit 0，本地故障 exit 1。恢复阈值以 jsonl 实测读数为准
+  （v3.13 单点：风控后 ~171s 单发即恢复，待周期性探活积累读数收敛）
+
+### Fixed
+- **wenxin 声明对齐复查**（逐条对照 wenxin_engine docstring / README
+  v3.7 节 / mcp_server 描述与实现，零真实文心调用）：
+  - README v3.7 用法节输出契约滞后失实——v3.12 给 answer 顶层与
+    citations[].abstract 加的 `truncated` 字段未同步进文档，已补
+    （"answer(markdown, 截 4000 时带 truncated=true)"、
+    "abstract(截 500 时带 truncated=true)"，与 `ANSWER_MAX_CHARS`/
+    `ABSTRACT_MAX_CHARS` 实现常量一致，测试钉死）
+  - mcp `china_search` 描述缺 wenxin 输出形态声明——补"返回单条聚合行
+    （AI 答案 answer + 引用 citations），不是网页列表"，防调用方按网页
+    列表误读
+  - 其余逐条核对一致（配额纪律三条、熔断语义 1005/kunlun/wappass→
+    wenxin_quota 落盘 6h、tokenFail→wenxin_token_fail 不熔断、
+    wenxin_timeout 触发条件、slug 表五项、on_error 三态、每身份约 1 次
+    的全新 context 实现），无失实
+
+### Confirmed
+- `tools/doctor.py` `check_searxng` 的 unresponsive_engines 输出（上一
+  轮发现项收尾确认）：实现已如实输出（"不健康引擎: [...]" / "引擎全健
+  康"），此前零测试覆盖，本轮补钉子测试防回退
+
+### Changed
+- 版本号 3.13.0 → 3.14.0（`tools/mcp_server.py`、
+  `tools/chat-scraper/__init__.py`）；README 徽章同步
+- `tests/test_v3130.py` 版本锁改常青下限（≥3.13.0，v3.12 先例）：精确锁
+  当前版本是当轮 test_v3140 的职责
+
+### 测试
+- `tests/test_v3140.py`（22 个测试，全离线零真实请求/零浏览器）：搜狗
+  probe_once（正常读数落账 / antispider 重定向 / 0 行软风控 / 网络异常
+  记读数不炸 / log_path=None 不落账 / 走引擎默认节流不绕过（与
+  probe_burst 相反语义）/ tool 字段透传）+ since_last_block_s（末条
+  blocked 起算 / 无风控记录 null / 文件缺失 null / 坏行跳过 / 合法
+  JSON 非对象行跳过（审计轮修复钉死）/ probe_once 自带该字段）+
+  doctor --sogou-probe（正常 exit 0 落账 / blocked 仍 exit 0 观测语义 /
+  本地故障 exit 1）+ check_searxng 引擎健康输出钉死（unresponsive 如实
+  列出 / 全健康明说）+ wenxin 对齐钉子（README 契约含 truncated / 声明
+  上限与实现常量一致 / mcp 单条聚合行声明）+ 版本锁 3.14.0
+- 全量 249 passed（227 → 249）
+
+### 实测记录
+- 真实网络消耗：搜狗探活 2 发（预算 ≤3），均过审——`doctor --sogou-probe`
+  2026-09-16 19:12/19:13（+08:00）连测两发：HTTP 200 + 9 行真结果、
+  blocked=false，since_last_block = 27106.0s / 27122.8s（≈7.5h，距
+  v3.13 连发标定的末次风控读数 11:41:13）；两发间隔 16s 顺带证实探活
+  走引擎 8s 默认节流。当前恢复曲线 = v3.13 单点（~171s）+ 本轮两点
+  （7.5h 已完全恢复），样本仍少，待周期性探活（cron 侧可挂
+  `--sogou-probe`）积累收敛；知乎 0、文心 0、google 0
+- 读数落 `state/sogou_recovery_log.jsonl`（本地 gitignore，不入库）
+
 ## [3.13.0] - 2026-09-16
 
 ### 🎯 标定补齐批：搜狗连发风控阈值标定（架构图最后一个无标定引擎）+ B站多 P 展开

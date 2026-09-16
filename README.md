@@ -2,15 +2,17 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.13.0](https://img.shields.io/badge/release-v3.13.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.13.0)
+[![Release: v3.14.0](https://img.shields.io/badge/release-v3.14.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.14.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 227 passing](https://img.shields.io/badge/tests-227%20passing-success.svg)](tests/)
+[![Tests: 249 passing](https://img.shields.io/badge/tests-249%20passing-success.svg)](tests/)
 
-**v3.13.0（2026-09-16）**：v3.0 全面审计大修之后连续十四轮迭代——搜狗连发
-风控阈值标定（实测连发阈值 4 发）、B站多 P 展开（详见 [CHANGELOG.md](CHANGELOG.md)）。
+**v3.14.0（2026-09-16）**：v3.0 全面审计大修之后连续十五轮迭代——搜狗
+恢复曲线标定机制（doctor --sogou-probe 单发探活，读数自带距上次风控秒
+数）、wenxin 声明对齐复查修复（详见 [CHANGELOG.md](CHANGELOG.md)）。
 此前
-十三轮：百度搜索
+十四轮：搜狗连发
+风控阈值标定（实测连发阈值 4 发）、B站多 P 展开、百度搜索
 翻页、截断可见化扫尾、B站搜索翻页、doctor GitHub 检查修复、zhihu_content
 截断可见化、
 错误协议统一、

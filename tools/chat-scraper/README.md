@@ -190,8 +190,10 @@ python wenxin_engine.py "智谱 GLM Coding Plan"     # 单条聚合行 JSON，ex
 ```python
 from wenxin_engine import search
 row = search("智谱 GLM Coding Plan")     # 默认 on_error="report"
-# 成功行: {q, answer(markdown≤4000), citations:[{url,title,abstract,source}],
-#          engine:"wenxin-ai", count, platform:"wenxin", vendor, role}
+# 成功行: {q, answer(markdown, 截 4000 时带 truncated=true),
+#          citations:[{url, title, abstract(截 500 时带 truncated=true),
+#                      source}], engine:"wenxin-ai", count,
+#          platform:"wenxin", vendor, role}
 # 出错行: {"error": "wenxin_quota: ...", "tool": "chat-scraper",
 #          "query": q, "platform": "wenxin"} —— 检查 row.get("error")
 ```

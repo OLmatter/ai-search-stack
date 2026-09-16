@@ -18,6 +18,12 @@
     连发探测，每请求读数追加 state/sogou_throttle_log.jsonl，首个风控
     读数即停（参照 doctor --cookie-probe 的低成本标定模式）。
 
+恢复曲线标定（v3.14）：python tools/doctor.py --sogou-probe
+    单发探活（判定与 search 同判据），读数追加
+    state/sogou_recovery_log.jsonl，自带距上次风控的秒数（对照连发
+    标定日志）——连发标定测"多快触发"，恢复曲线靠风控后周期性单发
+    积累"多久恢复"（v3.13 单点：~171s 单发即恢复，待更多读数）。
+
 错误协议与仓库统一：search(..., on_error="report"/"raise"/"empty")。
 """
 import datetime
@@ -33,7 +39,7 @@ from typing import Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-__all__ = ["search", "probe_burst", "SogouBlocked"]
+__all__ = ["search", "probe_burst", "probe_once", "SogouBlocked"]
 
 _TOOL = "chat-scraper"
 _SEARCH_URL = "https://www.sogou.com/web"
@@ -50,6 +56,8 @@ TIMEOUT = 15
 # v3.13 连发阈值标定：读数日志（参照 cookie_lifetime_log.jsonl 的 jsonl 模式）
 _STATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state")
 PROBE_LOG_PATH = os.path.join(_STATE_DIR, "sogou_throttle_log.jsonl")
+# v3.14 恢复曲线标定：doctor --sogou-probe 单发探活读数（见 probe_once）
+RECOVERY_LOG_PATH = os.path.join(_STATE_DIR, "sogou_recovery_log.jsonl")
 
 _throttle_lock = threading.Lock()
 _last_request_ts = 0.0
@@ -224,6 +232,93 @@ def probe_burst(count: int = 6, interval: float = 2.0,
         if log_f:
             log_f.close()
     return readings
+
+
+def _since_last_block_s(
+        throttle_log: Optional[str] = PROBE_LOG_PATH) -> "Optional[float]":
+    """距连发标定日志最后一次风控读数的秒数（恢复曲线的 x 轴）。
+
+    扫 sogou_throttle_log.jsonl 找末条 blocked=true 的 ts 起算；无记录、
+    文件缺失、坏行（含合法 JSON 但非对象行）一律如实返回 None
+    （best-effort 字段，不阻塞探活本体）。
+    """
+    if not throttle_log:
+        return None
+    last_block_ts = ""
+    try:
+        with open(throttle_log, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(e, dict) and e.get("blocked"):
+                    last_block_ts = e.get("ts") or ""
+    except OSError:
+        return None
+    if not last_block_ts:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(last_block_ts)
+    except ValueError:
+        return None
+    return round(time.time() - dt.timestamp(), 1)
+
+
+def probe_once(query: str = "人工智能",
+               log_path: Optional[str] = RECOVERY_LOG_PATH,
+               tool: str = "sogou_engine probe_once",
+               throttle_log: Optional[str] = PROBE_LOG_PATH) -> Dict:
+    """单发探活（v3.14 恢复曲线标定，doctor --sogou-probe 的引擎侧实现）。
+
+    连发标定（probe_burst）测的是"多快触发风控"；恢复曲线要的是"风控后
+    多久恢复"——无法一次测出，只能靠风控后周期性单发探活积累读数：每次
+    一发请求，记录此刻是否仍被风控，读数自带距上次风控的秒数
+    （since_last_block_s，从连发标定日志末条 blocked 读数起算，无记录为
+    null）。恢复阈值以 jsonl 实测读数为准（判词只收证据链；v3.13 单点：
+    风控后 ~171s 单发即恢复）。
+
+    - 判定与 search() 逐字同判据（_blocked / 0 行 + _soft_blocked）；
+    - 走引擎默认节流 _wait_turn——探活不是攻击，不绕节流；
+    - 读数一行追加 log_path（默认 state/sogou_recovery_log.jsonl；
+      None 只测不落账，测试用）：
+
+        {ts, tool, http, rows, blocked, since_last_block_s, note}
+
+    - 网络异常也记读数落账（风控期 RST/超时是恢复曲线的真实数据点）。
+    返回该条读数 dict。
+    """
+    entry: Dict = {
+        "ts": datetime.datetime.now().astimezone()
+        .isoformat(timespec="seconds"),
+        "tool": tool,
+        "http": None,
+        "rows": None,
+        "blocked": False,
+        "since_last_block_s": _since_last_block_s(throttle_log),
+        "note": "",
+    }
+    try:
+        _wait_turn()
+        session = _new_session()
+        resp = session.get(_SEARCH_URL,
+                           params={"query": query}, timeout=TIMEOUT)
+        rows = _parse_results(resp.text)
+        entry["http"] = resp.status_code
+        entry["rows"] = len(rows)
+        if _blocked(resp.status_code, resp.url, resp.text) or \
+                (not rows and _soft_blocked(resp.text)):
+            entry["blocked"] = True
+            entry["note"] = f"url={resp.url[:80]!r}"
+    except Exception as e:  # noqa: BLE001 —— 读数即产物，不能炸
+        entry["note"] = f"{type(e).__name__}: {str(e)[:140]}"
+    if log_path:
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
 
 
 def search(q: str, num: int = 10, since: Optional[str] = None,

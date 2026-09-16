@@ -1,4 +1,4 @@
-"""chat-scraper v3.13.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.14.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -40,8 +40,15 @@ state/sogou_throttle_log.jsonl；2026-09-16 实测连发阈值=4 发、
 数据的引擎补齐）+ bilibili 多 P 展开（fetch_video/fetch_subtitles 接受
 URL ?p=N 或 part 参数取任意分 P，输出 page/part_title/pages_count，
 分 P 超界如实报错含合法范围）。
+
+v3.14.0：搜狗恢复曲线标定机制（doctor --sogou-probe 单发探活，引擎侧
+probe_once，判定与 search 同判据，读数含距上次风控秒数落
+state/sogou_recovery_log.jsonl——连发标定测"多快触发"，恢复曲线靠
+风控后周期性单发积累"多久恢复"）+ wenxin 声明对齐复查（README v3.7
+输出契约补 v3.12 的 truncated 字段；mcp china_search 描述补 wenxin
+单条聚合行声明；零真实文心调用）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.13.0"
+__version__ = "3.14.0"
 __all__ = ["search", "list_platforms", "__version__"]

@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.13.0"
+__version__ = "3.14.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -166,7 +166,8 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "何时用：找中文社区内容、验证国内舆论/资料。何时不用：英文技术讨论"
     "（用 hn_search）、GitHub release/通告（用 github_*）、通用英文搜索"
     "（用 searxng_search/googlebridge_search）。\n"
-    "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限）、16 个站名、"
+    "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限；返回"
+    "单条聚合行：AI 答案 answer + 引用 citations，不是网页列表）、16 个站名、"
     "general（百度无 site 通用）、或任意"
     "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
     "num 与单页上限（如实声明）：bilibili num>30 自动翻页（护栏 5 页，有效"

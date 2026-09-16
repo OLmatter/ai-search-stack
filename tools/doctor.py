@@ -17,8 +17,13 @@
     python tools/doctor.py --cookie-probe   # 只跑知乎 cookie 寿命标定探活
     python tools/doctor.py --cookie-probe --renew-if-older-than 36
                                             # 探活 + 过期超龄顺带续期（cron 友好）
-退出码: 0=全绿或仅可选服务未启动（--cookie-probe 时见该模式说明）;
-        1=有核心通道故障（--cookie-probe --renew-if-older-than 时续期失败也 1）。
+    python tools/doctor.py --sogou-probe    # 只跑搜狗单发探活（v3.14 恢复
+                                            # 曲线标定，读数追加
+                                            # state/sogou_recovery_log.jsonl）
+退出码: 0=全绿或仅可选服务未启动（--cookie-probe / --sogou-probe 单项
+        标定模式只观测不判故障，expired/valid/blocked 均为成功读数）;
+        1=有核心通道故障（--cookie-probe --renew-if-older-than 时续期失败
+        也 1；--sogou-probe 本地故障也 1）。
 """
 import json
 import os
@@ -40,6 +45,13 @@ TIMEOUT = 8
 COOKIE_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
                                "cookie_lifetime_log.jsonl")
 PROBE_QUESTION_ID = "19550227"   # bootstrap 同款知名问题，仅作 API 探活
+
+# v3.14: 搜狗恢复曲线标定（--sogou-probe）。连发标定（v3.13，
+# sogou_engine --probe）测的是"多快触发风控"；"风控后多久恢复"无法一次
+# 测出，只能靠风控后周期性单发探活积累读数（引擎侧 probe_once，判定与
+# search 同判据）。日志在 state/ 下（已 gitignore，只留本地）。
+SOGOU_RECOVERY_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
+                                       "sogou_recovery_log.jsonl")
 
 _results = []
 
@@ -298,6 +310,41 @@ def cmd_cookie_probe(renew_hours: "float | None" = None) -> int:
     return 0
 
 
+def cmd_sogou_probe() -> int:
+    """v3.14: 搜狗恢复曲线单发探活（--sogou-probe，独立于全量巡检）。
+
+    引擎侧 probe_once：真实一发搜狗搜索，判定与 search() 同判据，读数
+    （含距上次风控的秒数 since_last_block_s）追加 SOGOU_RECOVERY_LOG_PATH。
+    本模式只观测不判故障：blocked/正常都是成功读数（恢复曲线数据点），
+    exit 0；本地故障（导入失败/日志写不进）exit 1。
+    """
+    _sys_path_chat_scraper()
+    import sogou_engine as se
+    print("== 搜狗恢复曲线探活（单发，判定与 search 同判据）==")
+    try:
+        # log_path 显式传全局（同 cookie_probe：默认参数在 def 时绑定，
+        # 测试 patch doctor.SOGOU_RECOVERY_LOG_PATH 需要生效）
+        entry = se.probe_once(log_path=SOGOU_RECOVERY_LOG_PATH,
+                              tool="doctor --sogou-probe")
+    except Exception as e:   # 读数函数自身不许炸，走到这基本是写日志失败
+        print(f"❌ sogou-probe 本地故障: {type(e).__name__}: {e}")
+        return 1
+    icon = "🪦" if entry["blocked"] else "✅"
+    since = entry["since_last_block_s"]
+    print(f"{icon} http={entry['http']} rows={entry['rows']} "
+          f"blocked={entry['blocked']} "
+          f"since_last_block={since if since is not None else 'null'}s")
+    if entry["note"]:
+        print(f"   {entry['note']}")
+    try:
+        with open(SOGOU_RECOVERY_LOG_PATH, encoding="utf-8") as f:
+            n = sum(1 for _ in f)
+        print(f"→ 已追加 {SOGOU_RECOVERY_LOG_PATH}（累计 {n} 条恢复曲线读数）")
+    except OSError:
+        print(f"→ 已追加 {SOGOU_RECOVERY_LOG_PATH}")
+    return 0
+
+
 def main(argv=None) -> int:
     import argparse
     p = argparse.ArgumentParser(
@@ -314,9 +361,16 @@ def main(argv=None) -> int:
                         "标定观测。实测访客 cookie 寿命 <48h，cron 例：每日 "
                         "9 点 `python tools/doctor.py --cookie-probe "
                         "--renew-if-older-than 36`。续期失败 exit 1")
+    p.add_argument("--sogou-probe", action="store_true",
+                   help="只跑搜狗恢复曲线单发探活（v3.14，真实发一次搜索，"
+                        "判定与 search 同判据，读数含距上次风控秒数追加 "
+                        "state/sogou_recovery_log.jsonl），不跑全量巡检；"
+                        "blocked/正常均为成功观测，exit 0")
     args = p.parse_args(argv)
     if args.cookie_probe:
         return cmd_cookie_probe(renew_hours=args.renew_if_older_than)
+    if args.sogou_probe:
+        return cmd_sogou_probe()
     print(f"== ai-search-stack doctor @ {time.strftime('%Y-%m-%d %H:%M')} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
     _check("知乎 cookie", check_cookie, optional=True)
