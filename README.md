@@ -2,13 +2,20 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.19.0](https://img.shields.io/badge/release-v3.19.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.19.0)
+[![Release: v3.20.0](https://img.shields.io/badge/release-v3.20.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.20.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![Tests: 346 passing](https://img.shields.io/badge/tests-346%20passing-success.svg)](tests/)
 
-**v3.19.0（2026-09-16）**：v3.0 全面审计大修之后连续二十轮迭代——claim
-固化进领活入口（根因修复：worker_queue.acquire() 认领+读队列一步完成，
+**v3.20.0（2026-09-17）**：v3.0 全面审计大修之后连续二十一轮迭代——
+duckduckgo 两关双过回滚生效（聚合无 ddg，与 brave 同场对照实证"单发
+可信度因引擎而异"）、brave 四轮数据实证其单发可信度不可靠（恢复判据
+升级观察继续）、mojeek 首探 access denied 排除、stop_wake 强制条款版
+实战首验（本班次即被钩子唤醒）、claim 固化进领活入口（根因修复），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十轮：claim
+固化进领活入口（worker_queue.acquire() 认领+读队列一步完成，
 skipped 不泄漏活内容；hooks/stop_wake.py 仓库真源，唤醒层收口互踩预防，
 已部署并备份旧版）、SearXNG 回滚判据细化到单引擎粒度（每引擎独立两关：
 startpage 首例单独回滚成功，duckduckgo 第一关恢复待下轮第二关、brave

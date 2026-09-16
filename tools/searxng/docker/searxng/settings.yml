@@ -65,9 +65,21 @@ search:
 #   不做，**维持禁用**。
 # 整组判据退役：本轮起不再"三引擎整组"评估，各引擎按上方单引擎两关
 # 独立走，互不绑定、互不牵连。
+# v3.20 第四轮复跑（2026-09-17 早）：brave 第一关通过（19 行 unresponsive
+# 空，三连封锁解除）→ 第二关回滚启用；mojeek 首探 access denied 被排除
+# （本环境/IP 不可用，替代引擎结论作废，brave 恢复后无需替代）。
+# 第二关聚合复发（brave timeout）→ 按单引擎判据立即再禁用。四轮结论：
+# brave 的"单发过"不可信（第 4 轮单发 19 行过、聚合即 timeout），其恢复
+# 判据需升级（如连续 N 轮单发过才允许第二关），观察继续。
 engines:
   - name: brave
     disabled: true
+  # duckduckgo 第二关（v3.20）双过：回滚 + restart 后聚合 11 条、
+  # unresponsive 仅 google cse（与本判据无关）、无 ddg——回滚生效维持启用。
+  # 与 brave 同场对照的价值：brave 聚合即复发、ddg 干净——单发可信度
+  # 因引擎而异，判据必须逐引擎走完两关。
+  - name: duckduckgo
+    disabled: false
   - name: duckduckgo
     disabled: true
   # startpage：v3.19 单引擎粒度两关双过（第一关单发 10 行 unresponsive

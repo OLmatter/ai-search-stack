@@ -1,4 +1,4 @@
-"""chat-scraper v3.19.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.20.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -80,7 +80,7 @@ optional 不判核心故障——沿 sogou_recovery_log 先例）+ doctor GitHub
 匿名 60 req/h 共享配额的限流窗口误报，tools/github/github_client.py
 同款约定）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
 
-v3.19.0：claim 固化进领活入口（根因修复）——worker_queue 新增
+v3.20.0：claim 固化进领活入口（根因修复）——worker_queue 新增
 acquire()：认领+读队列一步完成的唯一入口，skipped 不返回 instructions
 （活内容不外泄，机制上杜绝"看到活就干"的互踩形态；v3.17 的 claim()
 落地后被实证零使用——并行 worker 领活不查 sidecar 直接干活，机制在
@@ -93,5 +93,5 @@ acquire()：认领+读队列一步完成的唯一入口，skipped 不返回 inst
 """
 from .search import list_platforms, search
 
-__version__ = "3.19.0"
+__version__ = "3.20.0"
 __all__ = ["search", "list_platforms", "__version__"]

@@ -245,13 +245,13 @@ class TestSearxngSingleEngineCriterion(unittest.TestCase):
             self.assertIn(token, self.src)
 
     def test_engine_states_match_observation(self):
-        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.19 段）：
-        # brave 第一关复发 → disabled；duckduckgo 第一关过但第二关预算
-        # 用尽未执行 → 维持 disabled；startpage 两关双过 → 单独回滚 enabled。
-        # 任何状态变更必须先改 settings.yml 观察记录再改这里
-        # （v3.15/v3.16 的"三引擎全禁"旧 pin 已按 v3.19 实测适配——
-        #   行为先例：v3.18 对 test_v3160 obsolete pins 的处理）
-        for engine, want in (("brave", True), ("duckduckgo", True),
+        # 禁用状态必须与本轮实测观察记录一致（settings.yml v3.20 段）：
+        # brave 第一关过但第二关聚合复发 → disabled（其"单发过"四轮证明
+        # 不可信）；duckduckgo 两关双过 → 回滚启用；startpage v3.19 双过
+        # → 维持 enabled。任何状态变更必须先改 settings.yml 观察记录再改
+        # 这里（v3.15/v3.16 的"三引擎全禁"旧 pin 已按 v3.19/v3.20 实测
+        # 适配——行为先例：v3.18 对 test_v3160 obsolete pins 的处理）
+        for engine, want in (("brave", True), ("duckduckgo", False),
                              ("startpage", False)):
             block = re.search(
                 rf"- name: {engine}\n\s+disabled: (true|false)", self.src)
@@ -274,11 +274,12 @@ class TestVersionSyncV319(unittest.TestCase):
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.19.0")
+        parts = tuple(int(x) for x in ver.split("."))
+        self.assertGreaterEqual(parts, (3, 19, 0))   # 常青下限（v3.19 先例）
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.19.0"', init_src)
-        self.assertIn("chat-scraper v3.19.0", init_src)   # docstring 首行同步
+        self.assertIn(f'__version__ = "{ver}"', init_src)
+        self.assertIn(f"chat-scraper v{ver}", init_src)   # docstring 首行同步
 
     def test_changelog_has_3190(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")

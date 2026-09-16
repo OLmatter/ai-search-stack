@@ -1,6 +1,17 @@
 # Changelog
 
-## [3.19.0] - 2026-09-16
+## [3.20.0] - 2026-09-17
+
+### 🎯 SearXNG 单引擎两关制第四轮：ddg 回滚生效、brave 恢复判据升级、stop_wake 实战首验
+
+- **duckduckgo 两关双过，回滚生效**：第二关回滚 + restart 后聚合 11 条、unresponsive 无 ddg——与 brave 同场对照实证「单发可信度因引擎而异」
+- **brave 四轮数据定论其单发不可信**：第四轮单发 19 行过、聚合即 timeout——恢复判据升级观察（连续 N 轮单发过才允许第二关），维持禁用
+- **mojeek 首探 access denied**：替代引擎结论作废（本环境/IP 不可用）
+- **stop_wake 实战首验**：8:37 写入派工队列 → 8:52 被钩子唤醒的班次完成交接任务并清空队列（GitHub 403 取证/健康核对/收工判断全按协议）——机制从测试走进实战
+
+[3.20.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.20.0
+
+## [3.19.0] - 2026-09-16 - 2026-09-16
 
 ### 🎯 claim 固化进领活入口（根因修复）+ SearXNG 回滚判据细化到单引擎
 
