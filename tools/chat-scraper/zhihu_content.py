@@ -320,6 +320,16 @@ def _fmt_epoch(v) -> str:
         return v if isinstance(v, str) else ""
 
 
+# 正文输出统一截断上限（v3.11 起截断必须可见：输出带 truncated 标记，
+# 不再让调用方把"被剪过的 content"误当全文——诚实纪律适用于截断）。
+CONTENT_LIMIT = 8000
+
+
+def _content_field(text: str) -> "tuple[str, bool]":
+    """(截断后正文, 是否发生截断)。所有 content 输出口径一致。"""
+    return text[:CONTENT_LIMIT], len(text) > CONTENT_LIMIT
+
+
 def fetch_question(question_id: str) -> Dict:
     """问题详情：{id, title, detail(纯文本), answer_count, url}。
 
@@ -415,7 +425,8 @@ def _article_id(article_or_url) -> str:
 
 
 def fetch_article(article_or_url) -> Dict:
-    """专栏文章（v3.4）：{id, title, content(纯文本≤8000), created, updated,
+    """专栏文章（v3.4）：{id, title, content(纯文本, 截 8000 时带
+    truncated=true), created, updated,
     voteup, comment_count, url, engine:"zhihu-api"}。
 
     端点 `GET /api/v4/articles/{id}` 已实测存在（2026-09-10，HTTP 200）；
@@ -432,11 +443,13 @@ def fetch_article(article_or_url) -> Dict:
         raise ZhihuApiError(
             f"article {aid}: API 未返回 content/excerpt 字段（include 逗号"
             f"语法可能未生效），返回键={sorted(data)}——如实报缺，不伪装正文为空")
+    content, truncated = _content_field(text)
     return {
         "id": str(data.get("id", aid)),
         # 审查 v3.4 #7：知乎 API 的文章 title 是 URL 编码态（%28%29 等）
         "title": urllib.parse.unquote(data.get("title", "")),
-        "content": text[:8000],
+        "content": content,
+        "truncated": truncated,
         "created": _fmt_epoch(data.get("created")),
         "updated": _fmt_epoch(data.get("updated")),
         "voteup": data.get("voteup_count", 0),
@@ -738,7 +751,8 @@ def read_via_browser(url: str, headless: bool = True,
     结构化读取请优先走 fetch_question/fetch_answers（cookie 线）。
 
     Returns:
-        {title, content(纯文本, 截 8000 字), url, engine: "zhihu-seo-browser"}
+        {title, content(纯文本, 截 8000 时带 truncated=true), url,
+        engine: "zhihu-seo-browser"}
     """
     _check_page_url(url)
     try:
@@ -769,9 +783,11 @@ def read_via_browser(url: str, headless: bool = True,
                          for n in nodes).strip()
         if not text:
             text = soup.get_text("\n", strip=True)
+        content, truncated = _content_field(text)
         return {
             "title": title,
-            "content": text[:8000],
+            "content": content,
+            "truncated": truncated,
             "url": page.url,
             "engine": "zhihu-seo-browser",
         }
@@ -867,9 +883,11 @@ def _generic_read_http(url: str, timeout: int = 20) -> Dict:
         raise _HttpSoftFail(
             f"疑似反爬/空壳页（正文仅 {len(text)} 字 < "
             f"{_MIN_ARTICLE_CHARS}）: {resp.url}")
+    content, truncated = _content_field(text)
     return {
         "title": _page_title(soup),
-        "content": text[:8000],
+        "content": content,
+        "truncated": truncated,
         "url": resp.url,
         "engine": "http",
     }
@@ -898,9 +916,11 @@ def _generic_read_browser(url: str, headless: bool = True,
         _raise_if_error_page(text, page.url)
         # 审查 v3.4 #3：<200 字不再一票否决——浏览器线能过反爬说明页面
         # 是真的，短博文/短回答照实返回（HTTP 线的 <200 判据只服务反爬检测）
+        content, truncated = _content_field(text)
         return {
             "title": page.title(),
-            "content": text[:8000],
+            "content": content,
+            "truncated": truncated,
             "url": page.url,
             "engine": "browser",
         }

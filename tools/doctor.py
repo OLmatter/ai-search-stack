@@ -2,13 +2,15 @@
 # -*- coding: utf-8 -*-
 """ai-search-stack 工具箱体检（doctor）—— 一条命令巡检全部通道健康。
 
-巡检项（v3.5）：
+巡检项（7 = 5 网络探活 + 2 本地状态）：
     - 本地 SearXNG 实例（zhihu 链第一环）：存活 + unresponsive_engines
     - 知乎 cookie：文件存在性 + 年龄（v3.4 起过期可自愈，但仍值得观测）
+    - 标定钩子活性（v3.8.2）：每日探活的最后读数 >48h = 钩子疑似断线
     - bilibili 官方 API：用一个知名 bvid 探活（只读、无风控压力）
     - 百度直连：首页探活（搜索风控与首页可达是两回事，这里只测通道）
     - google-bridge 服务：/health（通常按需启动，未起不算故障）
-    - GitHub API：匿名可达性
+    - GitHub API：匿名可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
+      UA 会被 GitHub 按 IP 强限流成永久 403，见 check_github 注释）
 
 用法:
     python tools/doctor.py                  # 全量巡检，逐项 ✅/❌/⚠️
@@ -132,10 +134,12 @@ def check_google_bridge():
 
 
 def check_github():
-    code = urllib.request.urlopen(
-        urllib.request.Request("https://api.github.com/"), timeout=TIMEOUT
-    ).status
-    return f"API 匿名可达 ({code})"
+    # v3.11: 走 _get（UA 头 + 绕代理 opener），与其余 6 项检查同款通道。
+    # 实测（2026-09-16）：裸 urlopen 的默认 UA（Python-urllib/3.x）被 GitHub
+    # 按 IP 强限流，长期稳定 403 "rate limit exceeded for <IP>"；同 IP 同
+    # 分钟带 UA 直连即 200。root cause 是漏 UA，不是配额真耗尽。
+    _get("https://api.github.com/")
+    return "API 匿名可达 (200)"
 
 
 # ---- v3.8.2: --cookie-probe（cookie 寿命标定，独立于全量巡检） ----

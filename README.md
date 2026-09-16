@@ -2,12 +2,14 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.10.0](https://img.shields.io/badge/release-v3.10.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.10.0)
+[![Release: v3.11.0](https://img.shields.io/badge/release-v3.11.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.11.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 160 passing](https://img.shields.io/badge/tests-160%20passing-success.svg)](tests/)
+[![Tests: 177 passing](https://img.shields.io/badge/tests-177%20passing-success.svg)](tests/)
 
-**v3.10.0（2026-09-16）**：v3.0 全面审计大修之后连续十一轮迭代——错误协议统一、
+**v3.11.0（2026-09-16）**：v3.0 全面审计大修之后连续十二轮迭代——B站搜索翻页、
+doctor GitHub 检查修复、截断可见化（详见 [CHANGELOG.md](CHANGELOG.md)）。此前
+十一轮：错误协议统一、
 知乎官方 API 读取线 + 认证自愈、通用阅读器、微信/B站读取、全箱体检 doctor、
 MCP stdio 接入层（14 工具）、文心 AI 搜索、cookie 寿命标定 + 定时续期、
 B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表登录门修复 + cursor
@@ -228,7 +230,7 @@ ai-search-stack/
 ├── tools/
 │   ├── mcp_server.py     # MCP stdio server（全工具箱暴露成 14 个 MCP tools）
 │   ├── doctor.py         # 工具箱体检（一条命令巡检全部通道）
-│   ├── google-bridge/    # Chrome 桥（search_helper v23.9，Windows/Linux 可用）
+│   ├── google-bridge/    # Chrome 桥（search_helper v23.10，Windows/Linux 可用）
 │   │   ├── search_helper.py
 │   │   ├── start_*.sh
 │   │   ├── requirements.txt

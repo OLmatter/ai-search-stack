@@ -25,5 +25,5 @@ include=content 形态（403 code=40353，全新 cookie 亦然，旧 v3.4 形态
 """
 from .search import list_platforms, search
 
-__version__ = "3.10.0"
+__version__ = "3.11.0"
 __all__ = ["search", "list_platforms", "__version__"]

@@ -1,5 +1,53 @@
 # Changelog
 
+## [3.11.0] - 2026-09-16
+
+### 🎯 v3.10 暂缓项复评落地：doctor GitHub 403 根因修复（实测对照）+ B站搜索翻页 + Method 2 死代码清理 + 截断可见化
+
+### Fixed
+- `tools/doctor.py` `check_github`：**长期 403 的根因是漏 UA，不是配额耗尽**。
+  实测对照（2026-09-16，同 IP 同分钟）：裸 `urllib.request.urlopen`（默认
+  UA=Python-urllib/3.x，即 v3.10 及之前的代码形态）→ GitHub 稳定返回
+  403 "rate limit exceeded for <IP>"；带 `User-Agent` 头 + 绕代理 opener
+  → 200。修复=与其余 6 项检查同款走 `_get()`（UA 头 + `ProxyHandler({})`
+  直连通道）。顺修文档漂移：模块 docstring 巡检项清单补上 v3.8.2 就存在
+  的"标定钩子活性"，mcp doctor 描述同步（7 项 = 5 网络探活 + 2 本地状态，
+  原文"6 项网络探活"计数错误）
+- `tools/mcp_server.py` doctor 工具描述：同上计数与清单修正
+
+### Added
+- `tools/chat-scraper/bilibili_engine.py`：**搜索翻页**——num>30 不再静默
+  截断（v3.10 及之前单页 30 条到顶，多要的 20 条无声蒸发，违背仓库"不伪装
+  完整"纪律）。实现：`_search_impl` 循环取页直到 num 满足 / 服务端空页
+  （如实停，不发多余请求）/ `MAX_PAGES=5` 护栏（有效上限约 150 条，护栏
+  耗尽安静返回已收集条数，语义与 v3.10 answers 的护栏一致）；页间节流走
+  引擎内置 `_wait_turn`（默认 3s，风控压力与页数线性可控），无新增 sleep；
+  wbi 签名重试逐页生效；num≤30 的默认路径请求次数与 v3.10 完全一致
+  （单页快路径）。`search()` docstring 同步
+- `tools/chat-scraper/zhihu_content.py`：**截断可见化**——新增
+  `CONTENT_LIMIT=8000` + `_content_field(text) -> (content, truncated)`
+  统一helper，四处 `text[:8000]` 输出口（fetch_article / zhihu-seo 浏览器
+  线 / read HTTP 线 / read 浏览器线）全部改走，输出新增 `truncated` 布尔
+  字段（增量字段，向后兼容）——调用方不再把"被剪过的 content"误当全文。
+  相关 docstring（含 mcp zhihu_article / read_page 描述）同步
+
+### Removed
+- `tools/google-bridge/search_helper.py`：**Method 2（AF_initDataCallback
+  JSON 提取）死代码删除**（v3.10 复评后落地）——可证惰性：循环体只有
+  `pass`，从不 append 结果，整块是白烧一遍 page_source 正则扫描的 no-op；
+  删除不触碰任何活代码路径（0 结果诊断落盘逻辑原样保留）。/health 版本串
+  v23.9 → v23.10（README 工具树同步），便于区分在跑实例
+
+### Changed
+- `tools/mcp_server.py` `china_search` 描述：bilibili num>30 自动翻页说明
+  （护栏 5 页 / 约 150 条）；`tools/chat-scraper/README.md` 已知限制第 5 条
+  同步；版本号 3.10.0 → 3.11.0（`tools/mcp_server.py`、
+  `tools/chat-scraper/__init__.py`）；README 徽章同步
+
+### 测试
+- 全量 177 passed 连续两轮（v3.10.0 基线 160 + 本轮 17，全部离线零真实
+  请求；doctor GitHub 修复另附当天真实对照实验记录，见本条 Fixed 节）
+
 ## [3.10.0] - 2026-09-16
 
 ### 🎯 知乎回答列表登录门修复（实测 403 现场复现）+ cursor 翻页；doctor 钩子活性检查补测；去重清理

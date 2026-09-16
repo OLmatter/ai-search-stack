@@ -1,4 +1,4 @@
-"""search_helper v23.9 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export. v23.9: CAPTCHA/lockout answers HTTP 503 (never disguised as 200/0-results) + zero-result page dump for diagnosis.
+"""search_helper v23.10 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export. v23.9: CAPTCHA/lockout answers HTTP 503 (never disguised as 200/0-results) + zero-result page dump for diagnosis. v23.10: dead "Method 2" (AF-init JSON extraction, provably inert) removed.
 
 Endpoints:
   GET /search?q=...&num=10&since=24h
@@ -486,20 +486,8 @@ def search_google_stealth(query: str, num: int = 10, since: str = '24h',
         except Exception:
             continue
 
-    # Method 2: JSON embedded (AF_initDataCallback)
-    if not results:
-        # Look for AF_initDataCallback in page_source
-        import re as _re
-        for m in _re.finditer(r'AF_initDataCallback\((\{key:[^}]+\}),[^,]+,(\[[^\]]+\])', driver.page_source):
-            try:
-                data = json.loads(m.group(2))
-                # Walk and find title/url pairs (heuristic, depends on Google)
-                # This is a fallback; not always reliable
-                for item in data:
-                    if isinstance(item, list) and len(item) >= 3:
-                        pass
-            except Exception:
-                continue
+    # v3.11 清理：原 Method 2（JSON embedded 提取）已删除——可证死代码，
+    # 历史见 CHANGELOG v3.11.0。0 结果诊断落盘逻辑在下方，不受影响。
 
     # 0 结果诊断：把现场 HTML 落盘，供区分"真无结果 / Google 换布局 / 同意页 /
     # CAPTCHA 变体"。页面加载失败已走 502，能到这里说明页面加载成功了。
@@ -629,7 +617,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         url = urlparse(path_str)
         if url.path == '/health':
             return self._send_json({'ok': True, 'service': 'search_helper',
-                                    'version': 'v23.9', 'engine': 'undetected-chromedriver'})
+                                    'version': 'v23.10', 'engine': 'undetected-chromedriver'})
 
         # v16 (2026-07-30): /chrome_ready — lightweight Chrome liveness probe.
         # Returns 200 with {alive, info, driver_state} so watchdog can

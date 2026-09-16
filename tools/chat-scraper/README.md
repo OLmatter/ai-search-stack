@@ -41,7 +41,7 @@
 2. **bilibili 风控可能升级**。当前裸调（带 buvid3 cookie）即通；一旦官方要求 wbi 签名，引擎收到 code=-403/-412 会自动签名重试一次（wbi 完整实现已内置，key 缓存 1h）。若签名后仍 -412/-403，说明风控再加码（如负一层数据加密），需重新逆向。
 3. **weixin（微信公众号）**：百度 `site:mp.weixin.qq.com` 只能搜到被百度收录的文章；公众号历史上有反爬更强的专门方案（sogou 微信搜索等），v3 **未实现**。
 4. **百度时间过滤是 best-effort**：`since=24h/7d/30d` 映射为 `gpc=stf`（stftype 1/2/3，滚动窗口），百度对它的执行并不严格；其他取值不生效（stderr 告警）。bilibili 的 `since` 是客户端按 pubdate 过滤（API 不支持服务端过滤），过滤后可能少于 num 条。
-5. **单页上限**：百度 rn=20（未登录稳定上限），bilibili 单页约 30 条；num 超出不做翻页。
+5. **单页上限**：百度 rn=20（未登录稳定上限），bilibili 单页约 30 条；bilibili 的 num>30 自 v3.11 起自动翻页（护栏 5 页，有效上限约 150 条；页间走引擎内置 `_wait_turn` 节流，服务端空页即停），护栏耗尽安静返回已收集条数。
 6. **本地代理会污染结果**：引擎强制直连（`trust_env=False`）。本机实测系统代理（如 Clash 7897 端口）半死不活时会伪造 ProxyError 或 timeout 页。如需经代理访问百度/bilibili，请自行改代码。
 7. cn.bing.com 对纯 HTTP 客户端**会剥离 `site:` 操作符**（前序侦察 4 组对照全部复现），故 v3 不用 bing 做 `site:` 引擎；`format=rss` 备胎通道也未启用（百度可用时无必要）。
 8. **SearXNG 主路径的启动依赖**：zhihu 引擎的 searxng 环节需要本机实例在跑（`tools/searxng/docker`）。实例没起不会卡死——自动降级搜狗/百度，但那是质量更低的路径，生产用请把实例跑起来。

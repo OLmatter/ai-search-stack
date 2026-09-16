@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.10.0"
+__version__ = "3.11.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -169,6 +169,8 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "platforms 可选 bilibili、wenxin（文心 AI 搜索，低频配额受限）、16 个站名、"
     "general（百度无 site 通用）、或任意"
     "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
+    "bilibili num>30 自动翻页（护栏 5 页，有效上限约 150 条；页间走引擎级"
+    "节流，风控压力线性可控）。\n"
     "耗时：bilibili 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"
     "错误在返回 JSON 内（{\"error\": ...} 项），区分故障与 0 结果。"))
@@ -185,7 +187,8 @@ def china_search(q: str,
 
 
 @mcp.tool(description=(
-    "通用阅读器：读任意 URL 的正文，返回 {title, content, url, engine}。\n"
+    "通用阅读器：读任意 URL 的正文，返回 {title, content, truncated, url, "
+    "engine}（content 截 8000 时 truncated=true）。\n"
     "智能分流：知乎问题/回答/专栏走官方 API 线；B 站 /video/BVxx 走官方 "
     "view API；微信公众号文章走 HTTP 直读 + 浏览器兜底；其余域名 HTTP 直连、"
     "反爬时自动切无头浏览器。\n"
@@ -235,7 +238,8 @@ def zhihu_answers(question_id: str,
 
 
 @mcp.tool(description=(
-    "知乎专栏文章（官方 API，结构化）：{id, title, content(纯文本≤8000), "
+    "知乎专栏文章（官方 API，结构化）：{id, title, content(纯文本, 截 8000 "
+    "时带 truncated=true), "
     "created, updated, voteup, comment_count, url}。\n"
     "何时用：已知 zhuanlan.zhihu.com/p/<id> 文章链接或 ID。问题/回答用 "
     "zhihu_question / zhihu_answers；任意 URL 兜底用 read_page。\n"
@@ -426,10 +430,11 @@ def googlebridge_search(q: str,
 
 @mcp.tool(description=(
     "ai-search-stack 工具箱体检：巡检全部通道健康并返回文本报告。\n"
-    "巡检项：本地 SearXNG 实例（可选）、知乎 cookie（可选）、bilibili 官方 "
-    "API、百度直连、google-bridge 服务（可选）、GitHub API。\n"
+    "巡检项（7 = 5 网络探活 + 2 本地状态）：本地 SearXNG 实例（可选）、"
+    "知乎 cookie（可选）、标定钩子活性（可选）、bilibili 官方 API、"
+    "百度直连、google-bridge 服务（可选）、GitHub API。\n"
     "何时用：某工具连续报错时先跑一次定位是通道故障还是真空；部署后自检。\n"
-    "耗时：约 5-10s（6 项网络探活）。返回纯文本报告，末行含退出码语义"
+    "耗时：约 5-10s（5 项网络探活）。返回纯文本报告，末行含退出码语义"
     "（0=核心全绿或仅可选服务未起；1=有核心通道故障）。"))
 def doctor() -> str:
     """复用 tools/doctor.py 的 check 体系：捕获 stdout 得到报告文本（不 subprocess）。"""

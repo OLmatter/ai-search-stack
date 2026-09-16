@@ -59,7 +59,8 @@ ENV_MIN_INTERVAL = "CHAT_SCRAPER_BILIBILI_MIN_INTERVAL"
 DEFAULT_MIN_INTERVAL = 3.0
 TIMEOUT = 20                      # 单请求超时（秒）
 ORDER = "totalrank"               # 综合排序（官方默认）
-RESULTS_PER_PAGE = 30             # 官方单页上限约 30 条，超出需翻页（未实现翻页）
+RESULTS_PER_PAGE = 30             # 官方单页上限约 30 条
+MAX_PAGES = 5                     # 搜索翻页护栏（v3.11）：num 有效上限约 150
 WBI_KEY_TTL = 3600.0              # wbi key 缓存时长（官方按天轮换，1h 足够新鲜）
 RETRYABLE_CODES = {-403, -412}    # 收到即认为可能要求 wbi 签名，签名重试一次
 # wbi 签名用的固定重排表（来源 bilibili-API-collect，社区逆向的混淆表）
@@ -215,12 +216,15 @@ def search(
 
     Args:
         q: 搜索关键词
-        num: 返回条数上限（单页约 30 条，超出不做翻页）
+        num: 返回条数上限。单页约 30 条；num>30 自动翻页（护栏 MAX_PAGES=5
+            页，即有效上限约 150 条）——护栏耗尽或服务端空页时安静返回已
+            收集条数（护栏是防失控，不是异常信号；页间节流走引擎内置
+            _wait_turn，风控压力与分页次数线性可控）
         since: 时间窗 24h/7d/30d/90d -> 客户端按 pubdate 过滤（API 不支持
             服务端时间过滤，过滤后可能少于 num）; None/"" 不过滤
         vendor: 主题分类（指标用，透传）
         role: primary / fallback / verify（透传）
-        page: 页码（从 1 开始）
+        page: 起始页码（从 1 开始；翻页自该页起算）
         on_error: "report" / "raise" / "empty"（见模块 docstring）
 
     Returns:
@@ -242,20 +246,6 @@ def search(
 def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
                  role: str, page: int) -> List[Dict]:
     s = _get_session()
-    params: Dict[str, object] = {
-        "search_type": "video",
-        "keyword": q,
-        "order": ORDER,
-        "page": page,
-    }
-    payload = _call_search(s, params)
-    if payload.get("code") in RETRYABLE_CODES:
-        # 风控升级要求 wbi 签名时自动签名重试一次（见模块 docstring）
-        img_key, sub_key = _get_wbi_keys(force_refresh=True)
-        payload = _call_search(s, _wbi_sign(params, img_key, sub_key))
-    if payload.get("code") != 0:
-        raise BilibiliApiError(
-            f"code={payload.get('code')} message={payload.get('message')}")
 
     cutoff = 0.0
     if since:
@@ -270,28 +260,51 @@ def _search_impl(q: str, num: int, since: Optional[str], vendor: str,
     out: List[Dict] = []
     if num <= 0:
         return out
-    for item in (payload.get("data") or {}).get("result") or []:
-        bvid = item.get("bvid") or ""
-        if not bvid:
-            continue  # 无 bvid 的是广告推广卡（pubdate=1970 的"咨询领福利"），丢弃
-        pubdate = int(item.get("pubdate") or 0)
-        if cutoff and pubdate < cutoff:
-            continue
-        out.append({
-            "title": _clean_title(item.get("title", "")),
-            "url": f"https://www.bilibili.com/video/{bvid}",
-            "snippet": (item.get("description") or "").strip(),
-            "platform": _PLATFORM,
-            "engine": "bilibili",
-            "author": item.get("author", ""),
-            "play": item.get("play"),
-            "pubdate": _fmt_pubdate(pubdate),
-            "vendor": vendor,
-            "role": role,
-            "since": since or "all",
-        })
-        if len(out) >= num:
-            break
+    fetched_pages = 0
+    p = page
+    while fetched_pages < MAX_PAGES and len(out) < num:
+        params: Dict[str, object] = {
+            "search_type": "video",
+            "keyword": q,
+            "order": ORDER,
+            "page": p,
+        }
+        payload = _call_search(s, params)   # 内置 _wait_turn 引擎级节流
+        if payload.get("code") in RETRYABLE_CODES:
+            # 风控升级要求 wbi 签名时自动签名重试一次（见模块 docstring）
+            img_key, sub_key = _get_wbi_keys(force_refresh=True)
+            payload = _call_search(s, _wbi_sign(params, img_key, sub_key))
+        if payload.get("code") != 0:
+            raise BilibiliApiError(
+                f"code={payload.get('code')} message={payload.get('message')}")
+
+        items = (payload.get("data") or {}).get("result") or []
+        for item in items:
+            bvid = item.get("bvid") or ""
+            if not bvid:
+                continue  # 无 bvid 的是广告推广卡（pubdate=1970 的"咨询领福利"），丢弃
+            pubdate = int(item.get("pubdate") or 0)
+            if cutoff and pubdate < cutoff:
+                continue
+            out.append({
+                "title": _clean_title(item.get("title", "")),
+                "url": f"https://www.bilibili.com/video/{bvid}",
+                "snippet": (item.get("description") or "").strip(),
+                "platform": _PLATFORM,
+                "engine": "bilibili",
+                "author": item.get("author", ""),
+                "play": item.get("play"),
+                "pubdate": _fmt_pubdate(pubdate),
+                "vendor": vendor,
+                "role": role,
+                "since": since or "all",
+            })
+            if len(out) >= num:
+                break
+        fetched_pages += 1
+        p += 1
+        if not items:
+            break   # 服务端空页 = 真空到底，如实停，不发多余请求
     return out
 
 
