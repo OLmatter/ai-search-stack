@@ -2,13 +2,25 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.31.0](https://img.shields.io/badge/release-v3.31.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.31.0)
+[![Release: v3.33.0](https://img.shields.io/badge/release-v3.33.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.33.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 552 passing](https://img.shields.io/badge/tests-552%20passing-success.svg)](tests/)
+[![Tests: 601 passing](https://img.shields.io/badge/tests-601%20passing-success.svg)](tests/)
 
-**v3.31.0（2026-09-17）**：v3.0 全面审计大修之后连续三十二轮迭代——
-**热榜监控环组合脚本 + 每日班次接线**：hotlist_watch.py（调用方层监控环：
+**v3.33.0（2026-09-17）**：v3.0 全面审计大修之后连续三十四轮迭代——
+**每日晨报聚合 + 班次接线**：digest.py（tools/ 顶层跨工具组合层：
+热榜动态（默认零网络消费 hotlist_watch 监控环产物——最新快照 top +
+shift_log 今日 diff 行；快照缺失诚实未启用不代采，--sample-hotlist
+备用采样不落快照）+ HN 信号 + GitHub 关注发布 + doctor 本地状态四段
+一次早晨汇报，stdout markdown；单通道失败降级为该段「通道异常」不炸
+整体，四段全 fault 才 exit 1；配置 state/digest_config.json 缺失/坏
+落回内置默认并注明；网络预算默认 4 发 ≤8）+ digest_task.py（schtasks
+每日注册器：任务 ai-search-digest DAILY 10:00 错峰 09:45 之后消费当
+日 diff；组合层归属三选一推导进 docstring：MCP 工具拒绝=被动原语烧
+上下文、班次脚本拒绝=确定性节拍归 OS 调度器、独立组合脚本采用），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+三十二轮：**热榜监控环组合脚本 + 每日班次接线**：hotlist_watch.py（调用方层监控环：
 采样 hot() -> 快照落盘 state/hotlist_snapshots/ 时间戳命名滚动保留 50 份
 -> hot_diff -> stdout 结构化告警 + 可选 --log 班次日志格式一行（doctor
 值班巡检趋势可解析）；单发/--interval 自轮询双模式；故障轮不落快照不

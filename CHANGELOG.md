@@ -1,5 +1,58 @@
 # Changelog
 
+## [3.33.0] - 2026-09-17
+
+### 🎯 每日晨报聚合 digest.py + digest_task.py 班次接线
+
+- **digest.py（`tools/digest.py`，跨工具组合层）**：四段组合一次早晨
+  汇报（stdout markdown）——① 热榜动态：**默认零网络消费 hotlist_watch
+  监控环产物**（latest_snapshot 最新快照 top 行 + shift_log.md 今日
+  `hotlist_watch:` diff 行），快照缺失诚实 empty 指路建基线不代采、
+  `--sample-hotlist` 备用路径现场采样一发（仍不落快照——digest 是聚合
+  汇报不是第二个监控环，不参与快照链节奏）；② 技术社区信号：
+  watch_queries 每条 hn_search 一发（24h 窗）；③ 关注项目发布：
+  watch_repos 每仓库 github_releases 一发；④ 工具箱状态：doctor 本地
+  状态零网络只读（shift_log 近 7 天统计复用 `doctor._shift_log_stats`
+  跨解析器契约、知乎 cookie 龄 `_cookie_meta`、weibo 标定最后读数
+  `_last_valid_entry`、快照链份数）——**不跑 doctor 全量巡检**（那是
+  5+ 发网络探活，嵌进晨报会爆预算；全量巡检仍是 doctor 独立命令的活）。
+  **单通道失败降级**：每段独立 try/except + 通道 on_error="report" 双
+  保险，单通道挂只降级为该段「⚠️ 通道异常」不炸整体；四段全 fault 才
+  overall=fault（exit 1，cron 侧可报警），单段 fault 是观测内容不翻码
+  （exit 0）。配置 `state/digest_config.json`（根 .gitignore `state/`
+  已覆盖，只留本地）：`{"watch_repos": [...], "watch_queries": [...],
+  "watch_platforms": [...]}`，缺失/坏 JSON/键类型错→落回内置默认并在
+  晨报头部注明（配置问题不炸整体）。**网络预算**（默认 2 查询 + 2 仓库）
+  = 4 发 ≤ 8。pythonw null-stdout 安全（hotlist_watch v3.31 同款钉）。
+  可选 `--log` 追加班次摘要一行（`[YYYY-MM-DD HH:MM] digest: ...`，
+  doctor `_shift_log_stats` 可解析——跨解析器承重契约 test_v3330 钉死）。
+- **组合层归属推导（v3.33 评估结论，进 docstring 承重）**：晨报是纯
+  组合（零新引擎能力），归调用方层组合脚本——hotlist_watch.py v3.31
+  完全同构先例（引擎/MCP 零改动，ARCHITECTURE.md 复用边界）。三选一：
+  mcp_server 新工具拒绝（晨报价值主体是每日定时主动产生，MCP 是会话内
+  被动拉取原语且无定时能力，整份 markdown 烧 LLM 上下文，双入口=双真
+  源）；班次脚本拒绝（聚合是确定性动作零认知，确定性节拍归 OS 调度器
+  不占 LLM 班次——v3.31 接线推导，班次是晨报的消费者不是执行者）；
+  tools/digest.py 独立组合脚本采用（跨工具组合放 tools/ 顶层，doctor.py
+  同级先例）。
+- **每日班次接线 = digest_task.py（hotlist_watch_task v3.31 同款）**：
+  任务 **ai-search-digest** DAILY **10:00**——错峰推导：sogou-probe
+  09:30 → hotlist-watch 09:45 → digest 10:00，晨报消费当日监控环 diff
+  产物，排其后才读得到今天的 hotlist_watch 行。register/status/
+  unregister 三命令、/TR 261 硬上限超长不注册、pythonw 免闪窗、schtasks
+  输出 utf-8→gbk 回退链解码、非 win32 诚实报错给 cron 等价入口、
+  unregister 幂等。
+- **回归**：test_v3330 49 钉全离线（配置 6 + HN 4 + GitHub 4 + 热榜 7
+  + toolbox 4 + 整体/班次日志 6 + CLI 5 + 注册器 9 + 版本锁/文档 4）；
+  552→601 两轮全绿；test_v3310 精确锁降常青下限（v3.27→…→v3.31 交接
+  先例）。**实测（2026-09-17 05:49，默认配置 4 发网络 3.4s：HN 2 +
+  GitHub 2，热榜/状态段零网络消费本地产物）**：晨报真实产出——热榜段
+  消费 05:00:17 监控环快照（bilibili top5）+ shift_log 今日建基线/diff
+  两行；HN 两查询真实信号（Cloudflare AI crawlers 84 分/51 评等 10 行）；
+  **GitHub 匿名配额限流双 403，段级降级实证「⚠️ 通道异常不炸整体」**
+  （GitHub ⚠️ 其余三段 ✅，exit 0 晨报照常）；班次日志行
+  `[05:49] digest: 热榜=ok HN=ok GitHub=fault 状态=ok` 落 shift_log。
+
 ## [3.31.0] - 2026-09-17
 
 ### 🎯 热榜监控环组合脚本 + 每日班次接线 + server /hot 接口奇偶

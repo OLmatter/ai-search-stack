@@ -1,4 +1,4 @@
-"""chat-scraper v3.31.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.33.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -153,9 +153,12 @@ shift_log.md 让每日 diff 进班次日志；接线二选一按架构推导选 
 而非班次提示词片段——确定性节拍归 OS 调度器不占 LLM 班次、不等主人
 CronUpdate 粘贴）+ server.py GET /hot（接口奇偶补齐：facade hot()/
 CLI --hot/MCP china_hotlist 均已暴露唯 HTTP 服务缺；参数同 /search 去
-q/since，错误协议 report 内嵌不 500）。
+q/since，错误协议 report 内嵌不 500）。v3.33: digest.py 每日晨报聚合
+（tools/ 顶层跨工具组合层：热榜监控环产物 + HN 信号 + GitHub 关注
+发布 + doctor 本地状态四段，单通道失败降级不炸整体；
+digest_task.py DAILY 10:00 错峰 09:45 之后消费当日 diff）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.31.0"
+__version__ = "3.33.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]
