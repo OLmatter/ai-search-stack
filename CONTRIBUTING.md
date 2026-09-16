@@ -43,8 +43,13 @@ curl "http://localhost:18799/search?q=test&num=5&since=7d&vendor=test&role=prima
 ## 版本发布
 
 1. 改 `CHANGELOG.md` 加新版本
-2. `git tag vX.Y.Z && git push --tags`
-Tag 推送即发布锚点；GitHub Release 需 gh token（失效时后补 `gh release create <tag>`）。
+2. **收工必写 shift_log**（`tools/chat-scraper/state/shift_log.md`）——
+   每个循环批次收工一条（做了什么/结论/push+tag），时间戳格式
+   `[YYYY-MM-DD HH:MM]`（doctor 值班巡检趋势依赖解析）；漏写的批次
+   事后必须补记且**标注「补记」**（无声补=伪造实时流水；v3.19/v3.20
+   缺条目的连续性缺口教训，v3.22 固化为检查点）
+3. `git tag vX.Y.Z && git push --tags`
+   Tag 推送即发布锚点；GitHub Release 需 gh token（失效时后补 `gh release create <tag>`）。
 4. 不发 PyPI / Docker Hub（项目目前用 git clone 即用）
 
 ## Issue 报告

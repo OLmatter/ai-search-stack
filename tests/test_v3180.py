@@ -178,9 +178,15 @@ class TestShiftLogStats(unittest.TestCase):
         s = doctor_mod._shift_log_stats(self.log, _NOW, window_days=30)
         self.assertEqual(s["count"], 2)
 
+    @unittest.skipUnless(
+        os.path.exists(doctor_mod.SHIFT_LOG_PATH),
+        "真实 shift_log.md 不存在（state/ 为 gitignore 的运行态文件，"
+        "fresh clone 缺文件=可选观测未启用，doctor 同语义不判故障）")
     def test_real_repo_shift_log_readable(self):
         # 真实仓库日志可统计（口径对真实格式不炸；不断言具体数字——
-        # shift_log 是活的，数字随值班变化）
+        # shift_log 是活的，数字随值班变化）。文件缺失 skip 而非 fail：
+        # v3.22 clean-worktree 复跑实证 fresh checkout 上此钉必炸
+        # （本机 352 全绿=机器本地产物在场的假象），非测试目标本身
         s = doctor_mod._shift_log_stats(doctor_mod.SHIFT_LOG_PATH, _NOW)
         self.assertIsNotNone(s)
         self.assertIsInstance(s["count"], int)

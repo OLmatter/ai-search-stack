@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.22.0] - 2026-09-16
+
+### 🎯 stop_wake append-only 决策日志 + 收工必写 shift_log 纪律固化
+
+- **stop_wake 决策日志（上轮审计遗留项落地）**：v3.21 如实声明的观察盲区（钩子无决策日志，审计被迫全走间接证据）——`main()` 每次触发追加一行 JSONL 到 `~/.zcode/stop_wake_decisions.jsonl`（在 ~/.zcode、仓库外，gitignore 不适用）：`ts`（本地 ISO 带时区）/`decision`（block|pass）/`reason`（block=注入收工的完整文本；pass=归因标签 no_queue/empty_queue/module_unreachable/valid_claim）。决策逻辑重构为 `_decide()`（返回 (block, reason)），`should_block()` 变为语义不变的兼容层（v3.19 全部行为钉原样通过）；写日志任何异常一律吞掉——从属职责，磁盘满/权限故障绝不影响决策与退出码；真源-部署纪律不变（先改仓库真源 → 部署副本旧版备份 .bak-v3.21.0 → 覆写 → cmp 字节一致验证）
+- **收工必写 shift_log 纪律固化（上轮审计遗留项）**：v3.19/v3.20 批次缺 shift_log 条目的连续性缺口收口——检查点写进 CONTRIBUTING.md「版本发布」一节（漏写须标注补记，无声补=伪造实时流水）；shift_log.md 补记 v3.19/v3.20 两行历史条目（标注补记、时间戳保持 doctor `_shift_log_stats` 可解析的 `[YYYY-MM-DD HH:MM]` 格式）
+- **顺手修正（本批审计发现）**：CHANGELOG 3.20.0 标题日期 2026-09-17→2026-09-16（提交 837501a 实际 2026-09-16 21:53，日期笔误）；3.19.0 标题重复日期「- 2026-09-16 - 2026-09-16」去重；CONTRIBUTING「版本发布」编号断链（1,2,…,4）修复；test_v3180 真仓 shift_log 钉补 skipUnless——clean git worktree 复跑实证 fresh checkout 上必炸（1 failed，"352 全绿"是机器本地产物 state/shift_log.md 在场的假象，v3.18 批次遗留；state/ 为 gitignore 运行态，缺文件=可选观测未启用同 doctor 语义，修复后 clean checkout 25 passed 2 skipped）
+- **并行互踩记录**：本批次进行中并行班次落库 c938d69（v3.20 ddg 判定假阳性的审计修正：settings 重复条目致 ddg 实际未参排，诚实重跑第二关 CAPTCHA 复发维持禁用；改 tests/test_v3190.py + settings.yml，与本批零文件交集无冲突，其提交信息明记"v3.22.0 belongs to the parallel in-flight stop_wake-log batch"）；README 状态行按修正结论同步标注（v3.20 段"两关双过回滚生效"加假阳性修正标记）
+- 测试 352→374 通过（基线 88af427 本机 352 + 并行 c938d69 +1 = 353，本批 +21 钉；两轮全绿 18.34s/17.42s；test_v3220：决策日志 5 钉 + 归因标签 6 钉 + should_block 兼容层 2 钉 + main 端到端 2 钉 + shift_log 纪律 3 钉 + 版本锁/CHANGELOG/真源 pin 3 钉），test_v3210 精确锁降常青下限（v3.17/v3.18 先例），版本锁 3.22.0
+
+[3.22.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.22.0
+
 ## [3.21.0] - 2026-09-16
 
 ### 🎯 cookie 寿命标定首批数据分析 + doctor GBK 控制台加固 + stop_wake 部署一致性核验
@@ -13,7 +25,7 @@
 
 [3.21.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.21.0
 
-## [3.20.0] - 2026-09-17
+## [3.20.0] - 2026-09-16
 
 ### 🎯 SearXNG 单引擎两关制第四轮：ddg 回滚生效、brave 恢复判据升级、stop_wake 实战首验
 
@@ -24,7 +36,7 @@
 
 [3.20.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.20.0
 
-## [3.19.0] - 2026-09-16 - 2026-09-16
+## [3.19.0] - 2026-09-16
 
 ### 🎯 claim 固化进领活入口（根因修复）+ SearXNG 回滚判据细化到单引擎
 

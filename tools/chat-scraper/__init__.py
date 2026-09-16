@@ -1,4 +1,4 @@
-"""chat-scraper v3.21.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.22.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -80,6 +80,12 @@ optional 不判核心故障——沿 sogou_recovery_log 先例）+ doctor GitHub
 匿名 60 req/h 共享配额的限流窗口误报，tools/github/github_client.py
 同款约定）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
 
+v3.22.0：stop_wake append-only 决策日志（每次触发一行 JSONL 到
+~/.zcode/stop_wake_decisions.jsonl：ts/decision/pass 归因标签或完整
+block 文本；写日志异常一律吞掉、绝不影响决策与退出码；消除 v3.21
+声明的"钩子无决策日志"观察盲区）+ 收工必写 shift_log 纪律固化
+（CONTRIBUTING 版本发布检查点；v3.19/v3.20 历史条目标注补记）。
+
 v3.21.0：cookie 寿命标定首批数据分析落账（7 读数/唯一死亡实测 47.38h ≈47.4h，36h 续期阈值维持——n=1 不够调参；renew 实战首例 1/1 成功零误触发）+ doctor GBK 控制台加固（errors="replace"，cron 实录 UnicodeEncodeError 不再崩报告；读数本就由 probe_once 先落账）。业务行为零变更。
 
 v3.20.0：claim 固化进领活入口（根因修复）——worker_queue 新增
@@ -95,5 +101,5 @@ acquire()：认领+读队列一步完成的唯一入口，skipped 不返回 inst
 """
 from .search import list_platforms, search
 
-__version__ = "3.21.0"
+__version__ = "3.22.0"
 __all__ = ["search", "list_platforms", "__version__"]

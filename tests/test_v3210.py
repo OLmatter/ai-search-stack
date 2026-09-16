@@ -14,8 +14,8 @@ doctor GBK 控制台加固 + 版本锁 3.21.0。
    寿命数据流不被续期污染）；阈值语义正反路径 test_v390 已全覆盖，此处
    不重复。数据裁决本身（36h 维持）以 docstring/CHANGELOG 落账，n=1
    不钉行为。
-3. 版本锁 3.21.0（mcp_server + chat-scraper __init__ 双同步）+
-   CHANGELOG 3.21.0 小节存在。
+3. 版本下限（原 3.21.0 精确锁降常青，精确锁已移交 test_v3220——
+   v3.17/v3.18 先例）+ CHANGELOG 3.21.0 小节存在。
 """
 import io
 import pathlib
@@ -117,7 +117,8 @@ class TestVersionSyncV321(unittest.TestCase):
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.21.0")   # 本批次精确锁
+        parts = tuple(int(x) for x in ver.split("."))
+        self.assertGreaterEqual(parts, (3, 22, 0))   # 常青下限（原 3.21.0 精确锁，v3.22 移交）
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)

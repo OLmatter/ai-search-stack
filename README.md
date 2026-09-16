@@ -2,20 +2,29 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.21.0](https://img.shields.io/badge/release-v3.21.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.21.0)
+[![Release: v3.22.0](https://img.shields.io/badge/release-v3.22.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.22.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 352 passing](https://img.shields.io/badge/tests-352%20passing-success.svg)](tests/)
+[![Tests: 374 passing](https://img.shields.io/badge/tests-374%20passing-success.svg)](tests/)
 
-**v3.21.0（2026-09-16）**：v3.0 全面审计大修之后连续二十二轮迭代——
-cookie 寿命标定首批数据分析（7 读数/唯一死亡实测 47.38h，36h 续期阈值
+**v3.22.0（2026-09-16）**：v3.0 全面审计大修之后连续二十三轮迭代——
+stop_wake append-only 决策日志（每次触发一行 JSONL 到
+~/.zcode/stop_wake_decisions.jsonl：block 记全文、pass 记归因标签，
+写日志异常一律吞掉绝不影响收工决策；消除 v3.21 声明的观察盲区）、
+收工必写 shift_log 纪律固化（CONTRIBUTING 版本发布检查点，
+v3.19/v3.20 历史条目标注补记），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十二维：cookie 寿命标定首批数据分析（7 读数/唯一死亡实测 47.38h，36h 续期阈值
 维持：n=1 不够调参；renew 实战首例 1/1 成功零误触发）、续期入口现状
 如实入档（无 cron 部署，MCP cookie 模式恒为纯标定）、doctor GBK 控制
 台加固（cron 实录 UnicodeEncodeError 不再崩报告）、stop_wake 部署副本
 字节级核验一致（接线+sidecar 实迹），
 详见 [CHANGELOG.md](CHANGELOG.md)。
 此前
-二十一轮：duckduckgo 两关双过回滚生效（聚合无 ddg，与 brave 同场对照
+二十一轮：duckduckgo 两关双过回滚生效【已修正：该判定为假阳性——
+settings 重复条目使 ddg 实际未参排，诚实重跑第二关 CAPTCHA 复发，
+维持禁用，见 c938d69】（聚合无 ddg，与 brave 同场对照
 实证"单发可信度因引擎而异"）、brave 四轮数据实证其单发可信度不可靠
 （恢复判据升级观察继续）、mojeek 首探 access denied 排除、stop_wake
 强制条款版实战首验（本班次即被钩子唤醒）、claim 固化进领活入口（根因
