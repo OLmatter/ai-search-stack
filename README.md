@@ -2,13 +2,22 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.23.0](https://img.shields.io/badge/release-v3.23.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.23.0)
+[![Release: v3.24.0](https://img.shields.io/badge/release-v3.24.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.24.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 393 passing](https://img.shields.io/badge/tests-393%20passing-success.svg)](tests/)
+[![Tests: 401 passing](https://img.shields.io/badge/tests-401%20passing-success.svg)](tests/)
 
-**v3.23.0（2026-09-17）**：v3.0 全面审计大修之后连续二十四轮迭代——
-clean-worktree 收工检查固化（`scripts/clean_worktree_test.sh`：HEAD 全新
+**v3.24.0（2026-09-17）**：v3.0 全面审计大修之后连续二十五轮迭代——
+doctor 实例级健康下限（`SEARXNG_MIN_ROWS=3` 行数地板：聚合 <3 行亮 ⚠️
+「默认引擎集整体哑火，非单引擎问题」，破 v3.23 实证的「wikipedia 1 行
+也报引擎全健康」盲区）、probe() 实网首用（brave streak 2→3 + 背靠背
+连发不限流首点、ddg CAPTCHA streak 维持 0、聚合 20 行全 google cse）、
+brave 恢复判据 v2 定标（N=3 + 连发 K=2 全过 + 跨度 ≥24h 三条全满足
+才烧第二关；聚合小样本试探评估为可选 gate-1.5），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十四轮：clean-worktree 收工检查固化（`scripts/clean_worktree_test.sh`：
+HEAD 全新
 worktree checkout 跑全量测试，破「本机绿≠fresh 绿」假象；stash 对
 gitignore 产物无效故走 worktree）、SearXNG 第五轮采样（brave streak=2
 继续积累、ddg CAPTCHA streak 归零、startpage 两轮三观测止损禁用——

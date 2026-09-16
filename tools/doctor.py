@@ -99,13 +99,29 @@ def _get(url, timeout=TIMEOUT, headers=None):
         return r.read().decode("utf-8", "replace")
 
 
+# v3.24: 实例级健康下限（聚合行数地板）。check_searxng 原先只看连通 +
+# unresponsive 列表——聚合仅 wikipedia 1 行也报 ✅「引擎全健康」（v3.23
+# 第五轮采样同场实录：默认引擎集整体哑火时每个引擎各有说辞，实例级降级
+# 反而无人报警）。行数是实例级信号：低于地板 = 默认引擎集整体哑火，非
+# 单引擎问题（单引擎问题走 unresponsive 列表 + 逐引擎禁用止损，v3.15
+# 判据，与本地板互不替代）。
+SEARXNG_MIN_ROWS = 3
+
+
 def check_searxng():
     body = _get(f"{SEARXNG}/search?q=ping&format=json")
     data = json.loads(body)
     dead = data.get("unresponsive_engines") or []
     n = len(data.get("results", []))
-    return (f"{n} 条结果, {TIMEOUT}s 探活"
-            + (f", 不健康引擎: {dead}" if dead else ", 引擎全健康"))
+    detail = (f"{n} 条结果, {TIMEOUT}s 探活"
+              + (f", 不健康引擎: {dead}" if dead else ", 引擎全健康"))
+    if n < SEARXNG_MIN_ROWS:
+        # optional 检查的异常路径 = ⚠️ 且不翻退出码（main 只看 core_fail）
+        # ——实例还活着、只是聚合枯竭，是降级不是核心故障，语义正好
+        raise RuntimeError(
+            f"实例级降级：聚合仅 {n} 行（< {SEARXNG_MIN_ROWS} 行下限，"
+            f"默认引擎集整体哑火，非单引擎问题）——{detail}")
+    return detail
 
 
 def check_cookie():

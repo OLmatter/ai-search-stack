@@ -280,7 +280,9 @@ class TestDoctorSearxngEngineHealth(unittest.TestCase):
     """check_searxng 输出 unresponsive_engines（v3.14 钉死防回退）。"""
 
     def test_unresponsive_engines_reported(self):
-        body = json.dumps({"results": [{"title": "x"}],
+        # v3.24 起行数地板（<3 行=实例级降级抛 ⚠️），夹具行数升到地板上——
+        # 本钉本意是「unresponsive 必须出现在输出里」，与地板互不干扰
+        body = json.dumps({"results": [{"title": "x"} for _ in range(3)],
                            "unresponsive_engines": ["bing", "photon"]})
         with mock.patch.object(doctor_mod, "_get", return_value=body):
             detail = doctor_mod.check_searxng()
@@ -289,7 +291,9 @@ class TestDoctorSearxngEngineHealth(unittest.TestCase):
         self.assertIn("photon", detail)
 
     def test_all_healthy_said_explicitly(self):
-        body = json.dumps({"results": [], "unresponsive_engines": []})
+        # v3.24：0 行已是实例级降级（抛 ⚠️），「全健康」表述只在地板上成立
+        body = json.dumps({"results": [{"title": "x"} for _ in range(3)],
+                           "unresponsive_engines": []})
         with mock.patch.object(doctor_mod, "_get", return_value=body):
             detail = doctor_mod.check_searxng()
         self.assertIn("引擎全健康", detail)
