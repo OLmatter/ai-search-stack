@@ -87,6 +87,29 @@ def check_cookie():
             f"{'（>24h 建议跑一次 zhihu_bootstrap.py 续期）' if age_h > 24 else ''}")
 
 
+def check_hook_liveness():
+    """标定钩子活性：每日探活的最后读数超过 ~48h = 钩子疑似断线
+    （定时任务没跑/机器没开/自动化被禁）。断线时标定数据流静默死亡，
+    这里是唯一的报警点。"""
+    if not os.path.exists(COOKIE_LOG_PATH):
+        raise RuntimeError("标定日志不存在（每日探活从未执行："
+                           "python tools/doctor.py --cookie-probe）")
+    last_line = ""
+    with open(COOKIE_LOG_PATH, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                last_line = line
+    entry = json.loads(last_line)
+    ts = entry.get("ts") or entry.get("time") or ""
+    from datetime import datetime
+    age_h = (time.time() - datetime.fromisoformat(ts).timestamp()) / 3600
+    if age_h > 48:
+        raise RuntimeError(
+            f"最后读数已是 {age_h:.0f}h 前——每日探活钩子疑似断线"
+            f"（定时任务没跑？检查自动化/机器开关机）")
+    return f"最后读数 {age_h:.1f}h 前（{entry.get('status', '?')}）"
+
+
 def check_bilibili():
     body = _get(f"https://api.bilibili.com/x/web-interface/view?"
                 f"bvid={PROBE_BVID}")
@@ -294,6 +317,7 @@ def main(argv=None) -> int:
     print(f"== ai-search-stack doctor @ {time.strftime('%Y-%m-%d %H:%M')} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
     _check("知乎 cookie", check_cookie, optional=True)
+    _check("标定钩子活性", check_hook_liveness, optional=True)
     _check("bilibili 官方 API", check_bilibili)
     _check("百度直连", check_baidu)
     _check("google-bridge 服务", check_google_bridge, optional=True)
