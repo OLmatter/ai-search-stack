@@ -10,8 +10,8 @@
    实证背景：v3.16 的 848065c 与并行班次工作树编辑逐字一致 = 互踩证据；
    本班次实施期间第二次实时互踩（test_v3160.py 双方同改，Edit 冲突检测
    挡下覆盖）——机制动机两次实证。
-2. 版本锁 3.17.0（mcp_server + chat-scraper __init__ 精确锁，v3.12 先例
-   源码级断言；test_v3160 的 3.16.0 锁同步降为常青下限，v3.13->v3.14 先例）。
+2. 版本锁 3.17.0（v3.18 起转常青下限，v3.13->v3.14 先例；精确锁移交
+   test_v3180）。
 """
 import json
 import os
@@ -142,18 +142,24 @@ class TestWorkerQueueClaim(unittest.TestCase):
 
 
 class TestVersionSyncV317(unittest.TestCase):
-    def test_versions_3170(self):
-        # chat-scraper 目录名带连字符不可 import，源码级断言（v3.12 先例）
+    def test_versions_not_older_than_3170(self):
+        # v3.18 起改为常青下限（v3.13->v3.14 先例）：精确锁当前版本是
+        # test_v3180 的职责
+        import re
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.17.0"', init_src)
-        self.assertIn("chat-scraper v3.17.0", init_src)   # docstring 首行同步
+        ver = re.search(r'__version__ = "([^"]+)"', init_src).group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 17, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)   # docstring 首行同步
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.17.0"', src)
+            mver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
-            self.assertEqual(mcp_server.__version__, "3.17.0")
+            mver = mcp_server.__version__
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mver.split(".")), (3, 17, 0))
 
     def test_changelog_has_3170(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")

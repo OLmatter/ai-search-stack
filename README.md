@@ -2,22 +2,27 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.17.0](https://img.shields.io/badge/release-v3.17.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.17.0)
+[![Release: v3.18.0](https://img.shields.io/badge/release-v3.18.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.18.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 305 passing](https://img.shields.io/badge/tests-305%20passing-success.svg)](tests/)
+[![Tests: 322 passing](https://img.shields.io/badge/tests-322%20passing-success.svg)](tests/)
 
-**v3.17.0（2026-09-16）**：v3.0 全面审计大修之后连续十八轮迭代——新增
-worker_queue 派工队列认领机制（多 worker 并行领同一队列互踩的修复：
-O_EXCL 原子认领/超时重新认领/完成清空，Windows/POSIX 双兼容）；
-SearXNG 禁用引擎恢复复跑（三引擎单发探活全部复发，第一关即未过，
-维持禁用并记录观察，详见 [CHANGELOG.md](CHANGELOG.md)）。
+**v3.18.0（2026-09-16）**：v3.0 全面审计大修之后连续十九轮迭代——doctor
+值班巡检趋势检查统计口径重做（shift_log.md 近 7 天：记录条数/覆盖天数/
+每日分布/关键事件计数[restart/处置/❌/恶化 纯字面]/最近一条摘要；
+缺文件/空/全坏行=可选观测未启用不报警，7 天零记录亮 ⚠️ 连续性中断）、
+doctor GitHub 检查可选 GITHUB_TOKEN 认证（缓解匿名 60 req/h 共享配额
+的限流窗口误报，详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十八轮：worker_queue
+派工队列认领机制（多 worker 并行领同一队列互踩的修复，O_EXCL 原子
+认领）、SearXNG 禁用引擎恢复复跑（三引擎单发探活全部复发，第一关即
+未过，维持禁用，详见 [CHANGELOG.md](CHANGELOG.md)）。
 此前
 十七轮：doctor
-新增值班巡检趋势检查（shift_log.md 近 7 天记录/覆盖天数/疑似异常，
-趋势可见）、SearXNG 禁用引擎恢复观察（单发探活全过但回滚启用后聚合
-搜索即复发——单发探活通过 ≠ 可回滚，维持禁用并记录再评估方法，
-详见 [CHANGELOG.md](CHANGELOG.md)）。
+新增值班巡检趋势检查（v3.16 初版：疑似异常口径）+ SearXNG 禁用引擎
+恢复观察（单发探活全过但回滚启用后聚合搜索即复发——单发探活通过
+≠ 可回滚，维持禁用并记录再评估方法，详见 [CHANGELOG.md](CHANGELOG.md)）。
 此前
 十六轮：doctor
 标定钩子活性扩展覆盖搜狗恢复曲线日志、mcp doctor 工具 mode 子模式
@@ -54,7 +59,9 @@ B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表�
 - 🔌 **MCP 接入层**：整个工具箱挂成 stdio MCP server，14 个工具任何 MCP
   客户端（ZCode / Claude Desktop）零代码直接调用
 - 🩺 **doctor 一条命令体检**：巡检全部通道健康（SearXNG / 知乎 cookie /
-  bilibili / 百度 / google-bridge / GitHub），故障退出码 1
+  标定钩子 / bilibili / 百度 / google-bridge / GitHub / 值班巡检趋势），
+  故障退出码 1；GitHub 检查可选配 `GITHUB_TOKEN`（5000/h，免匿名
+  60 req/h 限流窗口）
 - 🛡️ **统一错误协议**：出错返回带 `error` 字段的记录（slug 可诊断），永远
   不用静默 `[]` 把故障伪装成"没搜到"；模块名唯一，同进程组合不撞名
 
@@ -104,7 +111,7 @@ python tools/doctor.py         # 全通道体检，确认环境就绪
 | [`tools/google-bridge/`](tools/google-bridge/) | 真 Google（WebSearch 100% CAPTCHA），需 Chrome + 代理 | 找中国平台 / GitHub release |
 | [`tools/searxng/`](tools/searxng/) | 兜底聚合搜索；`tools/searxng/docker` 一条命令起本地实例（已启用 JSON，公网实例默认禁 JSON 勿用） | 默认主搜 |
 | [`tools/hackernews/`](tools/hackernews/) | 验证社区反应（高赞 = 真信号），零部署 | 中文 / 非技术 |
-| [`tools/github/`](tools/github/) | Release / Advisory / 仓库，零部署（匿名 60 req/h） | 非 GitHub |
+| [`tools/github/`](tools/github/) | Release / Advisory / 仓库，零部署（匿名 60 req/h，可选配 `GITHUB_TOKEN` 提额至 5000/h，doctor 同款） | 非 GitHub |
 | [`tools/mcp_server.py`](tools/mcp_server.py) | 全工具箱暴露成 14 个 MCP tools（stdio） | 不用 MCP 客户端时 |
 | [`tools/doctor.py`](tools/doctor.py) | 一条命令巡检全部通道健康 | — |
 

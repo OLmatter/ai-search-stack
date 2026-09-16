@@ -11,10 +11,13 @@
     - bilibili 官方 API：用一个知名 bvid 探活（只读、无风控压力）
     - 百度直连：首页探活（搜索风控与首页可达是两回事，这里只测通道）
     - google-bridge 服务：/health（通常按需启动，未起不算故障）
-    - GitHub API：匿名可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
-      UA 会被 GitHub 按 IP 强限流成永久 403，见 check_github 注释）
-    - 值班巡检趋势（v3.16）：shift_log.md 近 7 天记录条数/覆盖天数/疑似
-      异常项数——让值班连续性与历史异常趋势在 doctor 输出可见
+    - GitHub API：可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
+      UA 会被 GitHub 按 IP 强限流成永久 403；v3.18 起可选 GITHUB_TOKEN，
+      设置后带 Bearer 认证头，见 check_github 注释）
+    - 值班巡检趋势（v3.16 引入，v3.18 统计口径重做）：shift_log.md 近 7
+      天记录条数/覆盖天数/每日分布/关键事件计数/最近一条摘要——让值班
+      连续性与异常趋势在 doctor 输出可见（可选观测：缺文件/空/全坏行
+      不报警，7 天零记录亮 ⚠️）
 
 用法:
     python tools/doctor.py                  # 全量巡检，逐项 ✅/❌/⚠️
@@ -58,18 +61,19 @@ PROBE_QUESTION_ID = "19550227"   # bootstrap 同款知名问题，仅作 API 探
 SOGOU_RECOVERY_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
                                        "sogou_recovery_log.jsonl")
 
-# v3.16: 值班巡检趋势（check_shift_log）。shift_log.md 是值班会话的巡检/
-# 处置流水（人工+会话写入），doctor 只读不写——趋势在这里可见，连续性
-# 中断（7 天零记录）在这里亮 ⚠️（可选观测，不判核心故障）。
+# v3.18: 值班巡检趋势统计口径重做（check_shift_log 于 v3.16 引入）。
+# shift_log.md 是值班会话的巡检/处置流水（人工+会话写入），doctor 只读
+# 不写。语义沿 sogou_recovery_log 先例（可选观测项，缺省静默）：缺文件/
+# 空文件/全坏行 = 可选观测项未启用，不报警不判故障；有记录但近 7 天
+# 零记录 = 值班连续性中断，亮 ⚠️（optional，不判核心故障）。
 SHIFT_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
                               "shift_log.md")
 SHIFT_LOG_WINDOW_DAYS = 7
-# 疑似异常关键词（从 2026-09-16 真实 shift_log 内容归纳：❌ 标记、通道故
-# 障、风控/限流、引擎不健康、恶化）。启发式：好转记录（如"不健康 4→1"）
-# 也会命中——输出里明确叫"疑似异常"，是趋势观测不是精确审计，误报可接受。
-SHIFT_LOG_ANOMALY_KEYWORDS = ("❌", "异常", "故障", "恶化", "CAPTCHA",
-                              "限流", "403", "不健康", "断线", "风控",
-                              "失败")
+# 关键事件关键词：纯字面计数（大小写敏感子串匹配，不做 NLP）——统计窗口
+# 内含该字样的行数，一行可同时命中多个关键词、各自独立计数。（从
+# 2026-09-16 真实 shift_log 归纳：restart=引擎/容器重启动作、处置=运维
+# 处置动作、❌=检查失败标记、恶化=健康度转差描述。）
+SHIFT_LOG_EVENT_KEYWORDS = ("restart", "处置", "❌", "恶化")
 
 _results = []
 
@@ -191,12 +195,24 @@ _SHIFT_TIME_ONLY_RE = re.compile(r"^\[(\d{2}:\d{2})\]\s?(.*)$")
 
 
 def _shift_log_stats(path, now, window_days=SHIFT_LOG_WINDOW_DAYS):
-    """解析值班流水，返回 (窗口内条目数, 覆盖天数, 疑似异常条目列表)。
+    """解析值班流水，返回统计 dict；文件缺失返回 None。
+
+    返回字段（count/days/per_day/events/last 只统计窗口内条目；
+    total/last_any 是全文件口径，供 check 层区分"未启用"与"连续性中断"）：
+        total:     全文件可解析条数
+        count:     窗口内条目数
+        days:      窗口内覆盖天数
+        per_day:   [(date, 条数), ...] 每天条数分布，按日期升序
+        events:    {关键词: 含该字样的行数}（SHIFT_LOG_EVENT_KEYWORDS，
+                   纯字面计数，一行可命中多个关键词、各自独立计数）
+        last:      (时间戳字符串, 首 80 字摘要) 窗口内文件顺序最后一条
+        last_any:  同 last 形态但不限窗口（全文件最后一条，连续性报警
+                   消息里引用，让"断了多久"可见）
 
     条目格式：`[YYYY-MM-DD HH:MM] 内容`；`[HH:MM] 内容`（值班当场省写
-    日期，继承上一条带日期条目的日期——文件头部无日期可继承时跳过）。
-    无 `[…]` 前缀的行、日期非法的行均跳过不计数（append-only 手写流水，
-    坏行不应让统计崩溃，与 _last_valid_entry 同款防御）。
+    日期，继承上一条带日期条目的日期——文件头部无日期可继承时跳过，
+    测试钉死）。无 `[…]` 前缀的行、日期非法的行均跳过不计数（append-only
+    手写流水，坏行不应让统计崩溃，与 _last_valid_entry 同款防御）。
 
     窗口 = now.date() 往前共 window_days 个自然日（含今天）。班次边界
     无法从流水可靠识别（无固定班次开始标记），故口径为"记录条数 + 覆盖
@@ -209,9 +225,12 @@ def _shift_log_stats(path, now, window_days=SHIFT_LOG_WINDOW_DAYS):
         return None
     today = now.date()
     cutoff = today - timedelta(days=window_days - 1)
+    total = 0
     count = 0
-    days = set()
-    anomalies = []
+    per_day_counter = {}
+    events = {k: 0 for k in SHIFT_LOG_EVENT_KEYWORDS}
+    last = None
+    last_any = None
     last_date = None
     for ln in lines:
         s = ln.strip()
@@ -223,44 +242,60 @@ def _shift_log_stats(path, now, window_days=SHIFT_LOG_WINDOW_DAYS):
                 d = date.fromisoformat(m.group(1))
             except ValueError:
                 continue
-            last_date, text = d, m.group(3)
+            last_date, ts, text = d, f"{m.group(1)} {m.group(2)}", m.group(3)
         else:
             m = _SHIFT_TIME_ONLY_RE.match(s)
             if not m or last_date is None:
                 continue
             d, text = last_date, m.group(2)
+            ts = f"{d.isoformat()} {m.group(1)}"
+        total += 1
+        last_any = (ts, text[:80])
         if not (cutoff <= d <= today):
             continue
         count += 1
-        days.add(d)
-        if any(k in text for k in SHIFT_LOG_ANOMALY_KEYWORDS):
-            anomalies.append(f"{d.isoformat()} {text[:60]}")
-    return count, len(days), anomalies
+        per_day_counter[d] = per_day_counter.get(d, 0) + 1
+        for k in events:
+            if k in text:
+                events[k] += 1
+        last = (ts, text[:80])
+    return {"total": total, "count": count,
+            "days": len(per_day_counter),
+            "per_day": sorted(per_day_counter.items()),
+            "events": events, "last": last, "last_any": last_any}
 
 
 def check_shift_log():
-    """值班巡检趋势（v3.16，可选观测）：近 7 天记录条数/覆盖天数/疑似异
-    常项数，让值班连续性与历史异常趋势在 doctor 一眼可见。
+    """值班巡检趋势（v3.16 引入，v3.18 统计口径重做；可选观测）：近 7 天
+    记录条数/覆盖天数/每日分布/关键事件计数/最近一条摘要，让值班连续性
+    与异常趋势在 doctor 一眼可见。
 
-    - 缺文件 / 近 7 天零记录 → ⚠️（值班连续性中断的可观测报警；shift_log
-      是人工/会话产物不是自动钩子，故可选不判核心故障）
-    - 疑似异常 = 内容命中关键词表的条目（启发式，见常量注释），只展示
-      不判故障——异常是值班期间已观测/处置的事实，这里负责让它可见。
+    语义沿 sogou_recovery_log 先例（可选观测项，缺省静默）：
+    - 缺文件 / 空文件 / 全坏行（无可解析记录）→ 返回"未启用"说明，
+      **不报警不判故障**（shift_log 是人工/会话产物，没人写不算故障）
+    - 有记录但近 7 天零记录 → ⚠️（值班连续性中断的可观测报警，optional
+      不判核心故障）
+    - 事件计数 = 含 SHIFT_LOG_EVENT_KEYWORDS 字样的行数（纯字面启发式，
+      趋势观测不是精确审计）
     """
     stats = _shift_log_stats(SHIFT_LOG_PATH, datetime.now())
     if stats is None:
-        raise RuntimeError("shift_log.md 不存在（无值班记录，趋势不可见）")
-    count, days, anomalies = stats
-    if count == 0:
-        raise RuntimeError(f"近 {SHIFT_LOG_WINDOW_DAYS} 天无班次记录"
-                           f"（值班连续性中断？）")
-    head = (f"近 {SHIFT_LOG_WINDOW_DAYS} 天记录 {count} 条"
-            f"（覆盖 {days} 天），疑似异常 {len(anomalies)} 项")
-    if anomalies:
-        shown = "; ".join(anomalies[:3])
-        more = f" 等 {len(anomalies)} 项" if len(anomalies) > 3 else ""
-        return f"{head}（关键词启发式）: {shown}{more}"
-    return head
+        return ("shift_log.md 不存在——可选观测未启用，不报警"
+                "（值班流水写入后本项自动显示）")
+    if stats["total"] == 0:
+        return ("shift_log.md 无可解析记录（空/全坏行）——"
+                "可选观测未启用，不报警")
+    if stats["count"] == 0:
+        last_ts = stats["last_any"][0] if stats["last_any"] else "?"
+        raise RuntimeError(f"shift_log 近 {SHIFT_LOG_WINDOW_DAYS} 天零记录"
+                           f"（最近一条 {last_ts}）——值班连续性中断？")
+    per_day = "，".join(f"{d.isoformat()}:{n}"
+                        for d, n in stats["per_day"])
+    events = " ".join(f"{k}×{v}" for k, v in stats["events"].items())
+    last_ts, last_text = stats["last"]
+    return (f"近 {SHIFT_LOG_WINDOW_DAYS} 天记录 {stats['count']} 条，"
+            f"覆盖 {stats['days']} 天（{per_day}）；"
+            f"事件计数: {events}；最近一条 [{last_ts}] {last_text}")
 
 
 def check_bilibili():
@@ -286,12 +321,21 @@ def check_google_bridge():
 
 
 def check_github():
-    # v3.11: 走 _get（UA 头 + 绕代理 opener），与其余 6 项检查同款通道。
+    # v3.11: 走 _get（UA 头 + 绕代理 opener），与其余检查同款通道。
     # 实测（2026-09-16）：裸 urlopen 的默认 UA（Python-urllib/3.x）被 GitHub
     # 按 IP 强限流，长期稳定 403 "rate limit exceeded for <IP>"；同 IP 同
     # 分钟带 UA 直连即 200。root cause 是漏 UA，不是配额真耗尽。
-    _get("https://api.github.com/")
-    return "API 匿名可达 (200)"
+    # v3.18: 可选 GITHUB_TOKEN（tools/github/github_client.py 同款约定）——
+    # 匿名 60 req/h 是本 IP 全部 GitHub 调用共享的配额，值班日志
+    # 2026-09-16 08:52/09:03 两班连续撞限流窗口（doctor 403、同刻独立
+    # curl 直连全 200）；设置后本检查带 Authorization: Bearer（5000/h），
+    # 不再吃匿名配额。未设置时维持匿名可达性观测（可选配置缺失不是故障）。
+    headers = {"User-Agent": "ai-search-stack-doctor"}
+    token = (os.environ.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    _get("https://api.github.com/", headers=headers)
+    return f"API 可达 (200, {'Bearer 认证' if token else '匿名'})"
 
 
 # ---- v3.8.2: --cookie-probe（cookie 寿命标定，独立于全量巡检） ----

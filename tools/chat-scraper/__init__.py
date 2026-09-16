@@ -1,4 +1,4 @@
-"""chat-scraper v3.17.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.18.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -70,8 +70,17 @@ v318-batch-wip 让出工作区）：claim 先 O_EXCL 原子建伴生标记
 接管——tmp + os.replace 原子覆盖 + 读回校验保并发接管单一赢家；
 complete 只删自己的标记（别人的删不掉）；clear 原子清空队列。
 Windows/POSIX 双兼容纯标准库。
+
+v3.18.0：doctor 值班巡检趋势统计口径重做（shift_log.md 近 7 天：记录
+条数/覆盖天数/每日条数分布/关键事件计数[restart/处置/❌/恶化 纯字面
+大小写敏感子串，一行可命中多词]/最近一条时间戳+首 80 字摘要；缺文件/
+空/全坏行=可选观测未启用不报警，有记录但 7 天零记录亮 ⚠️ 连续性中断，
+optional 不判核心故障——沿 sogou_recovery_log 先例）+ doctor GitHub
+检查可选 GITHUB_TOKEN 认证（设置后带 Authorization: Bearer 头，缓解
+匿名 60 req/h 共享配额的限流窗口误报，tools/github/github_client.py
+同款约定）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.17.0"
+__version__ = "3.18.0"
 __all__ = ["search", "list_platforms", "__version__"]
