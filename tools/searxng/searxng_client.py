@@ -29,11 +29,15 @@ SearXNG 是一个开源元搜索引擎（聚合 Google/Bing/DuckDuckGo 等）。
                                    # 此语义，实测 v3.19 startpage 禁用期
                                    # 单发 10 行即证）。
 
-    engines= 语义两形态（v3.25 实网受控对照钉，判词在 settings.yml v3.25 段）:
-        search(engines=X)  # 恒传 categories → 「默认集 ∪ 点名」：默认引擎
-                           # 照常调度（实测 google cse 混入同场返回）
-        probe(q, X)        # 不传 categories → engines= 严格收窄，只调度
-                           # 点名引擎（单发探活的可比性依赖此语义）
+    engines= 语义统一（v3.26 行为级变更落地；取证链 settings.yml v3.25/
+    v3.26 段）：engines= 显式点名 → 弃 categories，search() 与 probe()
+    同为严格收窄只调度点名引擎。
+        历史（v3.25 及以前）：search() 恒传 categories → engines= 是
+        「默认集 ∪ 点名」，实测默认引擎混入同场返回（google cse 6 行
+        混入 brave,wikipedia 查询，gate-1.5 因此不可靠；v3.25 受控对照
+        单变量钉死）。v3.26 取证落地：MCP searxng_search 不暴露 engines、
+        search(engines=) 生产调用方为零（仅测试钉）→ 零回归面，两形态
+        统一为严格收窄。
 
 注意:
     实例必须允许 JSON 输出（settings.yml: search.formats 含 json），
@@ -79,10 +83,10 @@ def search(
         engines: SearXNG engines= 参数（逗号分隔引擎名；None=默认引擎集）。
             追加在 on_error 之后（v3.23）：既有调用方按位置传参不断链。
             探活/诊断用；常规搜索留 None。单引擎探活优先用 probe()。
-            注意（v3.25 实测）：本函数恒传 categories，engines= 在这里是
-            「默认集 ∪ 点名」语义（默认引擎照常调度）；要严格只调度点名
-            引擎（不含默认集）用 probe()。行为级变更（engines= 时弃
-            categories 换严格收窄）立项未决，改前本注释即契约。
+            v3.26 行为级变更：engines= 显式点名时弃 categories → 严格
+            收窄（与 probe() 同语义；v3.25 及以前恒传 categories，是
+            「默认集 ∪ 点名」、实测默认引擎混入——取证与裁决见
+            settings.yml v3.25/v3.26 段）。
 
     Returns:
         [{title, url, content, engine, category, vendor, role, since}, ...]
@@ -98,7 +102,11 @@ def search(
             if time_range:          # 未知 since 映射为空串：不加参数（URL 干净）
                 params["time_range"] = time_range
         if engines:                 # None/空串不加参数（URL 干净）
+            # v3.26 严格收窄：engines= 显式点名时弃 categories（与 probe()
+            # 同语义；v3.25 及以前恒传 categories=「默认集 ∪ 点名」，实测
+            # 默认引擎混入同场返回——取证见 settings.yml v3.25/v3.26 段）
             params["engines"] = engines
+            del params["categories"]
 
         url = f"{instance}/search?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": "ai-search-stack/2.0"})

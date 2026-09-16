@@ -1,5 +1,41 @@
 # Changelog
 
+## [3.26.0] - 2026-09-17
+
+### 🎯 判据 v2 第二次实战（brave gate-1 fail + 跨度双拦，gate-2 不烧）+ search(engines=) 语义统一（严格收窄落地）
+
+- **第八轮采样（预算 3/5，同题 q="python"；余 2 发未烧）= 判据 v2
+  第二次实战**：brave gate-1 未过（01:23:10，rows=0，unresponsive
+  "brave: timeout"，有效观测非传输故障）→ **streak 4→0 诚实归零**
+  （v3.20/23/24/25 四连断于首发起）；裁决 a) ✗（gate-1 fail 一票
+  否决）c) ✗（streak 起点 v3.20 09-16 21:53 收工前，距本次探活
+  ~3.5h << 24h，上轮预注册「09-18 前不足 24h」继续兑现）→
+  **gate-2 不烧**。意外强化：4 连 streak 在跨度未满时被一发打破——
+  「3h 窗口运气」风险实测成立，c) 条设计正确性拿到反向证据（若上轮
+  仅按 a)+b) 烧关，本轮 brave 恰处 timeout 态；示意性而非判词，
+  gate-2 路径与单发探活不同构）。ddg gate-1 未过（01:23:37，rows=0，
+  "duckduckgo: timeout"）streak 维持 0 归零后第 4 fail——**症状变异
+  首录**（v3.15~v3.25 七轮逐字 CAPTCHA → 本轮 timeout；逐字复发
+  口径首次失配，单观测不定性，处置不变维持禁用）；startpage 止损期
+  跳过；三引擎维持全禁
+- **实例级降级窗口闭环**：默认聚合（01:24:19，~2s）20 行全部
+  google cse——v3.25 收官 00:55:41 的 0 行降级窗口已恢复（行数地板
+  活体案例闭环：降级窗 0 行 → 本轮 20 行，SEARXNG_MIN_ROWS=3 若在
+  降级窗口跑 doctor 会亮 ⚠️）；实例级波动不调整三引擎禁用状态
+- **search(engines=) 语义统一（v3.25 立项项，本轮取证后落地）**：
+  engines= 显式点名时弃 categories → 严格收窄，与 probe() 同语义。
+  取证链：v3.25 受控对照实证旧「默认集 ∪ 点名」混入 google cse
+  （实害：gate-1.5 不可靠）+ 本轮取证 MCP searxng_search 不暴露
+  engines、search(engines=) 生产调用方为零（仅测试钉）→ 零回归面。
+  默认路径（engines=None）categories=general 生产行为不变
+- 测试 408→418 通过（test_v3260：统一语义行为钉 ×4 + 代码机制落点钉
+  + settings v3.26 段与三引擎维持全禁钉 ×2 + 版本锁 3.26.0 ×2 共
+  9 钉；test_v3250 union 语义钉随契约翻转为严格收窄 + 新增默认路径
+  不变钉 + 精确版本锁降常青移交 test_v3260——v3.24→v3.25 先例延续），
+  连续两轮全绿 + clean-worktree 收工检查
+
+[3.26.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.26.0
+
 ## [3.25.0] - 2026-09-17
 
 ### 🎯 判据 v2 首次实战（c) 跨度未达标，gate-2 不烧）+ gate-1.5 实网首验未过 + engines= 语义两形态钉

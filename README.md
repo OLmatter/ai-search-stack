@@ -2,13 +2,25 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.25.0](https://img.shields.io/badge/release-v3.25.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.25.0)
+[![Release: v3.26.0](https://img.shields.io/badge/release-v3.26.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.26.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 408 passing](https://img.shields.io/badge/tests-408%20passing-success.svg)](tests/)
+[![Tests: 418 passing](https://img.shields.io/badge/tests-418%20passing-success.svg)](tests/)
 
-**v3.25.0（2026-09-17）**：v3.0 全面审计大修之后连续二十六轮迭代——
-判据 v2 首次实战（brave gate-1 过 streak 3→4 四连，但 streak 跨度
+**v3.26.0（2026-09-17）**：v3.0 全面审计大修之后连续二十七轮迭代——
+判据 v2 第二次实战（brave gate-1 fail，01:23:10 "brave: timeout"
+rows=0 → **streak 4→0 诚实归零**；a) fail 一票否决 + c) 跨度 ~3.5h
+<< 24h 双拦 **gate-2 不烧**——4 连 streak 在跨度未满时一发即断，
+「3h 窗口运气」风险实测成立，c) 条拿到反向证据）、ddg gate-1 fail
+**症状变异首录**（v3.15~v3.25 七轮逐字 CAPTCHA → 本轮 timeout，
+归零后第 4 fail，维持禁用）、实例级降级窗口闭环（v3.25 收官 0 行 →
+本轮 20 行全 google cse，行数地板活体案例）、**search(engines=)
+语义统一落地**（v3.25 立项项取证后实施：engines= 显式点名弃
+categories 换严格收窄，与 probe() 同语义；取证 MCP 不暴露 engines、
+生产调用方为零 → 零回归面；默认路径 categories=general 行为不变），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十六轮：判据 v2 首次实战（brave gate-1 过 streak 3→4 四连，但 streak 跨度
 ≤2.9h << 24h → 复合资格未齐 **gate-2 不烧**——c) 条件按设计拦下 3h
 窗口内的提前烧关，正是 v3.20 烧关复发的教训）、gate-1.5 实网首验未过
 不进库（**engines= 语义两形态分裂**：search() 恒传 categories =
