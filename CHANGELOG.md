@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.21.0] - 2026-09-16
+
+### 🎯 cookie 寿命标定首批数据分析 + doctor GBK 控制台加固 + stop_wake 部署一致性核验
+
+- **36h 续期阈值维持（数据驱动裁决）**：`state/cookie_lifetime_log.jsonl` 全量 7 读数（探活 v3.8.2 上线以来全部样本）——唯一死亡实测 47.38h 即 403（该 cookie 09-13 21:49 UTC 签发，存活期间知乎调用零自愈记录，≈47.4h 是真实寿命而非"早死未观察"）；36h < 47.38h（余量 ≥11.4h），n=1 不够调参，维持不变；续期机制实战首例 1/1 成功（47.92h expired → renew ok: d_c0(Y) __zse_ck(len=261)），valid 读数零误触发（renew=false ×2），触发频率预期 ≈ 每 1-2 天一次随实际知乎用量浮动
+- **续期入口现状如实入档**：未部署 cron（schtasks 仅 `ai-search-sogou-probe` 一项）——docstring/帮助文本原"cron 例：每日 9 点"是建议例而非部署事实，措辞已修正；MCP doctor cookie 模式恒为纯标定不续期（`cmd_cookie_probe()` 无参调用，保真实寿命数据流，测试钉死）
+- **doctor GBK 控制台加固**：sogou cron 部署调试期实录 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2705'`（~/.zcode/sogou_probe_cron.log）——probe_once 先落账故读数未丢，但报告与退出码被杀；新增 `_make_stdout_robust()`（errors="replace"，编码本身不动；StringIO/MCP 路径无 reconfigure 原样放行）挂 main() 入口
+- **stop_wake 部署副本一致性核验**：cmp 部署副本 vs 仓库真源字节级一致（21:40 重部署未漂移）；接线确认（~/.zcode/cli/config.json hooks.Stop → 部署副本，10s 超时）；实战面：v3.20 已录今晨 8:37→8:52 钩子唤醒首验 + 本批次 21:45 认领 sidecar 实迹（worker_queue.json.claim.json）；观察盲区如实声明——钩子无决策日志（设计即无），"加 append-only 决策日志"留待下轮评估
+- **队列卫生**：本批次接手时 worker_queue.json 含 v3.20 残留指令（其①②④已由 837501a 完成、③即本批次 stop_wake 核验）——收工经 worker_queue.clear() 清空；时间线存证：队列 mtime 21:44:09 早于 v3.20.0 提交 21:53:08
+- 测试 346→352（test_v3210：GBK 加固 3 钉 + MCP 纯标定钉 + 版本锁 3.21.0 + CHANGELOG 钉），版本锁 3.21.0
+
+[3.21.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.21.0
+
 ## [3.20.0] - 2026-09-17
 
 ### 🎯 SearXNG 单引擎两关制第四轮：ddg 回滚生效、brave 恢复判据升级、stop_wake 实战首验

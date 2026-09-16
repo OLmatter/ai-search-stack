@@ -397,8 +397,14 @@ def cookie_probe(entry_path=COOKIE_LOG_PATH,
 
     v3.9 --renew-if-older-than H（默认 None=关闭，保持纯标定行为）：探活
     发现 status=expired 且 cookie 龄 > H 小时时，顺手动用一次无头引导续期
-    （凌晨/低峰 cron 窗口把续期做掉，白天首次使用零延迟）。实测标定：访客
-    cookie 寿命 <48h（47.4h 即 403），cron 例 `--renew-if-older-than 36`。
+    （低峰窗口把续期做掉，白天首次使用零延迟）。v3.21 标定结论（2026-09-16
+    全量 7 读数，唯一死亡实测）：访客 cookie 寿命 ≈47.4h（47.38h 即 403），
+    36h 阈值与其兼容（余量 ≥11.4h），维持不变——n=1 不够调阈值，等更多
+    死亡样本；renew 实战首例 1/1 成功（47.92h expired → ok，见日志 renew
+    字段），valid 读数零误触发。触发频率预期 ≈ 每 1-2 天一次（随实际知乎
+    用量浮动）。续期入口现状：未部署 cron（schtasks 仅 sogou 探活一项），
+    由班次/agent 显式执行 `--renew-if-older-than 36`；MCP doctor cookie
+    模式恒为纯标定不续期（保真实寿命数据流）。
     标定读数在本函数内先落定、续期在其后，不污染本次读数；续期结果记进
     同一读数行的 renew/renew_result 字段。只动 expired 读数：missing 是
     "没戴表"（引导也能治，但龄读数为 None 无从判超龄，且行为不同，留给
@@ -529,7 +535,25 @@ def cmd_sogou_probe() -> int:
     return 0
 
 
+def _make_stdout_robust():
+    """v3.21: GBK 控制台加固——✅/🪦/❌ 等 emoji 在 GBK 编码管道下直接
+    UnicodeEncodeError 崩掉整份报告（2026-09-16 sogou cron 部署调试期实录，
+    ~/.zcode/sogou_probe_cron.log；读数已由 probe_once 先落账未丢，但报告
+    与退出码被杀）。errors="replace" 让不可编码字符退化为 '?'，编码本身
+    不动（不假装终端是 UTF-8）。StringIO（MCP 重定向路径）无 reconfigure，
+    原样放行——print 进 StringIO 本就无编码问题。加固失败不掩盖主流程。
+    """
+    out = sys.stdout
+    if out is not None and hasattr(out, "reconfigure"):
+        try:
+            out.reconfigure(errors="replace")
+        except (ValueError, OSError):   # 已关闭的流等极端态
+            pass
+    return out
+
+
 def main(argv=None) -> int:
+    _make_stdout_robust()
     import argparse
     p = argparse.ArgumentParser(
         description="ai-search-stack 工具箱体检（全量巡检或单项标定）")
@@ -542,9 +566,11 @@ def main(argv=None) -> int:
                    help="配合 --cookie-probe：探活发现 cookie 已 expired 且"
                         "龄 > H 小时时，顺手动用一次无头引导续期（headless，"
                         "低峰窗口把续期做掉，白天使用零延迟）。默认关闭=纯"
-                        "标定观测。实测访客 cookie 寿命 <48h，cron 例：每日 "
-                        "9 点 `python tools/doctor.py --cookie-probe "
-                        "--renew-if-older-than 36`。续期失败 exit 1")
+                        "标定观测。v3.21 标定：访客 cookie 寿命 ≈47.4h，"
+                        "36h 阈值维持。可选 cron 例（当前未部署，由班次/"
+                        "agent 按需执行）：`python tools/doctor.py "
+                        "--cookie-probe --renew-if-older-than 36`。"
+                        "续期失败 exit 1")
     p.add_argument("--sogou-probe", action="store_true",
                    help="只跑搜狗恢复曲线单发探活（v3.14，真实发一次搜索，"
                         "判定与 search 同判据，读数含距上次风控秒数追加 "

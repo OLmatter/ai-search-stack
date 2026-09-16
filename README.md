@@ -2,17 +2,24 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.20.0](https://img.shields.io/badge/release-v3.20.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.20.0)
+[![Release: v3.21.0](https://img.shields.io/badge/release-v3.21.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.21.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 346 passing](https://img.shields.io/badge/tests-346%20passing-success.svg)](tests/)
+[![Tests: 352 passing](https://img.shields.io/badge/tests-352%20passing-success.svg)](tests/)
 
-**v3.20.0（2026-09-17）**：v3.0 全面审计大修之后连续二十一轮迭代——
-duckduckgo 两关双过回滚生效（聚合无 ddg，与 brave 同场对照实证"单发
-可信度因引擎而异"）、brave 四轮数据实证其单发可信度不可靠（恢复判据
-升级观察继续）、mojeek 首探 access denied 排除、stop_wake 强制条款版
-实战首验（本班次即被钩子唤醒）、claim 固化进领活入口（根因修复），
+**v3.21.0（2026-09-16）**：v3.0 全面审计大修之后连续二十二轮迭代——
+cookie 寿命标定首批数据分析（7 读数/唯一死亡实测 47.38h，36h 续期阈值
+维持：n=1 不够调参；renew 实战首例 1/1 成功零误触发）、续期入口现状
+如实入档（无 cron 部署，MCP cookie 模式恒为纯标定）、doctor GBK 控制
+台加固（cron 实录 UnicodeEncodeError 不再崩报告）、stop_wake 部署副本
+字节级核验一致（接线+sidecar 实迹），
 详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十一轮：duckduckgo 两关双过回滚生效（聚合无 ddg，与 brave 同场对照
+实证"单发可信度因引擎而异"）、brave 四轮数据实证其单发可信度不可靠
+（恢复判据升级观察继续）、mojeek 首探 access denied 排除、stop_wake
+强制条款版实战首验（本班次即被钩子唤醒）、claim 固化进领活入口（根因
+修复），详见 [CHANGELOG.md](CHANGELOG.md)。
 此前
 二十轮：claim
 固化进领活入口（worker_queue.acquire() 认领+读队列一步完成，
