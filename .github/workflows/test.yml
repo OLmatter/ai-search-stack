@@ -22,15 +22,16 @@ jobs:
         shell: bash
         run: |
           python -c "import pathlib,sys; bad=[str(p) for p in pathlib.Path('tools').rglob('*.py') if p.read_bytes() and p.read_bytes().replace(b'\x00',b'')==b'']; print('NUL files:',bad or 'none'); sys.exit(1 if bad else 0)"
-      - name: Bash syntax check（仅 Linux 有 bash 语义意义）
+      - name: Bash syntax check（仅 Linux 有 bash 语义意义；nullglob 防零匹配 glob 在 bash -e 下误红）
         if: runner.os == 'Linux'
         run: |
+          shopt -s nullglob
           for f in tools/*/*.sh tools/*/*/*.sh; do
-            [ -f "$f" ] && bash -n "$f"
+            bash -n "$f"
           done
-      - name: Install test deps（requests 为 tests 顶层依赖，盲测抓出的 CI 红根因）
+      - name: Install test deps（requests/bs4/lxml 为 tests import 链依赖，盲测两轮抓出的 CI 红根因）
         shell: bash
-        run: pip install requests
+        run: pip install requests beautifulsoup4 lxml
       - name: Offline unit tests（零网络依赖）
         shell: bash
         run: python -m unittest discover -s tests -p "test_*.py" -v
