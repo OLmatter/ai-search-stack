@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.15.0"
+__version__ = "3.16.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -438,9 +438,10 @@ def googlebridge_search(q: str,
 
 @mcp.tool(description=(
     "ai-search-stack 工具箱体检：巡检全部通道健康并返回文本报告。\n"
-    "mode 三态（默认 full）：full=全量巡检（7 项：本地 SearXNG 实例、知乎 "
+    "mode 三态（默认 full）：full=全量巡检（8 项：本地 SearXNG 实例、知乎 "
     "cookie、标定钩子活性[覆盖 cookie+sogou 两个标定日志]、bilibili 官方 "
-    "API、百度直连、google-bridge 服务、GitHub API）；cookie=只跑知乎 cookie "
+    "API、百度直连、google-bridge 服务、GitHub API、值班巡检趋势[shift_log "
+    "近 7 天条数/覆盖天数/疑似异常]）；cookie=只跑知乎 cookie "
     "寿命标定探活（真实调一次 questions API，读数追加 "
     "state/cookie_lifetime_log.jsonl，禁自愈保真实寿命）；sogou=只跑搜狗恢复"
     "曲线单发探活（真实发一次搜索，读数含距上次风控秒数追加 "

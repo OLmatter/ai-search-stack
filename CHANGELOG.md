@@ -1,5 +1,45 @@
 # Changelog
 
+## [3.16.0] - 2026-09-16
+
+### 🎯 值班巡检趋势进 doctor + SearXNG 禁用引擎恢复观察（维持禁用）
+
+职业团队循环批次。零业务引擎改动（chat-scraper 本包零代码改动，版本
+对齐 v3.8.2 先例）；真实网络消耗：SearXNG 本地 4 发（三引擎 enabled_
+engines 单发探活 3 + 回滚后 doctor 聚合实测 1），知乎/百度/文心 0 发。
+
+### Added
+- `tools/doctor.py`：**值班巡检趋势检查**（check_shift_log，第 8 项
+  巡检，optional）——读 `tools/chat-scraper/state/shift_log.md` 统计
+  近 7 天记录条数/覆盖天数/疑似异常项数，值班连续性与历史异常趋势在
+  doctor 一眼可见；`[HH:MM]` 省日期行继承上一条带日期条目的日期，坏行/
+  非法日期/头部无日期可继承均跳过不计数（append-only 手写流水的防御
+  与 `_last_valid_entry` 同哲学）；缺文件/近 7 天零记录 → ⚠️（值班
+  连续性中断可观测，但 shift_log 是人工产物不是自动钩子，不判核心
+  故障）；疑似异常 = 内容命中关键词表（❌/异常/故障/恶化/CAPTCHA/
+  限流/403/不健康/断线/风控/失败，从 2026-09-16 真实 shift_log 归纳）
+  ——启发式，好转记录（如"不健康 4→1"）也会命中，输出里明确声明
+  "关键词启发式"，只展示不判故障；班次边界无法从流水可靠识别，口径
+  为"记录条数 + 覆盖天数"不假装数"班次次数"
+- `tools/mcp_server.py`：doctor 工具描述同步 full 模式 8 项清单（含
+  值班巡检趋势）；mcp doctor mode=full 复用 main()，新检查自动包含
+
+### Changed
+- `tools/searxng/docker/searxng/settings.yml`：**v3.15 禁用引擎恢复
+  观察（结论：维持禁用）**——brave/duckduckgo/startpage 经 enabled_
+  engines 参数单发探活全部通过（brave 21 / ddg 21 / startpage 20 条，
+  unresponsive 均空），但按文件内恢复方法回滚启用 + docker compose
+  restart 后首次聚合搜索三引擎即全部复发（too many requests /
+  CAPTCHA / parsing error，doctor 21 条结果同场实测）；**实证结论：
+  单发探活通过 ≠ 可回滚**，恢复判据必须是 restart 后聚合搜索
+  unresponsive 清零；观察记录与两关再评估方法写进 settings.yml 注释，
+  禁用条目原样保留
+
+### 评估未立项（先取证再立项，证据不足不动手）
+- doctor 展示禁用引擎名单：需二次 /config 请求或解析 yaml，无高频
+  痛点证据（引擎名单变化以 git diff settings.yml 即可审计），不动
+- shift_log 单项 CLI 模式：检查纯本地零网络，全量巡检已覆盖，不加
+
 ## [3.15.0] - 2026-09-16
 
 ### 🎯 钩子活性双日志 + mcp doctor 子模式 + SearXNG 实例引擎调优

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """ai-search-stack 工具箱体检（doctor）—— 一条命令巡检全部通道健康。
 
-巡检项（7 = 5 网络探活 + 2 本地状态）：
+巡检项（8 = 5 网络探活 + 3 本地状态）：
     - 本地 SearXNG 实例（zhihu 链第一环）：存活 + unresponsive_engines
     - 知乎 cookie：文件存在性 + 年龄（v3.4 起过期可自愈，但仍值得观测）
     - 标定钩子活性（v3.8.2，v3.15 扩展）：周期探活的最后读数 >48h = 钩子
@@ -13,6 +13,8 @@
     - google-bridge 服务：/health（通常按需启动，未起不算故障）
     - GitHub API：匿名可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
       UA 会被 GitHub 按 IP 强限流成永久 403，见 check_github 注释）
+    - 值班巡检趋势（v3.16）：shift_log.md 近 7 天记录条数/覆盖天数/疑似
+      异常项数——让值班连续性与历史异常趋势在 doctor 输出可见
 
 用法:
     python tools/doctor.py                  # 全量巡检，逐项 ✅/❌/⚠️
@@ -29,10 +31,11 @@
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 SEARXNG = os.environ.get("SEARXNG_INSTANCE", "http://127.0.0.1:8888")
@@ -54,6 +57,19 @@ PROBE_QUESTION_ID = "19550227"   # bootstrap 同款知名问题，仅作 API 探
 # search 同判据）。日志在 state/ 下（已 gitignore，只留本地）。
 SOGOU_RECOVERY_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
                                        "sogou_recovery_log.jsonl")
+
+# v3.16: 值班巡检趋势（check_shift_log）。shift_log.md 是值班会话的巡检/
+# 处置流水（人工+会话写入），doctor 只读不写——趋势在这里可见，连续性
+# 中断（7 天零记录）在这里亮 ⚠️（可选观测，不判核心故障）。
+SHIFT_LOG_PATH = os.path.join(_TOOL_DIR, "chat-scraper", "state",
+                              "shift_log.md")
+SHIFT_LOG_WINDOW_DAYS = 7
+# 疑似异常关键词（从 2026-09-16 真实 shift_log 内容归纳：❌ 标记、通道故
+# 障、风控/限流、引擎不健康、恶化）。启发式：好转记录（如"不健康 4→1"）
+# 也会命中——输出里明确叫"疑似异常"，是趋势观测不是精确审计，误报可接受。
+SHIFT_LOG_ANOMALY_KEYWORDS = ("❌", "异常", "故障", "恶化", "CAPTCHA",
+                              "限流", "403", "不健康", "断线", "风控",
+                              "失败")
 
 _results = []
 
@@ -168,6 +184,83 @@ def check_hook_liveness():
         parts.append(f"sogou 最后读数 {sogou_age_h:.1f}h 前"
                      f"（{'blocked' if sogou.get('blocked') else 'ok'}）")
     return "; ".join(parts)
+
+
+_SHIFT_ENTRY_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\]\s?(.*)$")
+_SHIFT_TIME_ONLY_RE = re.compile(r"^\[(\d{2}:\d{2})\]\s?(.*)$")
+
+
+def _shift_log_stats(path, now, window_days=SHIFT_LOG_WINDOW_DAYS):
+    """解析值班流水，返回 (窗口内条目数, 覆盖天数, 疑似异常条目列表)。
+
+    条目格式：`[YYYY-MM-DD HH:MM] 内容`；`[HH:MM] 内容`（值班当场省写
+    日期，继承上一条带日期条目的日期——文件头部无日期可继承时跳过）。
+    无 `[…]` 前缀的行、日期非法的行均跳过不计数（append-only 手写流水，
+    坏行不应让统计崩溃，与 _last_valid_entry 同款防御）。
+
+    窗口 = now.date() 往前共 window_days 个自然日（含今天）。班次边界
+    无法从流水可靠识别（无固定班次开始标记），故口径为"记录条数 + 覆盖
+    天数"，不假装能数出"班次次数"。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    today = now.date()
+    cutoff = today - timedelta(days=window_days - 1)
+    count = 0
+    days = set()
+    anomalies = []
+    last_date = None
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        m = _SHIFT_ENTRY_RE.match(s)
+        if m:
+            try:
+                d = date.fromisoformat(m.group(1))
+            except ValueError:
+                continue
+            last_date, text = d, m.group(3)
+        else:
+            m = _SHIFT_TIME_ONLY_RE.match(s)
+            if not m or last_date is None:
+                continue
+            d, text = last_date, m.group(2)
+        if not (cutoff <= d <= today):
+            continue
+        count += 1
+        days.add(d)
+        if any(k in text for k in SHIFT_LOG_ANOMALY_KEYWORDS):
+            anomalies.append(f"{d.isoformat()} {text[:60]}")
+    return count, len(days), anomalies
+
+
+def check_shift_log():
+    """值班巡检趋势（v3.16，可选观测）：近 7 天记录条数/覆盖天数/疑似异
+    常项数，让值班连续性与历史异常趋势在 doctor 一眼可见。
+
+    - 缺文件 / 近 7 天零记录 → ⚠️（值班连续性中断的可观测报警；shift_log
+      是人工/会话产物不是自动钩子，故可选不判核心故障）
+    - 疑似异常 = 内容命中关键词表的条目（启发式，见常量注释），只展示
+      不判故障——异常是值班期间已观测/处置的事实，这里负责让它可见。
+    """
+    stats = _shift_log_stats(SHIFT_LOG_PATH, datetime.now())
+    if stats is None:
+        raise RuntimeError("shift_log.md 不存在（无值班记录，趋势不可见）")
+    count, days, anomalies = stats
+    if count == 0:
+        raise RuntimeError(f"近 {SHIFT_LOG_WINDOW_DAYS} 天无班次记录"
+                           f"（值班连续性中断？）")
+    head = (f"近 {SHIFT_LOG_WINDOW_DAYS} 天记录 {count} 条"
+            f"（覆盖 {days} 天），疑似异常 {len(anomalies)} 项")
+    if anomalies:
+        shown = "; ".join(anomalies[:3])
+        more = f" 等 {len(anomalies)} 项" if len(anomalies) > 3 else ""
+        return f"{head}（关键词启发式）: {shown}{more}"
+    return head
 
 
 def check_bilibili():
@@ -426,6 +519,7 @@ def main(argv=None) -> int:
     _check("百度直连", check_baidu)
     _check("google-bridge 服务", check_google_bridge, optional=True)
     _check("GitHub API", check_github)
+    _check("值班巡检趋势", check_shift_log, optional=True)
     core = [r for r in _results if not r[3]]
     core_fail = [r for r in core if not r[1]]
     opt_fail = [r for r in _results if not r[1] and r[3]]

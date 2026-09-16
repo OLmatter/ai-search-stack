@@ -256,15 +256,22 @@ class TestSearxngEngineTuning(unittest.TestCase):
 
 
 class TestVersionSyncV315(unittest.TestCase):
-    def test_versions_3150(self):
+    def test_versions_not_older_than_3150(self):
+        # v3.16 起改为常青下限（v3.13->v3.14 先例）：精确锁当前版本是
+        # test_v3160 的职责
         sys.path.insert(0, str(REPO / "tools"))
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.15.0")
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 15, 0))
         # chat-scraper 目录名带连字符不可 import，源码级断言（v3.12 先例）
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.15.0"', init_src)
-        self.assertIn("chat-scraper v3.15.0", init_src)   # docstring 首行同步
+        ver = __import__("re").search(
+            r'__version__ = "([^"]+)"', init_src).group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 15, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)   # docstring 首行同步
 
 
 if __name__ == "__main__":

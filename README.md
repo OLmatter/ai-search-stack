@@ -2,12 +2,18 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.15.0](https://img.shields.io/badge/release-v3.15.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.15.0)
+[![Release: v3.16.0](https://img.shields.io/badge/release-v3.16.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.16.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 271 passing](https://img.shields.io/badge/tests-271%20passing-success.svg)](tests/)
+[![Tests: 289 passing](https://img.shields.io/badge/tests-289%20passing-success.svg)](tests/)
 
-**v3.15.0（2026-09-16）**：v3.0 全面审计大修之后连续十六轮迭代——doctor
+**v3.16.0（2026-09-16）**：v3.0 全面审计大修之后连续十七轮迭代——doctor
+新增值班巡检趋势检查（shift_log.md 近 7 天记录/覆盖天数/疑似异常，
+趋势可见）、SearXNG 禁用引擎恢复观察（单发探活全过但回滚启用后聚合
+搜索即复发——单发探活通过 ≠ 可回滚，维持禁用并记录再评估方法，
+详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十六轮：doctor
 标定钩子活性扩展覆盖搜狗恢复曲线日志、mcp doctor 工具 mode 子模式
 （full|cookie|sogou）、SearXNG 实例上游引擎调优（实测不健康引擎清零，
 详见 [CHANGELOG.md](CHANGELOG.md)）。
