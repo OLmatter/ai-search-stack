@@ -150,6 +150,49 @@ def claim(queue_path, worker_id=None, timeout_s=DEFAULT_CLAIM_TIMEOUT_S):
     return {"status": "skipped", "owner": None, "age_s": None}
 
 
+def acquire(queue_path, worker_id=None, timeout_s=DEFAULT_CLAIM_TIMEOUT_S):
+    """领活唯一入口（v3.19.0）：认领 + 读队列一步完成。
+
+    背景（根因修复）：v3.17 的 claim()/complete() 落地后被实证零使用——
+    并行 worker 领活时不查 sidecar 直接干活，机制在库里、调用路径在各
+    worker 的习惯里，等于没修。本函数把"先认领再读队列"固化成唯一入口：
+    skipped 时**不返回 instructions**——看不到活的内容，从机制上杜绝
+    "看到活就干"的互踩形态；claimed 才拿得到活的内容。
+
+    返回 dict：
+        {"status": "claimed", "worker_id": ...,
+         "instructions": str,                可为空串 = 队列无活或队列读
+         "reclaimed_from": ...|None}         不了（损坏如实视为无活）；非空
+                                             = 超时/损坏接管，原持有者可见
+                                             → 有活干完 complete()+clear()，
+                                             空活直接 complete() 收工
+        {"status": "skipped", "owner": ...|None,
+         "age_s": ...}                       他人有效持有——不返回
+                                             instructions，调用方应直接
+                                             收工，不碰队列
+        {"status": "no_queue"}               队列文件不存在，无事发生
+                                             （不认领、不留 sidecar）
+    """
+    wid = worker_id or _default_worker_id()
+    if not os.path.exists(queue_path):
+        return {"status": "no_queue"}
+    r = claim(queue_path, worker_id=wid, timeout_s=timeout_s)
+    if r["status"] not in ("claimed", "reclaimed"):
+        return r                       # skipped 原样透传（不含活内容）
+    instructions = ""
+    try:
+        with open(queue_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            val = data.get("instructions")
+            instructions = val if isinstance(val, str) else ""
+    except (OSError, ValueError):
+        instructions = ""              # 队列损坏/读失败 = 无活可展示，如实
+    return {"status": "claimed", "worker_id": r["worker_id"],
+            "instructions": instructions,
+            "reclaimed_from": r.get("prev_owner")}
+
+
 def complete(queue_path, worker_id=None):
     """完成派工：删除**自己的**认领标记。返回 True=已删；False=无标记或
     标记不是自己的（超时被接管/从未认领）——调用方应停止动队列。"""

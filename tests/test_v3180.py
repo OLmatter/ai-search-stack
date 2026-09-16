@@ -334,13 +334,20 @@ class TestDoctorRegistration(unittest.TestCase):
 
 
 class TestVersionSyncV318(unittest.TestCase):
-    def test_versions_3180(self):
-        self.assertEqual(mcp_server.__version__, "3.18.0")
+    def test_versions_not_older_than_3180(self):
+        # v3.19 起改为常青下限（v3.13->v3.14 先例）：精确锁当前版本是
+        # test_v3190 的职责
+        import re
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 18, 0))
         # chat-scraper 目录名带连字符不可 import，源码级断言（v3.12 先例）
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.18.0"', init_src)
-        self.assertIn("chat-scraper v3.18.0", init_src)   # docstring 首行同步
+        ver = re.search(r'__version__ = "([^"]+)"', init_src).group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 18, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)   # docstring 首行同步
 
     def test_changelog_has_3180(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")

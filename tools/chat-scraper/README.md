@@ -271,6 +271,33 @@ curl -G "http://127.0.0.1:8765/search" \
 | `CHAT_SCRAPER_SOGOU_RESOLVE_INTERVAL` | `2.0` | 知乎链搜狗跳转解析的额外节流（秒）：相邻两次解跳转至少间隔该时长 |
 | `CHAT_SCRAPER_WENXIN_COOLDOWN_H` | `6` | 文心 1005 熔断冷却时长（小时，可小数）；冷却期内直接报 `wenxin_quota` 不起浏览器 |
 
+## 派工队列认领（worker_queue，v3.17/v3.19）
+
+多 worker 并行领同一 `~/.zcode/worker_queue.json` 的互踩修复（v3.16 的
+848065c 与并行班次工作树编辑逐字一致 = 互踩实证）。**领活强制条款（根因
+修复，v3.19）**：领活只此一法——
+
+```python
+import sys; sys.path.insert(0, "tools/chat-scraper")
+import worker_queue as wq
+
+r = wq.acquire("~/.zcode/worker_queue.json")   # 认领+读队列一步完成
+if r["status"] == "claimed":
+    # r["instructions"] 是唯一合法的活内容来源（可为空串=无活，complete 收工）
+    ...干活...
+    wq.complete(path); wq.clear(path)          # 干完释放+清队列
+else:                                          # skipped（owner 可见）/no_queue
+    pass                                       # 活归别人或无活——直接收工，不碰队列
+```
+
+`skipped` 时**不返回 instructions**——活的内容不经手，从机制上杜绝
+"看到活就干"。禁止绕过入口直接读队列文件干活。认领标记是伴生文件
+`<queue>.claim.json`（O_EXCL 原子创建，绝不写队列本身），30 分钟无
+complete 可被接管（损坏标记自动自愈）。Stop 钩子（唤醒层收口：有活+
+无有效认领才唤醒，理由自带本条款）真源在 `tools/chat-scraper/hooks/
+stop_wake.py`，部署副本 `~/.zcode/hooks/stop_wake.py`（改动先改真源再
+部署）。
+
 ## 错误协议（与仓库 hackernews/searxng/github 工具一致）
 
 `search(..., on_error="report")`（默认）：出错返回

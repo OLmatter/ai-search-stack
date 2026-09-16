@@ -40,10 +40,38 @@ search:
 # （10 行，unresponsive 空）。但 v3.16 已实证"单发过 ≠ 可回滚"（当时
 # startpage 单发 20 行通过、回滚聚合即 parsing error 复发），故不为
 # startpage 单独回滚，第二关不执行；三引擎维持禁用，两关判据不变。
+#
+# v3.19 判据扩展：回滚粒度从"三引擎整组"细化到"单引擎独立"。
+# 背景：三引擎整组判据把可救的引擎和无救的引擎绑死——v3.18 startpage
+# 单发已恢复、brave/ddg 仍复发，整组判据下 startpage 只能陪着禁用。
+# 单引擎粒度两关（对任一引擎 E 独立执行，互不绑定）：
+#   第一关  E 单发探活（engines=E）rows>0 且 unresponsive 空；
+#   第二关  settings.yml 仅回滚启用 E（其他禁用引擎保持不动）→
+#           docker compose restart → 聚合搜索（默认引擎集）→
+#           doctor/结果观察 E 的 unresponsive 清零且 rows 正常。
+#   双过 → E 单独放回；E 复发 → 仅 E 再禁用（立即改回），不影响其他
+#   引擎的观察状态，第二关消耗照实记账。
+# 整组判据保留为退化形态：若所有禁用引擎同一轮全部过两关，等价整组回滚。
+# v3.19 复跑 + 单引擎粒度判据首例实证（2026-09-16 晚，预算 4/4）：
+#   startpage 两关双过，**单独回滚成功**——第一关单发 10 行 unresponsive
+#   空；第二关仅回滚 startpage + docker compose restart 后聚合搜索正常
+#   出结果（10 行全部 startpage，unresponsive 无 startpage；google cse
+#   自身 timeout 与本判据无关）。startpage disabled: false 维持生效。
+#   duckduckgo 第一关恢复（单发 10 行 unresponsive 空，CAPTCHA 未复现
+#   ——较 v3.17/v3.18 转好），但第二关因预算用尽未执行；v3.16 已实证
+#   "单发过 ≠ 可回滚"，**维持禁用**，下轮复跑优先补 ddg 第二关。
+#   brave 单发复发（too many requests，rows=0，与 v3.17/v3.18 症状逐字
+#   一致，上游封锁第三轮持续），第一关即未过，第二关不做——必败动作
+#   不做，**维持禁用**。
+# 整组判据退役：本轮起不再"三引擎整组"评估，各引擎按上方单引擎两关
+# 独立走，互不绑定、互不牵连。
 engines:
   - name: brave
     disabled: true
   - name: duckduckgo
     disabled: true
+  # startpage：v3.19 单引擎粒度两关双过（第一关单发 10 行 unresponsive
+  # 空；第二关仅回滚 + restart 后聚合 10 行全 startpage、unresponsive
+  # 无 startpage），单独放回生效
   - name: startpage
-    disabled: true
+    disabled: false

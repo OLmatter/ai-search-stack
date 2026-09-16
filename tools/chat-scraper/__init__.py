@@ -1,4 +1,4 @@
-"""chat-scraper v3.18.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
+"""chat-scraper v3.19.0 —— 中国平台聚合搜索（bilibili 官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -79,8 +79,19 @@ optional 不判核心故障——沿 sogou_recovery_log 先例）+ doctor GitHub
 检查可选 GITHUB_TOKEN 认证（设置后带 Authorization: Bearer 头，缓解
 匿名 60 req/h 共享配额的限流窗口误报，tools/github/github_client.py
 同款约定）。本包业务代码无改动（版本对齐 v3.8.2 先例）。
+
+v3.19.0：claim 固化进领活入口（根因修复）——worker_queue 新增
+acquire()：认领+读队列一步完成的唯一入口，skipped 不返回 instructions
+（活内容不外泄，机制上杜绝"看到活就干"的互踩形态；v3.17 的 claim()
+落地后被实证零使用——并行 worker 领活不查 sidecar 直接干活，机制在
+库里、路径在习惯里等于没修）；新增 hooks/stop_wake.py 仓库真源
+（Stop 钩子：有活+无有效认领 → block 且理由自带强制条款；有活+有效
+认领 → 放行不唤醒第二个；部署副本 ~/.zcode/hooks/stop_wake.py 同步，
+旧版先备份）。+ SearXNG 回滚判据细化到单引擎粒度（每引擎独立两关：
+单发探活 + 仅回滚该引擎 restart 后聚合 unresponsive 清零；三引擎整组
+判据把可救的和无救的绑死——v3.18 startpage 单发恢复只能陪禁）。
 """
 from .search import list_platforms, search
 
-__version__ = "3.18.0"
+__version__ = "3.19.0"
 __all__ = ["search", "list_platforms", "__version__"]

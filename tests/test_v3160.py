@@ -51,8 +51,10 @@ class TestSearxngRestoreObservation(unittest.TestCase):
 
     def test_engines_still_disabled(self):
         # 回滚实测复发（too many requests / CAPTCHA / parsing error）→
-        # 恢复禁用，三个条目原样保留
-        for engine in ("brave", "duckduckgo", "startpage"):
+        # 恢复禁用。v3.19 适配（行为演进先例）：startpage 经单引擎两关
+        # 双过单独回滚（见 settings.yml v3.19 观察记录），仅 brave/
+        # duckduckgo 维持禁用
+        for engine in ("brave", "duckduckgo"):
             block = f"- name: {engine}\n    disabled: true"
             self.assertIn(block, self.src, f"{engine} 缺禁用条目")
 

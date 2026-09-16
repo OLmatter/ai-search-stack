@@ -2,12 +2,19 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.18.0](https://img.shields.io/badge/release-v3.18.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.18.0)
+[![Release: v3.19.0](https://img.shields.io/badge/release-v3.19.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.19.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 322 passing](https://img.shields.io/badge/tests-322%20passing-success.svg)](tests/)
+[![Tests: 346 passing](https://img.shields.io/badge/tests-346%20passing-success.svg)](tests/)
 
-**v3.18.0（2026-09-16）**：v3.0 全面审计大修之后连续十九轮迭代——doctor
+**v3.19.0（2026-09-16）**：v3.0 全面审计大修之后连续二十轮迭代——claim
+固化进领活入口（根因修复：worker_queue.acquire() 认领+读队列一步完成，
+skipped 不泄漏活内容；hooks/stop_wake.py 仓库真源，唤醒层收口互踩预防，
+已部署并备份旧版）、SearXNG 回滚判据细化到单引擎粒度（每引擎独立两关：
+startpage 首例单独回滚成功，duckduckgo 第一关恢复待下轮第二关、brave
+第三轮复发均维持禁用，详见 [CHANGELOG.md](CHANGELOG.md)）。
+此前
+十九轮：doctor
 值班巡检趋势检查统计口径重做（shift_log.md 近 7 天：记录条数/覆盖天数/
 每日分布/关键事件计数[restart/处置/❌/恶化 纯字面]/最近一条摘要；
 缺文件/空/全坏行=可选观测未启用不报警，7 天零记录亮 ⚠️ 连续性中断）、

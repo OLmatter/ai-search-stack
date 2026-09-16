@@ -1,5 +1,92 @@
 # Changelog
 
+## [3.19.0] - 2026-09-16
+
+### 🎯 claim 固化进领活入口（根因修复）+ SearXNG 回滚判据细化到单引擎
+
+职业团队循环批次。上轮审计根因发现：v3.17 的 claim 机制三版被实证零
+使用——并行 worker 领活时不查 sidecar 直接干活，机制在库里、调用路径
+在各 worker 的习惯里，等于没修。真实网络消耗：SearXNG 本地 4 发
+（startpage 单发探活 1 + 仅回滚 startpage 后聚合验证 1 + brave/ddg
+单发取证 2，预算 4/4），知乎/百度/文心 0 发。
+
+### Added
+- `tools/chat-scraper/worker_queue.py`：**acquire() 领活唯一入口**——
+  认领+读队列一步完成（根因修复选项 a：调用路径固化，调用方无法绕过）。
+  `skipped` 时**不返回 instructions**——活的内容不经手，从机制上杜绝
+  "看到活就干"的互踩形态；`claimed` 才拿得到活（含空串=队列无活，应
+  complete 收工；损坏/读失败如实视为无活）；超时/损坏接管归一为
+  `claimed` + `reclaimed_from`（原持有者可见）；`no_queue` = 队列文件
+  不存在，不认领、不留 sidecar。全部基于 v3.17 原语（O_EXCL 创建 +
+  读回校验），无新增并发面
+- `tools/chat-scraper/hooks/stop_wake.py`：**Stop 钩子仓库真源**
+  （根因修复选项 b：强制条款写进唤醒入口）。`should_block()` 决策：
+  有活 + 无认领/超时/损坏标记 → block，理由文本自带 instructions 与
+  领活固定入口强制条款（worker 被唤醒第一眼即见"先 acquire()，skipped=
+  活归别人直接收工"）；有活 + 有效认领（未超时）→ 放行——互踩预防在
+  唤醒层收口，不唤醒第二个 worker，持有者死亡由认领超时自然解封；
+  wq 模块不可达 → 放行 + stderr 警告（可见降级，hook 不阻断收工）。
+  worker_queue 模块从仓库探测 import（AI_SEARCH_STACK_CHAT_SCRAPER
+  环境变量优先，常见位置 glob 兜底），单一真源+部署副本关系写入
+  docstring。已部署 `~/.zcode/hooks/stop_wake.py`（旧版备份
+  stop_wake.py.bak-v3.18.0）
+- `tests/test_v3190.py`：24 钉——acquire 入口固定路径 10（claimed/
+  空活/no_queue 无残留/**skipped 不泄漏 instructions**/生命周期/接管
+  归一/入口层互斥/损坏队列容错/非 str 字段防御/队列本体不碰）+
+  should_block 决策 9（无队列/空活/不可达放行/无人认领 block 带条款/
+  有效他人认领放行/超时解封再 block/损坏标记 block/损坏队列放行/
+  真源在库 pin）+ settings.yml 单引擎判据 pin 2 + 版本锁 3.19.0 3，
+  套件 322 → 346
+
+### Changed
+- `tools/searxng/docker/searxng/settings.yml`：**回滚判据细化到单引擎
+  粒度**（每引擎独立两关：第一关该引擎单发探活 rows>0 且 unresponsive
+  空；第二关仅回滚启用该引擎 → restart → 聚合搜索该引擎 unresponsive
+  清零且 rows 正常；双过单独放回，复发仅该引擎再禁用，不牵连其他引擎
+  观察状态）。三引擎整组判据把可救的和无救的绑死——v3.18 startpage
+  单发已恢复、brave/ddg 仍复发，整组判据下 startpage 只能陪禁。整组
+  判据保留为退化形态（全部引擎同轮双过 = 等价整组回滚）
+- `tests/test_v3180.py`：3.18.0 精确版本锁降为常青下限（v3.13→v3.14
+  先例），精确锁移交 test_v3190
+- `tests/test_v3150.py` + `tests/test_v3160.py`：三引擎全禁旧 pin 适配
+  startpage 单独回滚（行为演进先例，v3.18 对 test_v3160 obsolete pins
+  的处理同款）——brave/duckduckgo 禁用断言保留，历史结论 pin
+  （v3.16"单发探活通过 ≠ 可回滚"等）不动
+- 版本 bump：mcp_server + chat-scraper `__init__` → 3.19.0，README
+  badge/版本行同步
+
+### 实测记录（SearXNG 预算 4/4 发，单引擎判据首例实证）
+- 第一发：startpage 单发探活（第一关）——**过**（10 行，unresponsive
+  空，与 v3.18 一致）
+- 第二发：仅回滚 startpage + docker compose restart 聚合搜索（第二关，
+  单引擎粒度首例）——**过**（10 行全部 startpage、unresponsive 无
+  startpage；google cse 自身 timeout 与本判据无关），**startpage 单独
+  放回生效**；brave/duckduckgo 保持禁用不动
+- 第三发：brave 单发取证——复发（too many requests，rows=0，与
+  v3.17/v3.18 症状逐字一致，上游封锁第三轮持续），第一关即未过，
+  第二关不做；维持禁用
+- 第四发：duckduckgo 单发取证——**第一关恢复**（10 行 unresponsive
+  空，CAPTCHA 未复现，较 v3.17/v3.18 转好），但第二关因预算用尽未
+  执行；v3.16 已实证"单发过 ≠ 可回滚"，**维持禁用**，下轮复跑优先补
+  ddg 第二关
+- 替代引擎取证（零额外搜索预算，读容器内置引擎清单 + 上游文档）：
+  结论与建议见下方「评估未立项」
+
+### 评估未立项（先取证再立项，证据不足不动手）
+- 替代引擎取证（零额外搜索预算：`docker exec` 读容器内置引擎模块源码
+  声明头——本容器实际跑的代码，比上游文档更硬）：容器内存在
+  mojeek.py/marginalia.py/wikipedia.py/qwant.py/yep.py/bing.py/yahoo.py，
+  不存在 presearch/lasso（排除）。声明头取证：**mojeek
+  `require_api_key: False` + 支持翻页**（独立索引通用 web，brave 封锁
+  期的首选替代）；marginalia `require_api_key: True`（api_key=None 直接
+  报错，需申请 key，暂排除）；wikipedia `require_api_key: False`（稳定
+  但非通用 web）。**建议（不实施）**：brave 下轮复跑仍复发时，mojeek
+  走单引擎两关判据启用（settings.yml engines 加条目 + 单发 + restart
+  聚合验证）；当前 startpage 已单独回滚、ddg 第一关已恢复待下轮第二关，
+  缺口在收敛，替代引擎引入待下轮复跑结果再定
+- mcp 工具层暴露 queue_status/acquire：消费方是 ZCode worker 会话
+  （hooks + 领活习惯），MCP 客户端无派工场景证据（v3.17 先例延续）
+
 ## [3.18.0] - 2026-09-16
 
 ### 🎯 doctor 值班巡检趋势统计口径重做（每日分布/事件计数/最近一条）+ GitHub 检查可选 GITHUB_TOKEN
