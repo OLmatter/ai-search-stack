@@ -2,18 +2,29 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.24.0](https://img.shields.io/badge/release-v3.24.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.24.0)
+[![Release: v3.25.0](https://img.shields.io/badge/release-v3.25.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.25.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 401 passing](https://img.shields.io/badge/tests-401%20passing-success.svg)](tests/)
+[![Tests: 408 passing](https://img.shields.io/badge/tests-408%20passing-success.svg)](tests/)
 
-**v3.24.0（2026-09-17）**：v3.0 全面审计大修之后连续二十五轮迭代——
-doctor 实例级健康下限（`SEARXNG_MIN_ROWS=3` 行数地板：聚合 <3 行亮 ⚠️
-「默认引擎集整体哑火，非单引擎问题」，破 v3.23 实证的「wikipedia 1 行
-也报引擎全健康」盲区）、probe() 实网首用（brave streak 2→3 + 背靠背
-连发不限流首点、ddg CAPTCHA streak 维持 0、聚合 20 行全 google cse）、
-brave 恢复判据 v2 定标（N=3 + 连发 K=2 全过 + 跨度 ≥24h 三条全满足
-才烧第二关；聚合小样本试探评估为可选 gate-1.5），
+**v3.25.0（2026-09-17）**：v3.0 全面审计大修之后连续二十六轮迭代——
+判据 v2 首次实战（brave gate-1 过 streak 3→4 四连，但 streak 跨度
+≤2.9h << 24h → 复合资格未齐 **gate-2 不烧**——c) 条件按设计拦下 3h
+窗口内的提前烧关，正是 v3.20 烧关复发的教训）、gate-1.5 实网首验未过
+不进库（**engines= 语义两形态分裂**：search() 恒传 categories =
+「默认集 ∪ 点名」实测 google cse 混入、probe() 无 categories 严格
+收窄——受控对照单变量钉死，文档钉 + 请求形状回归钉落库；行为级变更
+立项留下轮）、ddg CAPTCHA 逐字复发 streak 维持 0、brave 4.5 分钟第 3
+发 timeout（限流第三数据点）、默认聚合 0 行实例级降级窗口实录（行数
+地板活体案例），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
+二十五轮：doctor 实例级健康下限（`SEARXNG_MIN_ROWS=3` 行数地板：聚合
+<3 行亮 ⚠️「默认引擎集整体哑火，非单引擎问题」，破 v3.23 实证的
+「wikipedia 1 行也报引擎全健康」盲区）、probe() 实网首用（brave
+streak 2→3 + 背靠背连发不限流首点、ddg CAPTCHA streak 维持 0、聚合
+20 行全 google cse）、brave 恢复判据 v2 定标（N=3 + 连发 K=2 全过 +
+跨度 ≥24h 三条全满足才烧第二关；聚合小样本试探评估为可选 gate-1.5），
 详见 [CHANGELOG.md](CHANGELOG.md)。
 此前
 二十四轮：clean-worktree 收工检查固化（`scripts/clean_worktree_test.sh`：

@@ -29,6 +29,12 @@ SearXNG 是一个开源元搜索引擎（聚合 Google/Bing/DuckDuckGo 等）。
                                    # 此语义，实测 v3.19 startpage 禁用期
                                    # 单发 10 行即证）。
 
+    engines= 语义两形态（v3.25 实网受控对照钉，判词在 settings.yml v3.25 段）:
+        search(engines=X)  # 恒传 categories → 「默认集 ∪ 点名」：默认引擎
+                           # 照常调度（实测 google cse 混入同场返回）
+        probe(q, X)        # 不传 categories → engines= 严格收窄，只调度
+                           # 点名引擎（单发探活的可比性依赖此语义）
+
 注意:
     实例必须允许 JSON 输出（settings.yml: search.formats 含 json），
     否则返回 HTML 导致解析失败并走错误协议（实测 searx.be 的 JSON 未启用）。
@@ -73,6 +79,10 @@ def search(
         engines: SearXNG engines= 参数（逗号分隔引擎名；None=默认引擎集）。
             追加在 on_error 之后（v3.23）：既有调用方按位置传参不断链。
             探活/诊断用；常规搜索留 None。单引擎探活优先用 probe()。
+            注意（v3.25 实测）：本函数恒传 categories，engines= 在这里是
+            「默认集 ∪ 点名」语义（默认引擎照常调度）；要严格只调度点名
+            引擎（不含默认集）用 probe()。行为级变更（engines= 时弃
+            categories 换严格收窄）立项未决，改前本注释即契约。
 
     Returns:
         [{title, url, content, engine, category, vendor, role, since}, ...]

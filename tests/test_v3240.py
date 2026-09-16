@@ -118,13 +118,17 @@ class TestSettingsV324Sampling(unittest.TestCase):
 
 class TestVersionSyncV324(unittest.TestCase):
     def test_versions_3240(self):
+        # v3.25 起精确锁移交 test_v3250，此处降常青下限（v3.17→v3.19、
+        # v3.21→v3.22、v3.22→v3.23、v3.23→v3.24 先例）：双 __version__
+        # 同步本身不许破
         if mcp_server is None:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
             ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
         else:
             ver = mcp_server.__version__
-        self.assertEqual(ver, "3.24.0")
+        self.assertGreaterEqual(
+            [int(x) for x in ver.split(".")], [3, 24, 0])
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         self.assertIn(f'__version__ = "{ver}"', init_src)
@@ -132,12 +136,21 @@ class TestVersionSyncV324(unittest.TestCase):
 
     def test_changelog_and_readme_3240(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        # CHANGELOG 历史段是 append-only，3.24.0 条目钉保持精确
         self.assertIn("## [3.24.0] - 2026-09-17", changelog)
         self.assertIn("SEARXNG_MIN_ROWS", changelog)
         self.assertIn("probe() 实网首用", changelog)
+        # v3.25 起精确徽章/状态行锁移交 test_v3250，此处降常青：徽章/
+        # 状态行存在且版本号与 __version__ 一致（防止换版时徽章漂移回退）
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.24.0", readme)
-        self.assertIn("v3.24.0（2026-09-17）", readme)
+        self.assertRegex(readme, r"release-v\d+\.\d+\.\d+")
+        if mcp_server is None:
+            src = (REPO / "tools" / "mcp_server.py").read_text(
+                encoding="utf-8")
+            ver = re.search(r'__version__ = "([^"]+)"', src).group(1)
+        else:
+            ver = mcp_server.__version__
+        self.assertIn(f"v{ver}（", readme)   # 状态行随版本走
 
 
 if __name__ == "__main__":

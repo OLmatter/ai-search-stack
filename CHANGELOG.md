@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.25.0] - 2026-09-17
+
+### 🎯 判据 v2 首次实战（c) 跨度未达标，gate-2 不烧）+ gate-1.5 实网首验未过 + engines= 语义两形态钉
+
+- **第七轮采样（预算 5/5，同题 q="python"）= 判据 v2 首次实战**：brave
+  gate-1 过（00:51:24，20 行 unresponsive 空）streak 3→4（v3.20/23/24/25
+  四连；派工书「当前 streak=2、过则 3」系 v3.23 时刻陈旧计数，以
+  settings.yml v3.24 段实录为准）；复合三条裁决 a) ✅ streak=4≥3、
+  b) ✅ v3.24 背靠背连发 K=2 在案、**c) ✗ 跨度不足——streak 起点
+  v3.20（09-16 21:53 收工前）距本次探活 ≤2.9h，v3.23 锚 ≈1.1h，均
+  << 24h**（上轮预注册「09-18 之前不足 24h」兑现）→ **gate-2 不烧**：
+  c) 条件按设计拦下一次 3h 窗口内的提前烧关（v3.20 正是 ~3h 窗口单发
+  过、烧关即复发——判据 v2 的 c) 从那次失败长出，复合判据首次实战
+  拦截成功）。ddg gate-1 未过（00:51:26，CAPTCHA rows=0 逐字复发）
+  streak 维持 0 归零后第 3 fail；startpage 止损期跳过；三引擎维持全禁
+- **gate-1.5 实网首验：未通过，不进库**（v3.24「实网验证前不进库」被
+  实网证据加强）：① search(engines="brave,wikipedia")（00:51:54）
+  25 行 = brave 18 + wikipedia 1 + **google cse 6 混入**——根因受控
+  对照钉死（单变量 = categories 有无）：search() 恒传 categories=
+  general → engines= 是「默认集 ∪ 点名」；probe() 无 categories →
+  engines= 严格收窄（00:55:03 同 engines= 参数仅 brave+wikipedia 被
+  调度）；/config 旁证 "google cse" 系实例独立启用引擎（goc）。
+  v3.23「engines= 透传」两条路径语义不同此前无文档——本轮文档钉 +
+  请求形状回归钉落库；行为级变更（engines= 时弃 categories）涉 MCP
+  工具契约，立项留下轮。② probe 同形态多引擎（00:55:03）0 行 +
+  brave/wikipedia 双 timeout——距 brave 上一发过仅 3 分钟，单观测噪声
+  压倒信号，gate-1.5 作判据不可靠
+- **限流第三数据点 + 实例级降级窗口实录**：brave 4.5 分钟窗口第 3 发
+  timeout（00:51:24 过 → 00:51:54 过 → 00:55:03 timeout；v3.24 二发
+  秒级连发全过）——限流器容忍边界或在 2~3 发/短窗附近（单点不定标）；
+  默认聚合（00:55:41）0 行无错误，对比 v3.24 同口径 20 行全 google cse
+  （与双 timeout 同窗口）——SEARXNG_MIN_ROWS=3 行数地板的活体案例，
+  预算耗尽未复测，下班次 doctor 兜底 ⚠️
+- 测试 401→408 通过（test_v3250：engines= 语义两形态请求形状钉 ×2 +
+  契约注释源钉 + settings v3.25 段与三引擎维持全禁钉 ×2 + 版本锁
+  3.25.0 ×2 共 7 钉；test_v3240 精确版本锁/徽章锁降常青移交
+  test_v3250——v3.17→v3.19、v3.21→v3.22、v3.22→v3.23、v3.23→v3.24
+  先例），连续两轮全绿 + clean-worktree 收工检查
+
+[3.25.0]: https://github.com/OLmatter/ai-search-stack/releases/tag/v3.25.0
+
 ## [3.24.0] - 2026-09-17
 
 ### 🎯 doctor 实例级健康下限（聚合行数地板）+ probe() 实网首用 + N 定标（brave 恢复判据 v2）

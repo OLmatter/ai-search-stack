@@ -61,7 +61,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.24.0"
+__version__ = "3.25.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
