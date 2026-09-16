@@ -33,6 +33,13 @@ search:
 # 第二关（回滚启用 + restart 聚合）按两关判据不再执行——必败动作不做，
 # 省下预算。两关判据不变：单发 + restart 后聚合 unresponsive 清零，
 # 双过才回滚。
+#
+# v3.18 收尾环复跑（2026-09-16 晚，第一关 2/3 未过，维持禁用）：engines=
+# 参数单发探活三发（预算 3/3）——brave too many requests / duckduckgo
+# CAPTCHA 复发（与 v3.17 症状逐字一致，封锁持续），startpage 单发恢复
+# （10 行，unresponsive 空）。但 v3.16 已实证"单发过 ≠ 可回滚"（当时
+# startpage 单发 20 行通过、回滚聚合即 parsing error 复发），故不为
+# startpage 单独回滚，第二关不执行；三引擎维持禁用，两关判据不变。
 engines:
   - name: brave
     disabled: true
