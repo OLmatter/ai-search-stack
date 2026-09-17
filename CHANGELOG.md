@@ -1,5 +1,55 @@
 # Changelog
 
+## [3.38.0] - 2026-09-17
+
+### 🎯 shift_log 行格式单一真源（tools/_logfmt.py）
+
+- **四方副本收口（v3.36/v3.37 副本漂移收口线的下一环——上轮任务清
+  单明记项）**：`[YYYY-MM-DD HH:MM]` 前缀班次行格式此前以**逐字节
+  等价**形态散落四处——
+    - tools/doctor.py                _SHIFT_ENTRY_RE / _SHIFT_TIME_ONLY_RE
+                                     （解析端：值班巡检趋势 _shift_log_stats）
+    - tools/digest.py                _WATCH_LINE_RE（消费端：晨报取今日
+                                     hotlist_watch 行）+ render_log_line
+                                     （写入端：digest 班次摘要行）
+    - tools/chat-scraper/hotlist_watch.py  render_log_line（写入端：
+                                     监控环 diff 行）
+  统一收口 tools/_logfmt.py：STAMP_FMT（strftime 格式）/ STAMP_RE
+  （未编译前缀片段，digest 消费端合成）/ ENTRY_RE / TIME_ONLY_RE
+  （解析正则）/ stamp() / make_line()（行构造）。
+- **零漂移绑定（v3.36/v3.37 别名先例）**：doctor._SHIFT_* 改模块级
+  别名直引（test_v3380 以 is 钉同一编译对象）；digest._WATCH_LINE_RE
+  由 STAMP_RE 片段合成、pattern 与原式逐字节等价；两个写入端
+  render_log_line 行为逐字节不变（写入端产出行与 v3.37 完全同形，
+  doctor._shift_log_stats 读数不漂）。
+- **顺手统一（同款分钟级字面量清零）**：digest.render() 晨报标题、
+  doctor 报告标题行（`== ai-search-stack doctor @ ... ==`）改走
+  stamp()——输出逐字节等价；doctor.py 死导入 re 随收口清除。带秒
+  形态（快照 ts 展示、google-bridge/watchdog.py 日志）与敏感件不在
+  本批范围。
+- **降级纪律差异（写入端格式是核心依赖）**：hotlist_watch 经父目录
+  注入 sys.path 取 _logfmt（toast v3.35 同款接线），但**缺失即炸不
+  降级**——弹窗是观测副本缺了少弹即可，班次行格式是 render_log_line
+  的职责本体，降级副本=把漂移病藏进 except 分支（v3.36 收口纪律）。
+- **toast.py 残留 subprocess 形态审计结案（上轮任务清单明记项，取
+  证后不立项）**：全仓库 subprocess 形态盘点——toast.py 唯一子进程
+  调用 _default_toast_runner 的输出解码已收口 _subproc_decode.py
+  （v3.36）；CREATE_NO_WINDOW creationflags 形态仅 toast 一家消费者
+  （单一消费者不成公共层——提炼=装饰性抽象，反加一层间接）；
+  _schtasks_common 的 run 无 timeout/creationflags 形态不同构；
+  watchdog.py 属 google-bridge 敏感件不动。**零残留可收口，现状即
+  稳态**。
+- 回归 19 钉（tests/test_v3380.py，全离线）：_logfmt 原语
+  （stamp 固定/缺省、make_line ts 前 16 截与 body max_len 截、
+  ENTRY_RE 组编号与 `\s?` 容忍、TIME_ONLY_RE、STAMP_RE 合成逐字节
+  等价）；四方收口钉（doctor 别名 is 身份、digest pattern 等价、
+  hw._logfmt 同模块、三消费文件分钟级字面量与逐字节正则副本源码
+  清零）；往返/跨解析器（hotlist_watch 行→doctor._shift_log_stats
+  读数钉与事件关键词计数、digest 行→doctor 解析、hotlist_watch 行
+  →digest 消费端双条件（形态匹配+日期过滤）、digest 行→ENTRY_RE
+  直解）；诚实文档钉 + 版本锁 3.38.0（自 test_v3370 接管精确锁，
+  v3370 降常青）。
+
 ## [3.37.0] - 2026-09-17
 
 ### 🎯 注册器公共层二次提炼（tools/_schtasks_common.py）

@@ -2,11 +2,25 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.37.0](https://img.shields.io/badge/release-v3.37.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.37.0)
+[![Release: v3.38.0](https://img.shields.io/badge/release-v3.38.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.38.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 712 passing](https://img.shields.io/badge/tests-712%20passing-success.svg)](tests/)
+[![Tests: 730 passing](https://img.shields.io/badge/tests-730%20passing-success.svg)](tests/)
 
+**v3.38.0（2026-09-17）**：v3.0 全面审计大修之后连续三十九轮迭代——
+**shift_log 行格式单一真源**：tools/_logfmt.py（`[YYYY-MM-DD HH:MM]`
+前缀班次行格式四方副本收口一处：doctor 值班趋势解析端
+_SHIFT_ENTRY_RE/_SHIFT_TIME_ONLY_RE（别名保旧引用名 is 钉零漂移）、
+digest 消费端 _WATCH_LINE_RE（STAMP_RE 片段合成，与原正则逐字节等
+价）+ digest / hotlist_watch 两个写入端 render_log_line（stamp +
+make_line，供方带秒 ts 截 16 对齐分钟契约）；doctor 报告标题行同款
+分钟级字面量一并统一；写入端格式是核心依赖缺失即炸不降级——降级副
+本=把漂移病藏进 except 分支；watchdog 带秒形态与 google-bridge 敏感
+件不在范围）+ **toast.py 残留 subprocess 形态审计结案**（解码链
+v3.36 已收口；CREATE_NO_WINDOW 仅单消费者不成公共层——提炼=装饰性
+抽象；零残留，现状即稳态），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.37.0（2026-09-17）**：v3.0 全面审计大修之后连续三十八轮迭代——
 **注册器公共层二次提炼**：tools/_schtasks_common.py（v3.36 解码链收
 口的同思路下一环——三注册器（digest_task/hotlist_watch_task/

@@ -67,13 +67,20 @@ try:  # 包内导入（同 search.py 双模式）
 except ImportError:  # 扁平导入（sys.path 指向本目录）
     import hotlist_engine as hl  # type: ignore
 
-# 弹窗通道公用模块（tools/toast.py，在本目录的父目录——v3.35 提取自
-# digest.py；父目录注入 sys.path 后取用，缺失时降级为 fault 工厂不炸
-# 监控环——弹窗是观测副本，缺了只许少弹不许多炸）
+# 班次行格式单一真源（tools/_logfmt.py，在本目录的父目录——v3.38 四方
+# 收口：本脚本 render_log_line 的行构造与 doctor._shift_log_stats、
+# digest 消费端同一契约。格式是 render_log_line 的核心依赖，缺失即炸
+# 不降级——降级副本=把漂移病藏进 except 分支，与 v3.36 解码链收口同款
+# 纪律）
+_PARENT_DIR = str(Path(__file__).resolve().parent.parent)
+if _PARENT_DIR not in sys.path:
+    sys.path.insert(0, _PARENT_DIR)
+import _logfmt   # noqa: E402
+
+# 弹窗通道公用模块（tools/toast.py，同在父目录——v3.35 提取自
+# digest.py；父目录已由上方 _logfmt 接线注入 sys.path，缺失时降级为
+# fault 工厂不炸监控环——弹窗是观测副本，缺了只许少弹不许多炸）
 try:
-    _PARENT = str(Path(__file__).resolve().parent.parent)
-    if _PARENT not in sys.path:
-        sys.path.insert(0, _PARENT)
     from toast import send_toast as _toast_send_impl
     from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 except ImportError:                              # pragma: no cover
@@ -257,7 +264,8 @@ def render_alerts(diff: Dict) -> List[str]:
 def render_log_line(result: Dict) -> str:
     """班次日志一行（doctor _shift_log_stats 可解析的 `[YYYY-MM-DD HH:MM] `
     前缀），内容自 identifying 前缀 hotlist_watch:。超长截断（班次流水
-    不是数据转储——明细在快照文件与 stdout JSON 里）。"""
+    不是数据转储——明细在快照文件与 stdout JSON 里）。行构造 v3.38 起
+    走 _logfmt.make_line 单一真源（与解析端同源）。"""
     plats = result.get("platforms") or []
     head = "+".join(plats) if 0 < len(plats) <= 3 else f"{len(plats)}平台"
     if result["status"] == "fault":
@@ -275,7 +283,7 @@ def render_log_line(result: Dict) -> str:
     skipped = (result.get("summary") or {}).get("skipped_platforms") or {}
     if skipped:
         body += f" | 单侧剔除: {', '.join(sorted(skipped))}"
-    return f"[{result['ts'][:16]}] {body[:_LOG_LINE_MAX]}"
+    return _logfmt.make_line(result["ts"], body, _LOG_LINE_MAX)
 
 
 def watch_toast_text(result: Dict) -> tuple:

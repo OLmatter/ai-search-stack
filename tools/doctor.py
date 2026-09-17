@@ -45,11 +45,12 @@
 """
 import json
 import os
-import re
 import sys
 import time
 import urllib.request
 from datetime import date, datetime, timedelta
+
+import _logfmt   # shift_log 行格式单一真源（v3.38 四方收口，同目录）
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 SEARXNG = os.environ.get("SEARXNG_INSTANCE", "http://127.0.0.1:8888")
@@ -241,8 +242,10 @@ def check_hook_liveness():
     return "; ".join(parts)
 
 
-_SHIFT_ENTRY_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\]\s?(.*)$")
-_SHIFT_TIME_ONLY_RE = re.compile(r"^\[(\d{2}:\d{2})\]\s?(.*)$")
+# 班次行解析正则（v3.38 起收口 _logfmt 单一真源，别名保旧引用名零漂移
+# ——同一编译对象；格式契约/`\s?` 容忍语义见 _logfmt docstring）
+_SHIFT_ENTRY_RE = _logfmt.ENTRY_RE
+_SHIFT_TIME_ONLY_RE = _logfmt.TIME_ONLY_RE
 
 
 def _shift_log_stats(path, now, window_days=SHIFT_LOG_WINDOW_DAYS):
@@ -723,7 +726,7 @@ def main(argv=None) -> int:
         return cmd_sogou_probe()
     if args.hotlist_probe:
         return cmd_hotlist_probe()
-    print(f"== ai-search-stack doctor @ {time.strftime('%Y-%m-%d %H:%M')} ==")
+    print(f"== ai-search-stack doctor @ {_logfmt.stamp()} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
     _check("知乎 cookie", check_cookie, optional=True)
     _check("标定钩子活性", check_hook_liveness, optional=True)

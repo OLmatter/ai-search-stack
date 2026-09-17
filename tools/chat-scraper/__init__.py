@@ -1,4 +1,4 @@
-"""chat-scraper v3.37.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.38.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -186,5 +186,5 @@ v3.37.0：注册器公共层二次提炼（tools/_schtasks_common.py：python_fo
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.37.0"
+__version__ = "3.38.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

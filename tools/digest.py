@@ -102,7 +102,9 @@ from toast import (TOAST_BOX_TYPE, TOAST_SUBPROC_TIMEOUT, TOAST_TIMEOUT_S,
                    send_toast)
 from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
-__version__ = "3.37.0"
+import _logfmt   # shift_log 行格式单一真源（v3.38 四方收口，同目录）
+
+__version__ = "3.38.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
@@ -123,10 +125,12 @@ REL_NUM = 3              # 每仓库 release 行数
 SNAP_TOP_N = 5           # 快照 top 展示行数
 _DIFF_LINE_MAX = 500     # --log 一行上限（班次流水不刷屏，hotlist_watch 同款）
 
-# shift_log 里 hotlist_watch 产出行的形态（hotlist_watch.render_log_line
-# 固定前缀 `[YYYY-MM-DD HH:MM] hotlist_watch: `——跨解析器契约的消费端，
-# v3.31 test 跨解析器钉死供方，这里钉消费）
-_WATCH_LINE_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}\] (hotlist_watch: .*)$")
+# shift_log 里 hotlist_watch 产出行的形态（v3.38 起前缀片段收口
+# _logfmt.STAMP_RE 合成——与写入端 hotlist_watch.render_log_line、解析
+# 端 doctor._shift_log_stats 同源；固定前缀 `[YYYY-MM-DD HH:MM]
+# hotlist_watch: `——跨解析器契约的消费端，v3.31 test 跨解析器钉死供方，
+# 这里钉消费）
+_WATCH_LINE_RE = re.compile(rf"^{_logfmt.STAMP_RE} (hotlist_watch: .*)$")
 
 _paths_ready = False
 
@@ -400,7 +404,7 @@ def fetch_toolbox(now: Optional[datetime] = None,
 def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
            config_note: str, now: Optional[datetime] = None) -> str:
     """四段渲染成 markdown 晨报（段 fault 渲染成 ⚠️ 通道异常行）。"""
-    ts = (now or datetime.now()).strftime("%Y-%m-%d %H:%M")
+    ts = _logfmt.stamp(now or datetime.now())
     lines = [f"# 晨报 {ts}", ""]
     if config_note:
         lines += [f"> 配置: {config_note}", ""]
@@ -480,13 +484,13 @@ def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
 
 def render_log_line(now: Optional[datetime] = None, sections=None) -> str:
     """班次日志一行（doctor _shift_log_stats 可解析的 `[YYYY-MM-DD HH:MM] `
-    前缀 + digest: 自报家门），内容是四段状态摘要。"""
-    ts = (now or datetime.now()).strftime("%Y-%m-%d %H:%M")
+    前缀 + digest: 自报家门），内容是四段状态摘要。格式构造 v3.38 起
+    走 _logfmt 单一真源（stamp + make_line）。"""
     sec = sections or {}
     body = (f"digest: 热榜={sec.get('hotlist', '?')} "
             f"HN={sec.get('hn', '?')} GitHub={sec.get('releases', '?')} "
             f"状态={sec.get('toolbox', '?')}")
-    return f"[{ts}] {body[:_DIFF_LINE_MAX]}"
+    return _logfmt.make_line(_logfmt.stamp(now), body, _DIFF_LINE_MAX)
 
 
 # ---------------------------------------------------------------------------
