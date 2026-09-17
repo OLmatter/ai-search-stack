@@ -1,4 +1,4 @@
-"""chat-scraper v3.43.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.44.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -191,8 +191,12 @@ None 不过滤，监控场景忘传 since 混入旧闻；显式 None/"" 仍可�
 v3.43.0：本包无业务代码改动（精修批：版本史乱序修复[v3.22→v3.21→v3.20
 纠正为升序] + __version__ 对齐 3.43.0；「16 站」计数漂移的文档修正归
 README/SOP/SKILL/mcp_server 侧，不在本包）。
+
+v3.44.0：本包无业务代码改动（正主客户端行为钉批：github/hackernews
+正主客户端的解析/转义/错误接线/CLI 离线行为钉归 tools/github、
+tools/hackernews 侧，不在本包；__version__ 例行对齐 3.44.0）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.43.0"
+__version__ = "3.44.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

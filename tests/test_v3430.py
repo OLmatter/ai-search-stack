@@ -370,46 +370,28 @@ class TestErrorPathPins(unittest.TestCase):
 
 
 class TestVersionLock3430(unittest.TestCase):
-    """精确锁（自 test_v3420 接管，v3.27→…→v3.40→v3.42 交接链延续）：
-    三版本载体（mcp_server / chat-scraper __init__ / digest）+ docstring
-    首行 + CHANGELOG/README 徽章与标题行。下一批发布时本类降常青交接。"""
+    """精确锁已移交 test_v3440（v3.44 起降常青，交接先例
+    v3.27→…→v3.40→v3.42→v3.43 链延续）：三版本载体同步本身不许破，
+    只放开具体版本号。"""
 
-    def test_mcp_server_version(self):
+    def test_versions_3430(self):
+        # v3.44 起精确锁移交 test_v3440，此处降常青下限
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.43.0")
-
-    def test_chat_scraper_package_version(self):
-        # 包名带连字符不能常规 import（相对导入需包上下文）——文本钉
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 43, 0))
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.43.0"', init_src)
-        self.assertIn("chat-scraper v3.43.0", init_src)   # docstring 首行同步
-
-    def test_digest_version(self):
+        m = re.search(r'__version__ = "([^"]+)"', init_src)
+        self.assertIsNotNone(m)
+        ver = m.group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 43, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)
+        self.assertEqual(mcp_server.__version__, ver)   # 双载体同步不许破
         digest_src = (REPO / "tools" / "digest.py").read_text(
             encoding="utf-8")
-        self.assertIn('__version__ = "3.43.0"', digest_src)
-
-    def test_readme_headline_mentions_3430(self):
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.43.0", readme)
-        self.assertIn("v3.43.0（2026-09-17）", readme)
-
-    def test_changelog_has_3430_entry(self):
-        cl = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("## [3.43.0] - ", cl)
-
-    def test_readme_badge_count(self):
-        # 徽章数 = 810（v3.42 基线）+ 本批 test_v3430 钉数；数真实 test
-        # 方法定义形态，本函数注释与正则字面量不得写成可命中形态
-        # （自引用虚增——v3.33 先例）
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
-        m = re.search(r"tests-(\d+)%20passing", readme)
-        self.assertIsNotNone(m)
-        src = (REPO / "tests" / "test_v3430.py").read_text(
-            encoding="utf-8")
-        self.assertEqual(int(m.group(1)), 810 + len(
-            re.findall(r"def (test_\w+)\(", src)))
+        self.assertIn(f'__version__ = "{ver}"', digest_src)
 
 
 if __name__ == "__main__":

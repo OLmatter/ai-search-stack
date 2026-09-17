@@ -1,5 +1,57 @@
 # Changelog
 
+## [3.44.0] - 2026-09-17
+
+### 🎯 正主客户端行为钉批：github_client（全仓最低覆盖 22%）补齐 + hackernews 错误接线收尾——v3.43 覆盖缺口线的正主遗漏项
+
+- **评估取证（立项依据）**：839 全绿基线上 coverage 7.16.1
+  `--source=tools` 全量跑 + `--sort=cover` 读数——
+  `github/github_client.py` **22%**（87 stmts 68 miss，全仓最低，仅高于
+  3 行的包 `__init__`）；`hackernews/hackernews_client.py` 57%（49 stmts
+  21 miss）。归因：v3.43 的覆盖缺口补钉落在 client.py **兼容 shim**
+  （警告+转发等价子进程钉）与 auto_select_node 六关键路径上，正主模块
+  的行为面仍是裸奔——test_offline 仅直调 `_handle_error` 本体三态
+  （不经过任何主函数的 try/except 接线）；test_v3180 的 token 钉在
+  doctor.check_github 侧（`Bearer` 格式），client 自己的
+  `token <tok>` 格式无人钉。
+- **github_client 行为钉（8 钉，全离线）**：
+  ① releases 解析（name 缺失→tag_name 回退、body 截 500、prerelease
+  透传、num 截断、vendor/role/since 透传）；② **repo URL path 转义**
+  （`own er/in ject?x=1#frag` → path 段零空格/?/#，`quote(safe="/")`
+  防注入语义首次有钉）+ `per_page=num` 落 query；③ advisories 解析
+  （summary/cve_id/severity/description 截 500）+ ecosystem/per_page
+  urlencode；④ search_repos 解析（full_name/stars/language）+ 响应缺
+  items 键=真空返回 [] 不炸；⑤ 错误接线端到端：HTTPError 403 → 默认
+  report 行三要素（`tool=github`/`action=releases`/`query=repo`——值班
+  2026-09-16 两班 403 的现实病形状）；⑥ raise 重抛 / empty=[] /
+  advisories 与 search_repos 两条接线各自 action/query 正确；⑦
+  GITHUB_TOKEN 头 = **`token ghp_x` 精确格式** + UA + Accept，匿名无
+  Authorization——与 doctor 的 `Bearer` 头**两套语义分立各自钉死**，
+  防互相「纠正」成对方；⑧ CLI 死代理子进程 exit 1 + stderr
+  `[github/releases] error:` 前缀。
+- **hackernews 收尾钉（3 钉）**：search() 错误接线三态（report 行含
+  `tool=hackernews`/`query`；raise 重抛；empty=[]）+ CLI 死代理子进程
+  exit 1 + stderr `[hackernews] error:` 前缀（成功路径 e2e 已有
+  test_offline 锁死，不重钉）。
+- **离线纪律**：进程内 mock `urllib.request.urlopen`（捕获 Request 断言
+  URL 与头）+ 死代理子进程（`https_proxy=127.0.0.1:9` 必拒绝端口，
+  urlopen 秒拒=确定性 URLError，零真实网络零外联）。
+- **评估不立项（裁决留痕）**：wenxin_engine 304-398（camoufox 浏览器层
+  +配额纪律相邻，mock 测试=测 mock）；zhihu_engine 搜狗/百度 fallback
+  取数体（v3.10 钉群已在+节流真实语义）；auto_select_node 25-60（网络
+  测速核，v3.43 已钉六关键路径，剩余=测 mock）；凭据线（知乎搜索登录/
+  B 站 SESSDATA/公众号 headed/GitHub Release 等）+ google-bridge 敏感件
+  + wenxin 配额纪律——主人边界零触碰。
+- **版本锁交接**：test_v3430 精确锁降常青（≥3.43 + 三载体同步 +
+  docstring 首行同步，v3.27→…→v3.40→v3.42→v3.43 交接链延续），
+  test_v3440 接管精确锁 + 徽章公式（同批降常青坍缩会让「基线+本批钉数」
+  旧公式虚报 5[839+17 vs 实际 851]——公式升级为全仓真值计数：正则数遍
+  tests/test_*.py 的 `^    def test_\(`，与 pytest 收集数对账一致）。
+- **顺手**：`.coverage` 入 .gitignore（本批评估用 coverage 工件实测会
+  落仓库根，防下次误提交）。
+- 测试：test_v3440 17 钉全离线（github 8 / hackernews 3 / 版本锁 6），
+  839→851 两轮连续绿（+17 新钉 −5 降常青坍缩）。
+
 ## [3.43.0] - 2026-09-17
 
 ### 🎯 全箱精修批：doctor 软警告 cron 可见性 + 环境对齐落锤 + 覆盖缺口补钉 + 文档计数漂移修复

@@ -2,11 +2,27 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.43.0](https://img.shields.io/badge/release-v3.43.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.43.0)
+[![Release: v3.44.0](https://img.shields.io/badge/release-v3.44.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.44.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 839 passing](https://img.shields.io/badge/tests-839%20passing-success.svg)](tests/)
+[![Tests: 851 passing](https://img.shields.io/badge/tests-851%20passing-success.svg)](tests/)
 
+**v3.44.0（2026-09-17）**：v3.0 全面审计大修之后连续四十四轮迭代——
+正主客户端行为钉批（v3.43 覆盖缺口线的正主遗漏项收尾）：全量覆盖率
+取证（coverage --source=tools）暴露 **github_client 22% 全仓最低**
+（v3.43 只钉了 client.py shim 转发等价，正主三主函数的解析/repo URL
+path 转义[防注入语义]/错误协议接线/GITHUB_TOKEN `token` 头/CLI exit 1
+全部零行为钉）+ **hackernews 错误接线与 CLI 零钉**——github 8 钉
+（解析回退与截断/转义/HTTPError 403 report 三要素/raise/empty/items
+缺键=真空/`token` 头与匿名分立[doctor 的 Bearer 头语义各自钉死防互改]/
+死代理子进程 exit 1）+ hackernews 3 钉（report 行 tool/query/raise/
+empty/CLI exit 1），全离线（mock urlopen + 死代理 127.0.0.1:9 子进程，
+零真实网络）；评估不立项留痕（wenxin 浏览器层=zhihu fallback=auto_select
+剩余=测 mock，凭据线/google-bridge 敏感件/wenxin 配额纪律零触碰）；
+test_v3430 精确锁降常青交接 test_v3440（徽章公式升级为全仓真值计数
+851——旧「基线+本批钉数」公式在同批降常青坍缩下会虚报），详见
+[CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.43.0（2026-09-17）**：v3.0 全面审计大修之后连续四十三轮迭代——全箱
 精修批（完美主义质量工程）：**doctor 软警告 cron 可见性**（末行点名降级
 通道如「软警告 1（GitHub API）」+ TTY 直连整行 ANSI 加粗；cron 重定向

@@ -125,7 +125,7 @@ from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
 import _logfmt   # shift_log 行格式单一真源（v3.38 四方收口，同目录）
 
-__version__ = "3.43.0"
+__version__ = "3.44.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
