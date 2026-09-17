@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""shift_log 班次行格式单一真源（v3.38 自四方副本收口）——`[YYYY-MM-DD
-HH:MM]` 前缀的时间戳格式、行构造与行解析同住一处。
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+r"""shift_log 班次行格式单一真源（v3.38 自四方副本收口）——`[YYYY-MM-DD
+HH:MM]` 前缀的时间戳格式、行构造与行解析同住一处。v3.39 消费端
+「解析 + 今日过滤」双条件语义也随 parse_today_lines() 收口于此。
+（docstring raw 化：v3.38 起正文含 `\s?` 正则形态，非 raw 前缀在
+compile 期报 SyntaxWarning invalid escape sequence——v3.39 顺手修，
+-W error::SyntaxWarning 下可净导入。）
 
 病灶同源（副本漂移是潜伏病，v3.36 解码链收口同款教训）：班次日志格式
 此前以**逐字节等价**形态散落四处——
@@ -27,7 +33,7 @@ import re
 from datetime import datetime
 
 __all__ = ["STAMP_FMT", "STAMP_RE", "ENTRY_RE", "TIME_ONLY_RE",
-           "stamp", "make_line"]
+           "stamp", "make_line", "parse_today_lines"]
 
 # 分钟级时间戳 strftime 格式（写入端唯一来源）
 STAMP_FMT = "%Y-%m-%d %H:%M"
@@ -58,3 +64,23 @@ def make_line(ts: str, body: str, max_len: int) -> str:
     流水不刷屏——明细在快照文件与 stdout JSON 里）。
     """
     return f"[{ts[:16]}] {body[:max_len]}"
+
+
+def parse_today_lines(text: str, today: str, line_re) -> list:
+    """班次日志「解析 + 今日过滤」通用语义（v3.39 自 digest 消费端下沉）。
+
+    line_re 是消费方以 STAMP_RE 合成的专属行正则——本模块只钉行级
+    契约：group(1)=日期 YYYY-MM-DD、group(2)=内容；行体前缀（如
+    digest 的 `hotlist_watch: `）留在消费方合成，不进本模块。text
+    逐行 strip 后匹配，**双条件**语义（形态合规 且 日期 == today 才
+    收——形态合规但非今日的行剔除，v3.31 跨解析器钉 / v3.38
+    test_watch_line_to_digest_consumer 钉的语义随函数迁此）成立才收
+    group(2)。返回今日行内容列表（顺序保持文件序）；截断、去重等
+    展示策略是消费方职责，不在此处。
+    """
+    out = []
+    for ln in text.splitlines():
+        m = line_re.match(ln.strip())
+        if m and m.group(1) == today:
+            out.append(m.group(2))
+    return out

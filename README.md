@@ -2,11 +2,24 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.38.0](https://img.shields.io/badge/release-v3.38.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.38.0)
+[![Release: v3.39.0](https://img.shields.io/badge/release-v3.39.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.39.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 730 passing](https://img.shields.io/badge/tests-730%20passing-success.svg)](tests/)
+[![Tests: 746 passing](https://img.shields.io/badge/tests-746%20passing-success.svg)](tests/)
 
+**v3.39.0（2026-09-17）**：v3.0 全面审计大修之后连续四十轮迭代——
+**parse_today_lines() 消费端语义下沉 _logfmt**（digest.fetch_hotlist
+消费 shift_log 今日 hotlist_watch 行的「解析 + 今日过滤」双条件实现
+自消费端下沉 tools/_logfmt.parse_today_lines 单一真源——行前缀正则
+留消费方合成、截断展示策略留消费端，digest 内联实现清零源码钉 +
+v3.38 pattern 逐字节延续自证）+ **worker_queue 双队列语义审计结案**
+（机制层 .py 与数据层 .json 同名是配对不是混用：三层既有文档钉闭环
++ hooks 侧无第二份实现单一真源 + 部署副本 cmp 字节级一致——判词=
+现状即稳态，改名消歧被否，四钉固化入测试）+ **顺手修 _logfmt
+docstring 裸转义潜伏 SyntaxWarning**（-W error 下原版即 SyntaxError；
+全 tools compile 期零警告固化为自动检查钉），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.38.0（2026-09-17）**：v3.0 全面审计大修之后连续三十九轮迭代——
 **shift_log 行格式单一真源**：tools/_logfmt.py（`[YYYY-MM-DD HH:MM]`
 前缀班次行格式四方副本收口一处：doctor 值班趋势解析端

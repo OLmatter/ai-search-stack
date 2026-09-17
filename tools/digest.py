@@ -104,7 +104,7 @@ from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
 import _logfmt   # shift_log 行格式单一真源（v3.38 四方收口，同目录）
 
-__version__ = "3.38.0"
+__version__ = "3.39.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
@@ -129,7 +129,9 @@ _DIFF_LINE_MAX = 500     # --log 一行上限（班次流水不刷屏，hotlist_
 # _logfmt.STAMP_RE 合成——与写入端 hotlist_watch.render_log_line、解析
 # 端 doctor._shift_log_stats 同源；固定前缀 `[YYYY-MM-DD HH:MM]
 # hotlist_watch: `——跨解析器契约的消费端，v3.31 test 跨解析器钉死供方，
-# 这里钉消费）
+# 这里钉消费）。v3.39 起「匹配 + 今日过滤」双条件消费语义走
+# _logfmt.parse_today_lines()（本正则作 line_re 注入，group(1)=日期
+# group(2)=内容），digest 只保留行截断展示策略。
 _WATCH_LINE_RE = re.compile(rf"^{_logfmt.STAMP_RE} (hotlist_watch: .*)$")
 
 _paths_ready = False
@@ -303,10 +305,11 @@ def fetch_hotlist(snapshots_dir: Optional[str] = None,
     except OSError:
         text = ""
     today_s = d.strftime("%Y-%m-%d")
-    for ln in text.splitlines():
-        m = _WATCH_LINE_RE.match(ln.strip())
-        if m and m.group(1) == today_s:
-            out["watch_lines"].append(m.group(2)[:_DIFF_LINE_MAX])
+    # 今日 diff 行：解析+日期过滤双条件走 _logfmt.parse_today_lines
+    # （v3.39 下沉——行级契约单一真源），digest 只保留截断展示策略
+    out["watch_lines"] = [s[:_DIFF_LINE_MAX] for s in
+                          _logfmt.parse_today_lines(text, today_s,
+                                                    _WATCH_LINE_RE)]
     # 2) 最新快照 top 行
     snap_dir = snapshots_dir or str(DEFAULT_SNAPSHOTS)
     prev = hw.latest_snapshot(snap_dir)

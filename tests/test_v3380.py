@@ -16,7 +16,8 @@
    doctor._shift_log_stats；hotlist_watch 行 → digest._WATCH_LINE_RE
    消费端（供方→消费方，v3.31 跨解析器钉延续）；digest 行 →
    ENTRY_RE 直解。+ 诚实文档钉（收口史随 _logfmt docstring 走）。
-4. 版本锁 3.38.0（自 test_v3370 接管精确锁）+ CHANGELOG/README 徽章。
+4. 版本锁 3.38.0（自 test_v3370 接管；v3.39 起精确锁交接 test_v3390，
+   本文件降常青 >= 形态钉）+ CHANGELOG 历史/README 徽章形态。
 """
 import pathlib
 import re
@@ -212,44 +213,40 @@ class TestRoundTrip(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 4. 版本锁 3.38.0 + 文档（自 test_v3370 接管精确锁）
+# 4. 版本锁（自 test_v3370 接管；v3.39 起精确锁交接 test_v3390，本钉降常青）
 # ---------------------------------------------------------------------------
 class TestVersionSyncV338(unittest.TestCase):
     def test_versions_3380(self):
-        self.assertEqual(dg.__version__, "3.38.0")
+        # v3.39 起精确版本锁交接 test_v3390，本钉降常青（>= 3.38，
+        # v3.33->v3.34 降常青先例）
+        self.assertGreaterEqual(
+            tuple(int(x) for x in dg.__version__.split(".")), (3, 38, 0))
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.38.0")
-        self.assertIn("chat-scraper v3.38.0", init_src)
+        m = re.search(r'__version__ = "(\d+)\.(\d+)\.(\d+)"', init_src)
+        self.assertIsNotNone(m)
+        self.assertGreaterEqual(tuple(map(int, m.groups())), (3, 38, 0))
+        self.assertRegex(init_src, r"chat-scraper v3\.\d+\.\d+")
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.38.0")
+            self.assertGreaterEqual(
+                tuple(int(x) for x in mcp_server.__version__.split(".")),
+                (3, 38, 0))
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.38.0"', src)
+            self.assertIsNotNone(
+                re.search(r'__version__ = "3\.\d+\.\d+"', src))
 
     def test_changelog_and_readme_3380(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("## [3.38.0] - 2026-09-17", changelog)
+        self.assertIn("## [3.38.0] - 2026-09-17", changelog)   # 历史段永在
         self.assertIn("_logfmt", changelog)
         self.assertIn("toast.py", changelog)     # toast 取证结论入账
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.38.0", readme)
-        self.assertIn("v3.38.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 712（v3.37 基线）+ 本批钉数
-        m = re.search(r"tests-(\d+)%20passing", readme)
-        self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 712 + self._batch_pins())
-
-    @staticmethod
-    def _batch_pins():
-        src = (REPO / "tests" / "test_v3380.py").read_text(encoding="utf-8")
-        # 数真实 test 方法定义形态；本函数注释与正则字面量一律不得写成
-        # 可被下方正则命中的形态（自引用虚增——v3.33 首跑抓到过）
-        return len(re.findall(r"def (test_\w+)\(", src))
+        # v3.39 起精确版本徽章交接 test_v3390；本钉降常青：只钉徽章形态存在
+        self.assertIsNotNone(re.search(r"release-v3\.\d+\.\d+", readme))
+        self.assertIsNotNone(re.search(r"tests-\d+%20passing", readme))
 
 
 if __name__ == "__main__":

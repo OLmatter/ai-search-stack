@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.39.0] - 2026-09-17
+
+### 🎯 parse_today_lines() 消费端语义下沉 _logfmt + worker_queue 边界审计
+
+- **消费端「解析 + 今日过滤」双条件语义收口（v3.38 收口线的下一环，
+  上轮任务清单明记项）**：digest.fetch_hotlist 消费 shift_log 今日
+  hotlist_watch 行的双条件消费实现（`_WATCH_LINE_RE.match` +
+  `m.group(1) == today_s` 行内循环）下沉 `tools/_logfmt.py
+  parse_today_lines(text, today, line_re)`——行级契约（形态合规 且
+  日期 == today 才收 group(2)，昨日形态合规行剔除、strip 容忍、顺序
+  保持文件序）单一真源；消费方专属行正则（`hotlist_watch: ` 前缀）
+  以 line_re 注入留在消费方合成，通用性钉（digest: 前缀同走一函数）
+  证明前缀不进模块；截断（_DIFF_LINE_MAX）等展示策略留在消费端。
+  digest.py 内联双条件消费实现清零（源码钉：`m.group(1) ==` /
+  `_WATCH_LINE_RE.match` / `for ln in text.splitlines()` 形态不再
+  出现）；_WATCH_LINE_RE 正则本体与 pattern 逐字节不变（v3.38 旧钉
+  延续自证）。
+- **worker_queue 双队列语义审计结案（上轮任务清单明记项，取证后判
+  词=现状即稳态，不加密名钉不改名）**：`tools/chat-scraper/
+  worker_queue.py`（机制层 .py）与 `~/.zcode/worker_queue.json`
+  （数据层 .json）同名是机制-数据配对不是混用风险——扩展名区分 +
+  三层既有文档钉已闭环（worker_queue.py docstring 钉数据文件对应、
+  hooks/stop_wake.py 强制条款「领活只此一法 acquire() / 禁止绕过
+  入口直接读 worker_queue.json」（三轮并行互踩实证条款在位）、
+  README 领活入口段）；hooks 侧无第二份 worker_queue.py 实现
+  （stop_wake.py 从仓库探测 import 同一模块，单一真源成立）；部署
+  副本 ~/.zcode/hooks/stop_wake.py 与仓库真源 cmp 字节级一致（v3.20
+  核验线延续）。判词固化四钉入 test_v3390（机制-数据对应钉、强制
+  条款钉、部署副本一致性 cmp 钉——非部署机 skip 跨机可跑、仓库内
+  队列路径字面量单写方钉），改名消歧被否（破坏 stop_wake 部署副本
+  /CHANGELOG 历史/三测试文件既有引用，收益为零）。
+- **顺手修（同批收口线先例）：_logfmt.py docstring 裸 `\s?` 非 raw
+  前缀潜伏 SyntaxWarning（v3.38 引入即带；`-W error::SyntaxWarning`
+  下 import 直接 SyntaxError）——docstring r""" 化；全 tools 源码
+  compile 期零 SyntaxWarning 扫描 CLEAN 并固化为自动检查钉
+  （google-bridge 敏感件不在范围）。
+- **评估不立项（边界内取证）**：凭据线全禁、google-bridge 敏感件
+  不动、wenxin 配额纪律不动三边界零接触；其余扫描无「零新病风险下
+  值得动」的候选——十杀纪律宁少不多。
+- **测试**：test_v3390 16 钉（parse_today_lines 原语 4：双条件迁移/
+  strip+坏行/空文本/前缀留消费方通用性；digest 接线 6：fetch_hotlist
+  端到端今日行+截断留消费端、日志缺失空列表原行为、源码钉委托清零、
+  v338 pattern 延续自证、docstring 下沉史、compile 零警告全仓扫；
+  worker_queue 审计 4；版本锁 2）+ test_v3380 版本锁降常青交接
+  （>= 3.38 形态钉，v3.33->v3.34 交接先例）。730→746 连续两轮绿。
+  engines/mcp 零变更（v3.33 组合层判词延续）。
+
 ## [3.38.0] - 2026-09-17
 
 ### 🎯 shift_log 行格式单一真源（tools/_logfmt.py）
