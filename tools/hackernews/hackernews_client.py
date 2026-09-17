@@ -38,7 +38,10 @@ def search(
     """HN Algolia 搜索
 
     Args:
-        q: 搜索关键词
+        q: 搜索关键词。**不支持布尔语法**（v3.42 如实声明）：Algolia 把
+            AND/OR/NOT 当普通词参与匹配、不解析引号短语——`"a OR b"` 会
+            搜"同时含 a、OR、b 的帖子"，结果跑偏。要多词任一命中请拆成
+            多次调用。
         num: 返回数量
         since: 时间窗 (24h / 7d / 30d / 90d)；None/"" 表示不过滤时间
         vendor: 主题分类

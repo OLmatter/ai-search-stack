@@ -53,6 +53,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     「真空（0 结果）」；任何未预期异常也被本层兜底成同形态 JSON，绝不炸 server。
 """
 import contextlib
+import inspect
 import io
 import json
 import os
@@ -62,7 +63,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.40.0"
+__version__ = "3.42.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -123,6 +124,31 @@ mcp = _make_server()
 
 
 # ---------------------------------------------------------------------------
+# 工具装饰器单点收口（v3.42）：structured_output=False 关停 SDK 的
+# 明文+structured 双份输出。
+#
+# 机制取证（mcp 2.1.1 func_metadata.convert_result）：工具函数带 `-> str`
+# 注解时 SDK 自动派生 output_schema（{"result": string} 包装），每次调用
+# 在 CallToolResult 里同时发 content=[TextContent(整份 JSON)] 和
+# structured_content={"result": 整份 JSON}——客户端把两份都喂给 LLM，
+# 上下文翻倍。structured_output=False 让 FuncMetadata 无 output_model，
+# wire 上只剩单份文本。
+#
+# 兼容性：mcp 2.x（MCPServer）原生支持该参数；1.x 老版 FastMCP 无此
+# 参数——签名探测后剔除（1.x 本就没有 structured 双份问题，剔除无损）。
+# ---------------------------------------------------------------------------
+def _tool(**kwargs):
+    if "structured_output" in kwargs:
+        try:
+            sig = inspect.signature(mcp.tool)
+        except (TypeError, ValueError):
+            sig = None
+        if sig is None or "structured_output" not in sig.parameters:
+            kwargs.pop("structured_output")
+    return mcp.tool(**kwargs)
+
+
+# ---------------------------------------------------------------------------
 # 执行卫兵：stdout 卫兵 + 错误协议兜底 + JSON 序列化
 # ---------------------------------------------------------------------------
 @contextlib.contextmanager
@@ -161,7 +187,7 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 # 15 个 MCP tools —— 每个都是对现有模块函数的透传委托
 # ---------------------------------------------------------------------------
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "中国平台聚合搜索：知乎/B站/掘金官方 API + 百度 site: 路由 16 站"
     "（CSDN/简书/豆瓣/微博/V2EX/SegmentFault/博客园/开源中国/51CTO/"
     "Gitee/微信公众号/头条/百度贴吧等）。\n"
@@ -181,11 +207,13 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
     "——搜狗连发风控阈值实测 4 发（v3.13 标定），不做翻页。\n"
     "耗时：bilibili/juejin 1-3s；知乎走 SearXNG→搜狗→百度降级链数秒；百度引擎有"
     "强制 ~20s 请求间隔，多平台串行按平台数放大（2 平台可能 40s+），请耐心。\n"
+    "since: 24h/7d/30d（默认 7d，v3.42 起门面默认与各引擎统一——监控场景"
+    "忘传 since 不再混入旧闻）；传空串显式不过滤。\n"
     "错误在返回 JSON 内（{\"error\": ...} 项），区分故障与 0 结果。"))
 def china_search(q: str,
                  platforms: Optional[List[str]] = None,
                  num: int = 10,
-                 since: Optional[str] = None,
+                 since: str = "7d",
                  vendor: str = "?",
                  role: str = "primary") -> str:
     """委托 chat-scraper search 门面（on_error 固定 report）。"""
@@ -194,7 +222,7 @@ def china_search(q: str,
                 on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "中国平台热榜聚合（无查询词的监控原语）：bilibili 热门 + 微博热搜的"
     "结构化榜单（rank/title/url），知乎热榜实测需登录态（平台位保留，恒报 "
     "zhihu_hotlist_needs_login，零网络请求）。\n"
@@ -219,7 +247,7 @@ def china_hotlist(platforms: Optional[List[str]] = None,
                 vendor=vendor, role=role, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "通用阅读器：读任意 URL 的正文，返回 {title, content, truncated, url, "
     "engine}（content 截 8000 时 truncated=true）。\n"
     "智能分流：知乎问题/回答/专栏走官方 API 线；B 站 /video/BVxx 走官方 "
@@ -236,7 +264,7 @@ def read_page(url: str) -> str:
     return _run("chat-scraper", url, _zhihu.read, url)
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "知乎问题详情（官方 API，结构化）：{id, title, detail, answer_count, url}。\n"
     "何时用：已知知乎问题 ID/链接，要问题标题与题干。要回答内容用 "
     "zhihu_answers；要专栏文章用 zhihu_article；懒得分辨时直接用 read_page。\n"
@@ -249,7 +277,7 @@ def zhihu_question(question_id: str) -> str:
                 question_id)
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "知乎回答列表（官方 API，结构化）：[{author, excerpt, voteup, url}]。\n"
     "何时用：已知知乎问题 ID/链接，要高赞回答摘要与作者。只要题干用 "
     "zhihu_question；要单个回答全文用 read_page。\n"
@@ -270,7 +298,7 @@ def zhihu_answers(question_id: str,
                 question_id, num=num, sort_by=sort_by)
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "知乎专栏文章（官方 API，结构化）：{id, title, content(纯文本, 截 8000 "
     "时带 truncated=true), "
     "created, updated, voteup, comment_count, url}。\n"
@@ -283,7 +311,7 @@ def zhihu_article(article_or_url: str) -> str:
                 article_or_url)
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "知乎评论读取（官方 comment_v5 API，结构化）：[{id, author, "
     "content(纯文本≤500), like_count, created_time, child_comment_count, "
     "child_comments(已展开扁平子列表), reply_to, url}]。\n"
@@ -310,7 +338,7 @@ def zhihu_comments(target: str,
                 expand_children=expand_children, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "B 站视频结构化详情（官方 view API，公开免签名）：{title, desc(截 2000 "
     "时带 truncated=true), owner, cid, page, part_title, pages_count, "
     "view, danmaku, like, favorite, pubdate, url, engine}。\n"
@@ -326,7 +354,7 @@ def bilibili_video(video: str, part: Optional[int] = None) -> str:
                 part=part, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "B 站视频字幕读取（view 拿 cid + player/wbi/v2 wbi 签名）：{bvid, cid, "
     "page, part_title, pages_count, title, has_subtitles, subtitles:"
     "[{lan, lan_doc, lines:[{from, to, content}]}], url, note}。\n"
@@ -344,11 +372,14 @@ def bilibili_subtitles(video: str, part: Optional[int] = None) -> str:
                 part=part, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "Hacker News 搜索（Algolia API）：[{title, url, content, points, "
     "comments, author, ts}]。\n"
     "何时用：验证国际技术社区对某项目/话题的真实反应（高赞=强信号）。中文/"
     "中国平台内容用 china_search；通用搜索用 searxng_search。\n"
+    "q 不支持布尔语法（v3.42 如实声明）：AND/OR/NOT 及引号短语都不会被 "
+    "Algolia 解析——OR 会被当普通词参与匹配导致结果跑偏；要多词任一命中"
+    "请拆成多次调用。\n"
     "tags: story（默认）/ comment / poll；since: 24h/7d/30d/90d（默认 7d，"
     "传空串不过滤）。耗时：秒级，零部署。\n"
     "错误在返回 JSON 内。"))
@@ -363,7 +394,7 @@ def hn_search(q: str,
                 vendor=vendor, role=role, tags=tags, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "GitHub 项目 release 列表：[{title, url, content(release notes 前500字), "
     "tag, ts, prerelease}]。\n"
     "何时用：查某项目的版本发布/更新日志/新版本验证。安全通告用 "
@@ -379,7 +410,7 @@ def github_releases(repo: str,
                 vendor=vendor, role=role, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "GitHub Security Advisories 安全通告：[{title, url, content, cve, "
     "severity, ts}]。\n"
     "何时用：查某生态（npm/pip/rubygems/composer…）近期安全通告、验证依赖"
@@ -395,7 +426,7 @@ def github_advisories(ecosystem: str = "npm",
                 num=num, vendor=vendor, role=role, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "SearXNG 聚合搜索（元搜索引擎）：[{title, url, content, engine, "
     "category}]。\n"
     "何时用：通用兜底搜索（CAPTCHA/主搜不可用时）。实例固定为本地 "
@@ -419,7 +450,7 @@ def searxng_search(q: str,
                 categories=categories, on_error="report")
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "真 Google 搜索（本地 search_helper 服务转发，undetected-chromedriver）。\n"
     "何时用：WebSearch 类工具 100% CAPTCHA 时的真 Google 结果。前置条件硬："
     "本机 127.0.0.1:18799 已起服务（tools/google-bridge/start_search_helper.sh，"
@@ -467,14 +498,17 @@ def googlebridge_search(q: str,
     return _dumps(body)
 
 
-@mcp.tool(description=(
+@_tool(structured_output=False, description=(
     "ai-search-stack 工具箱体检：巡检全部通道健康并返回文本报告。\n"
     "mode 四态（默认 full）：full=全量巡检（9 项：本地 SearXNG 实例、知乎 "
     "cookie、标定钩子活性[覆盖 cookie+sogou+weibo 三个标定日志]、bilibili 官方 "
     "API、百度直连、热榜通道[bilibili popular 烂检测+微博访客 cookie 单发探活"
     "（禁 incarnate），读数顺带落账 weibo_cookie_lifetime_log.jsonl；知乎 "
-    "needs_login 诚实上限不算故障]、google-bridge 服务、GitHub API、值班巡检"
-    "趋势[shift_log 近 7 天条数/覆盖天数/每日分布/事件计数/最近一条摘要]）；"
+    "needs_login 诚实上限不算故障]、google-bridge 服务[/health + "
+    "Chrome/ChromeDriver 版本匹配自检，服务在跑但版本错配亮 ⚠️——探活≠可用]、"
+    "GitHub API[/rate_limit 可达性+配额读数，remaining=0 亮 ⚠️ 配额耗尽"
+    "（探活≠可用），不翻退出码]、值班巡检趋势[shift_log 近 7 天条数/覆盖天数/"
+    "每日分布/事件计数/最近一条摘要]）；"
     "cookie=只跑知乎 cookie 寿命标定探活（真实调一次 questions API，读数追加 "
     "state/cookie_lifetime_log.jsonl，禁自愈保真实寿命）；sogou=只跑搜狗恢复"
     "曲线单发探活（真实发一次搜索，读数含距上次风控秒数追加 "
@@ -485,9 +519,11 @@ def googlebridge_search(q: str,
     "标定钩子排查用 cookie/sogou/hotlist 子模式。\n"
     "耗时：full 约 5-10s（6 项网络探活）；cookie/sogou/hotlist 单发秒级~"
     "十几秒。\n"
-    "返回纯文本报告，末行含退出码语义：full 0=核心全绿或仅可选服务未起/"
-    "1=有核心通道故障；cookie/sogou/hotlist 0=成功观测（expired/missing/"
-    "blocked 均为有效标定读数）/1=本地故障。非法 mode 返回 error JSON。"))
+    "返回纯文本报告，末行含退出码语义：full 0=核心全绿或仅可选服务未起或"
+    "软警告（⚠️ GitHub 配额耗尽/google-bridge 版本错配——通道本体活着，"
+    "可用性降级）/1=有核心通道故障；cookie/sogou/hotlist 0=成功观测"
+    "（expired/missing/blocked 均为有效标定读数）/1=本地故障。"
+    "非法 mode 返回 error JSON。"))
 def doctor(mode: str = "full") -> str:
     """复用 tools/doctor.py 的 check/探活体系：捕获 stdout 得到报告文本（不 subprocess）。"""
     if mode not in ("full", "cookie", "sogou", "hotlist"):
@@ -511,7 +547,8 @@ def doctor(mode: str = "full") -> str:
     except Exception as e:  # noqa: BLE001
         return _dumps([_err("doctor", mode, e)])
     if mode == "full":
-        tail = "0=核心通道全绿或仅可选服务未启动; 1=有核心通道故障"
+        tail = ("0=核心通道全绿或仅可选服务未启动或软警告（⚠️ 配额耗尽/"
+                "版本错配——通道本体活着，可用性降级）; 1=有核心通道故障")
     else:
         # 探活模式只观测不判故障：expired/blocked/missing 都是成功标定读数
         tail = ("0=成功观测（expired/missing/blocked 均为有效标定读数）; "

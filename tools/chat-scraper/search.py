@@ -153,7 +153,7 @@ def search(
     q: str,
     platforms: Optional[List[str]] = None,
     num: int = 10,
-    since: Optional[str] = None,
+    since: Optional[str] = "7d",
     vendor: str = "?",
     role: str = "primary",
     on_error: str = "report",
@@ -166,8 +166,11 @@ def search(
             None / 空 / 含 "general" -> 百度无 site: 通用搜索；
             未知但形如域名的字符串按 site: 透传，其余报 unknown platform。
         num: 每个平台的返回条数上限
-        since: 时间窗（24h/7d/30d；bilibili 另支持 90d），None/"" 不过滤。
-            百度侧为 best-effort（gpc=stf），bilibili 侧为客户端 pubdate 过滤。
+        since: 时间窗（24h/7d/30d；bilibili 另支持 90d）。v3.42 起默认
+            "7d"——与 hn/searxng/googlebridge 各引擎统一：监控场景忘传
+            since 不再静默混入旧闻。显式传 None/"" 仍为不过滤（旧调用方
+            兼容）。百度侧为 best-effort（gpc=stf），bilibili 侧为客户端
+            pubdate 过滤。
         vendor: 主题分类（指标用，透传）
         role: primary / fallback / verify（透传）
         on_error: "report"（默认）/ "raise" / "empty"（见模块 docstring）
@@ -252,8 +255,9 @@ def _main() -> int:
     parser.add_argument("--platforms", default=None,
                         help="逗号分隔平台名，如 zhihu,bilibili；省略为通用搜索")
     parser.add_argument("--num", type=int, default=10)
-    parser.add_argument("--since", default=None,
-                        help="24h/7d/30d（best-effort），省略不过滤")
+    parser.add_argument("--since", default="7d",
+                        help="24h/7d/30d（best-effort）；默认 7d（v3.42 起"
+                             "与各引擎统一），传空串显式不过滤")
     parser.add_argument("--hot", action="store_true",
                         help="热榜模式（无查询词）：q 省略，--platforms "
                              "为 bilibili/weibo/zhihu，省略为默认可用集")

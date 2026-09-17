@@ -1,4 +1,4 @@
-"""search_helper v23.10 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export. v23.9: CAPTCHA/lockout answers HTTP 503 (never disguised as 200/0-results) + zero-result page dump for diagnosis. v23.10: dead "Method 2" (AF-init JSON extraction, provably inert) removed.
+"""search_helper v23.11 — undetected-chromedriver + stealth + mihomo proxy + CAPTCHA backoff + cooldown + 7d default + honeypot + query-metrics fields (engine/vendor/query_role) + faulthandler SIGUSR1 (POSIX only) + portable defaults (UDD/bind/chromedriver lookup) + vendor/role URL params + /export with vendor/role filters + JSON Lines export. v23.9: CAPTCHA/lockout answers HTTP 503 (never disguised as 200/0-results) + zero-result page dump for diagnosis. v23.10: dead "Method 2" (AF-init JSON extraction, provably inert) removed. v23.11 (v3.42): Chrome/ChromeDriver 版本自检——version_diagnostics() 零浏览器诊断 + get_driver 启动打印（错配给修复指引，不自动下载）+ /health 附版本字段 + --check-versions 单独诊断模式；_HELPER_VERSION 收口版本字样。
 
 Endpoints:
   GET /search?q=...&num=10&since=24h
@@ -24,6 +24,8 @@ Architecture:
   - CDP + DevTools Protocol (no Selenium overhead for fast search)
 """
 import sys, json, os, time, traceback, shutil
+import re as _re
+import subprocess as _subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs, unquote, urlencode
 
@@ -171,6 +173,138 @@ def _find_chromedriver():
     return shutil.which('chromedriver')
 
 
+# ---------------------------------------------------------------------------
+# v23.11: Chrome/ChromeDriver 版本自检（诊断，不自动下载）。
+#
+# 真实使用验证暴露的环境脆弱点：本地 state/bin 里放死的 chromedriver 在
+# Chrome 自动升级后 major 版本错配，首次 /search 拉起 Chrome 时才炸
+# "session not created: This version of ChromeDriver only supports Chrome
+# version XX"——错误出现在最痛的时刻（调用方等了几十秒之后）。这里的
+# 自检把错配提前到启动打印 / /health 字段 / doctor ⚠️。
+#
+# 纪律：**只诊断，不自动下载**（下载是版本管理决策，归人；自动下载在
+# 服务器上还会撞 Google 存储不可达的老问题，见 get_driver 注释）。
+# 提取全部用零进程/安全单进程手段：Windows 上绝不跑 `chrome.exe
+# --version`（该 flag 在 Windows 不打印版本且可能拉起浏览器进程），
+# 改读同目录版本号子目录（标准安装布局）+ 注册表 BLBeacon 兜底。
+# ---------------------------------------------------------------------------
+
+_HELPER_VERSION = 'v23.11'
+
+_VER_SUBDIR_RE = _re.compile(r'^\d+\.\d+\.\d+\.\d+$')
+_CHROMEDRIVER_VER_RE = _re.compile(r'ChromeDriver (\d+(?:\.\d+){3})')
+_CHROME_VER_RE = _re.compile(r'(\d+(?:\.\d+){3})')
+
+
+def _default_chrome_bin():
+    """get_driver 同款 chrome_bin 解析（诊断路径不能和真实启动路径分叉）。"""
+    env_bin = os.environ.get('NO1_CHROME_BIN')
+    if env_bin:
+        return env_bin
+    if sys.platform == 'win32':
+        return r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+    return (shutil.which('google-chrome')
+            or shutil.which('google-chrome-stable')
+            or shutil.which('chromium')
+            or shutil.which('chromium-browser'))
+
+
+def _extract_chrome_version(chrome_bin):
+    """Chrome 主程序版本字符串；定位失败返回 None（诚实，不编造）。
+
+    Windows: exe 同目录找形如 141.0.7399.109 的版本子目录（标准安装
+    布局），缺失再读注册表 HKCU\\...\\BLBeacon\\version（Chrome 自更新
+    落的记录）——两者都零进程启动。其余平台: `chrome_bin --version`
+    （Linux/mac 打印并退出，安全）。subprocess 全程 timeout 保护。
+    """
+    if not chrome_bin or not os.path.isfile(chrome_bin):
+        return None
+    if sys.platform == 'win32':
+        try:
+            parent = os.path.dirname(chrome_bin)
+            vers = [d for d in os.listdir(parent)
+                    if _VER_SUBDIR_RE.match(d)]
+            if vers:
+                return sorted(vers)[-1]   # 多版本目录取最高
+        except OSError:
+            pass
+        try:
+            import winreg   # Windows only；Linux 上 import 即败，走 None
+            with winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r'Software\Google\Chrome\BLBeacon') as k:
+                return str(winreg.QueryValueEx(k, 'version')[0])
+        except Exception:
+            return None
+    try:
+        out = _subprocess.run([chrome_bin, '--version'], capture_output=True,
+                              text=True, timeout=8)
+        m = _CHROME_VER_RE.search(out.stdout or '')
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _extract_driver_version(driver_bin):
+    """ChromeDriver 版本字符串；未定位到 driver 返回 None（uc 自动下载分支）。"""
+    if not driver_bin or not os.path.isfile(driver_bin):
+        return None
+    try:
+        out = _subprocess.run([driver_bin, '--version'], capture_output=True,
+                              text=True, timeout=8)
+        m = _CHROMEDRIVER_VER_RE.search(out.stdout or '')
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+_VERSION_FIX_HINT = (
+    '修复指引（本工具不自动下载）：下载与 Chrome 同主版本的 ChromeDriver '
+    '(https://developer.chrome.com/docs/chromedriver/downloads)，放到 '
+    'tools/google-bridge/state/bin/ 下（drop-in），或设 NO1_CHROMEDRIVER_BIN '
+    '指向它；本地诊断命令: python tools/google-bridge/search_helper.py '
+    '--check-versions')
+
+
+def version_diagnostics(chrome_bin=None, driver_bin=None):
+    """版本诊断 dict：{chrome_bin, chrome_version, chromedriver_bin,
+    chromedriver_version, version_match, note}。
+
+    version_match 三态：True（major 相等）/ False（major 错配——首次
+    /search 将炸 session not created）/ None（单边未知或 driver 未定位
+    走 uc 自动下载——uc 会自取匹配 driver，无法本地判定，如实标 None）。
+    本函数零浏览器启动（Windows 不碰 chrome --version），/health 每次
+    调用都可安全附带。
+    """
+    chrome_bin = chrome_bin or _default_chrome_bin()
+    driver_bin = driver_bin or _find_chromedriver()
+    cv = _extract_chrome_version(chrome_bin)
+    dv = _extract_driver_version(driver_bin)
+    if cv and dv:
+        match = cv.split('.')[0] == dv.split('.')[0]
+        if match is False:
+            note = ('Chrome/ChromeDriver major 版本错配——首次搜索将失败。'
+                    + _VERSION_FIX_HINT)
+        else:
+            note = '版本匹配（major 一致）'
+    elif driver_bin is None:
+        match = None
+        note = ('未定位到 chromedriver（env/state/bin/PATH 均无）——'
+                'undetected-chromedriver 将自动下载匹配版本，匹配性由 uc 保证')
+    else:
+        match = None
+        note = ('版本信息部分不可得（chrome_version=%s, chromedriver_version=%s）'
+                '——匹配性未验' % (cv or '未知', dv or '未知'))
+    return {
+        'chrome_bin': chrome_bin,
+        'chrome_version': cv,
+        'chromedriver_bin': driver_bin,
+        'chromedriver_version': dv,
+        'version_match': match,
+        'note': note,
+    }
+
+
 def get_driver():
     """Lazy-init undetected-chromedriver (one per process, lock-protected)."""
     global _uc, _driver, _user_data_dir
@@ -222,24 +356,16 @@ def get_driver():
             use_subprocess=True,
             suppress_welcome=True,
         )
-        chrome_bin = os.environ.get('NO1_CHROME_BIN')
+        chrome_bin = _default_chrome_bin()   # v23.11: 与诊断路径同一真源
         # v23.1 (2026-07-31): default fallback path so get_driver() works even
         # if start_search_helper.sh never ran (e.g. agent_runner.py launched
         # search_helper directly). Without this fallback, uc.Chrome() looks
         # for /usr/bin/google-chrome (not present on this server), and
         # selenium raises "TypeError: Binary Location Must be a String" at
         # line 372 of undetected_chromedriver/__init__.py.
-        if not chrome_bin:
-            if sys.platform == 'win32':
-                chrome_bin = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
-            else:
-                # v23.8: portable Linux default — look on PATH only
-                # (google-chrome / chromium). No per-user legacy fallbacks.
-                # Override with NO1_CHROME_BIN if Chrome lives elsewhere.
-                chrome_bin = (shutil.which('google-chrome')
-                              or shutil.which('google-chrome-stable')
-                              or shutil.which('chromium')
-                              or shutil.which('chromium-browser'))
+        # v23.8: portable Linux default — look on PATH only
+        # (google-chrome / chromium). No per-user legacy fallbacks.
+        # Override with NO1_CHROME_BIN if Chrome lives elsewhere.
         kwargs['browser_executable_path'] = chrome_bin
         driver_bin = _find_chromedriver()
         if driver_bin:
@@ -248,6 +374,23 @@ def get_driver():
         else:
             print('[get_driver] no chromedriver found (env/state/bin/PATH); '
                   'letting undetected-chromedriver auto-download', flush=True)
+        # v23.11: 版本自检打印（诊断，不自动下载）——错配在拉 Chrome 之前
+        # 给出可读指引，而不是等首次 /search 炸 session not created。
+        # 诊断自身异常绝不阻断启动（自检是增值，不是闸门）。
+        try:
+            vdiag = version_diagnostics(chrome_bin=chrome_bin,
+                                        driver_bin=driver_bin)
+            print(f"[get_driver] version check: chrome={vdiag['chrome_version']}"
+                  f" ({vdiag['chrome_bin']}) / chromedriver="
+                  f"{vdiag['chromedriver_version']}"
+                  f" ({vdiag['chromedriver_bin']}) / match="
+                  f"{vdiag['version_match']}", flush=True)
+            if vdiag['version_match'] is False:
+                print(f"[get_driver] VERSION MISMATCH — {vdiag['note']}",
+                      flush=True)
+        except Exception as _vdiag_exc:
+            print(f'[get_driver] version check skipped: {_vdiag_exc}',
+                  flush=True)
         try:
             _driver = uc.Chrome(**kwargs)
             _chrome_last_error_ts[0] = 0.0
@@ -616,8 +759,21 @@ class SearchHandler(BaseHTTPRequestHandler):
 
         url = urlparse(path_str)
         if url.path == '/health':
-            return self._send_json({'ok': True, 'service': 'search_helper',
-                                    'version': 'v23.10', 'engine': 'undetected-chromedriver'})
+            # v23.11: 附带版本诊断字段（chrome_version/chromedriver_version/
+            # version_match/note）——doctor 用它把「服务在跑」升级成「服务
+            # 在跑且 driver 可用」。诊断异常时字段整体缺失（诚实：版本未验
+            # 优于 health 500）；零浏览器启动，watchdog 5s 超时内安全。
+            payload = {'ok': True, 'service': 'search_helper',
+                       'version': _HELPER_VERSION,
+                       'engine': 'undetected-chromedriver'}
+            try:
+                payload.update({
+                    k: version_diagnostics()[k]
+                    for k in ('chrome_version', 'chromedriver_version',
+                              'version_match', 'note')})
+            except Exception:
+                pass
+            return self._send_json(payload)
 
         # v16 (2026-07-30): /chrome_ready — lightweight Chrome liveness probe.
         # Returns 200 with {alive, info, driver_state} so watchdog can
@@ -772,7 +928,21 @@ class SearchHandler(BaseHTTPRequestHandler):
         return self._send_json({'error': 'not found'}, 404)
 
 
+def _cmd_check_versions():
+    """v23.11: --check-versions 单独诊断模式（不启动服务器/浏览器）。
+
+    打印版本诊断 JSON；退出码 0=匹配或无法判定（如实带 note）、
+    1=major 错配（cron/脚本可据此报警）。
+    """
+    diag = version_diagnostics()
+    print(json.dumps(diag, ensure_ascii=False, indent=2))
+    return 0 if diag['version_match'] is not False else 1
+
+
 def main():
+    # v23.11: --check-versions 诊断入口（doctor 修复指引的落地命令）。
+    if '--check-versions' in sys.argv[1:]:
+        sys.exit(_cmd_check_versions())
     port = int(os.environ.get('SEARCH_HELPER_PORT', '18799'))
     # v23.8 (2026-09-09): default to loopback only. The old default 0.0.0.0
     # exposed an unauthenticated search proxy to the whole LAN; bind publicly
@@ -780,7 +950,9 @@ def main():
     bind = os.environ.get('SEARCH_HELPER_BIND', '127.0.0.1')
     from http.server import ThreadingHTTPServer
     server = ThreadingHTTPServer((bind, port), SearchHandler)
-    print(f'search_helper v23.9 (portable paths + encoded query + load-failure 502 + '
+    # v23.11: 版本字样收口 _HELPER_VERSION（main 打印曾停在 v23.9，实际
+    # 已 v23.10——字样漂移的真实先例，故收单一真源）
+    print(f'search_helper {_HELPER_VERSION} (portable paths + encoded query + load-failure 502 + '
           f'lock-free cooldowns + tunable NO1_CAPTCHA_SLEEP/NO1_MIN_HTML_LEN) listening on {bind}:{port}', flush=True)
     print('  GET /health', flush=True)
     print('  GET /search?q=...&num=10&since=24h&vendor=claude&role=primary', flush=True)

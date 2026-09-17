@@ -1,5 +1,66 @@
 # Changelog
 
+## [3.42.0] - 2026-09-17
+
+### 🎯 doctor 探活盲区修复 + MCP 单份输出 + google-bridge 环境脆弱缓解
+
+- **doctor GitHub 检查改查 /rate_limit（探活≠可用·一）**：此前查 `/` 只证
+  「可达」——匿名配额耗尽时可达 ≠ 可用（github_releases/advisories 下一个
+  调用必 403，值班 2026-09-16 两班连续撞限流窗口的教训延伸）。v3.42 改查
+  `/rate_limit`（匿名可达、不消耗配额）拿 `resources.core.remaining/limit/
+  reset`；remaining=0 抛新增 `doctor.Warn` 亮 ⚠️「配额耗尽」附重置时间与
+  GITHUB_TOKEN 提额提示，**不翻退出码**（通道本体活着，耗尽的是共享池状
+  态）；响应无 resources.core 时如实报「配额读数不可得」不假装有读数。
+  v3.11 UA 通道与 v3.18 Bearer 头原样保留（test_v3110/test_v3180 既有锚
+  零改动通过）。
+- **doctor google-bridge 版本匹配自检（探活≠可用·二）**：此前 /health ok
+  即 ✅「在跑」——Chrome 自动升级后本地 chromedriver major 错配，首次
+  /search 才炸 session not created（错误出现在最痛的时刻）。v3.42 helper
+  /health 带版本诊断字段，doctor 不匹配亮 ⚠️ 附修复指引；旧版 helper（无
+  字段）如实报「版本未验」不假装验过；单边未知报「匹配性未验」。
+- **新增 doctor.Warn 软警告机制**：check 函数抛 Warn = 探活通过但可用性
+  降级（⚠️ 显示、ok=True 不进核心故障、不翻退出码、统计行独立「软警告 N」
+  计数）——与 optional ⚠️（未启用/降级）图标共用、语义分立（可用性预警）。
+  full 退出码语义更新：0=全绿或仅可选服务未起**或软警告**。
+- **MCP 输出去重（上下文翻倍开销修复）**：机制取证（mcp 2.1.1
+  func_metadata.convert_result）——工具函数 `-> str` 注解触发 wrap_output，
+  CallToolResult 同时发 content=[TextContent(整份 JSON)] 与
+  structured_content={"result": 整份 JSON}，客户端两份都喂 LLM。15 个工
+  具全部 `structured_output=False`（经 `_tool` 装饰器单点收口，1.x 无此
+  参数自动剔除兼容），wire 级验证：content 恰 1 块 + structured_content
+  None。
+- **doctor CLI 补 --mode 与 MCP 对齐**：`--mode full|cookie|sogou|hotlist`
+  等价映射旧三 flag（向后兼容保留）；冗余同指合法、冲突指向 argparse 风
+  格报错退出；--mode cookie 照常接受 --renew-if-older-than（cron 路径）。
+- **google-bridge 环境脆弱缓解（只诊断不下载）**：search_helper v23.11
+  新增 version_diagnostics()（零浏览器诊断：Windows 走 exe 同目录版本号
+  子目录 + 注册表 BLBeacon 兜底、绝不跑 chrome --version——该 flag 在
+  Windows 不打印版本且可能拉起浏览器；Linux/mac 走 --version stdout；
+  chromedriver 走 --version）；get_driver() 启动打印版本匹配状态，错配给
+  下载修复指引；/health 附版本字段（诊断异常时字段整体缺失，诚实优于
+  health 500）；新增 `--check-versions` 单独诊断模式（错配 exit 1，cron
+  可报警）。**不自动下载**——版本管理决策归人。
+- **china_search since 默认 7d（门面与各引擎统一）**：此前门面默认 None
+  （不过滤）与 hn/searxng/googlebridge 默认 7d 不齐——监控场景忘传 since
+  混入旧闻。v3.42 门面 search() 与 CLI --since 默认 7d，MCP 签名同步；显
+  式 None/"" 仍为不过滤（旧调用方兼容锚钉死）。
+- **HN 布尔语法如实声明**：Algolia 不解析 AND/OR/NOT 与引号短语（OR 被
+  当普通词参与匹配导致结果跑偏）——hackernews_client docstring 与 MCP
+  description 双点声明「多词任一命中请拆多次调用」。
+- **search_helper 版本字样收口（自选项·取证立项）**：main() 启动横幅停在
+  "v23.9" 而实际 v23.10（字样漂移先例）——/health 与 main 横幅统一走
+  `_HELPER_VERSION` 常量单一真源。
+- 测试：test_v3420 新增 33 钉（Warn 机制 3 / rate_limit 5 / bridge 版本
+  自检 4 / --mode 6 / MCP 单份 2 / 版本诊断 10 / since 默认 5 / 声明+版本
+  锁 3——import 兼容性使 MCP 侧测试 SDK 缺装整类跳过），全部离线（mock
+  探活、tmp 假二进制树、源码钉，零真实网络零浏览器；google-bridge 只
+  import + 纯函数诊断不启动服务器）。真实环境验证：/rate_limit 实测
+  remaining=47/60 ✅、/health 旧版 helper 报「版本未验」、--check-versions
+  实测本机 Chrome 152.0.7977.83 定位 + driver 未定位如实 match=null。
+  凭据线（知乎搜索登录/B 站 SESSDATA/公众号 headed/GitHub Release 主人侧）、
+  google-bridge 敏感件（代理/凭据逻辑）、wenxin 配额纪律三边界零触碰。
+
+
 ## [3.40.0] - 2026-09-17
 
 ### 🎯 digest watch_feeds 厂商 RSS 动态段 + SOP client-shim 诚实性修复

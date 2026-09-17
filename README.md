@@ -2,11 +2,24 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.40.0](https://img.shields.io/badge/release-v3.40.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.40.0)
+[![Release: v3.42.0](https://img.shields.io/badge/release-v3.42.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.42.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 770 passing](https://img.shields.io/badge/tests-770%20passing-success.svg)](tests/)
+[![Tests: 810 passing](https://img.shields.io/badge/tests-810%20passing-success.svg)](tests/)
 
+**v3.42.0（2026-09-17）**：v3.0 全面审计大修之后连续四十二轮迭代——
+**doctor 探活盲区修复**（GitHub 检查改查 /rate_limit 拿配额读数，
+remaining=0 亮 ⚠️「配额耗尽」——探活≠可用；google-bridge /health 加
+Chrome/ChromeDriver 版本匹配自检，错配亮 ⚠️ 附修复指引；新增 Warn 软
+警告机制，不翻退出码独立计数）+ **MCP 单份输出**（mcp 2.x 对 `-> str`
+工具同时发明文与 structured 双份——上下文翻倍；15 工具全关停，
+wire 级验证单份）+ **google-bridge 环境脆弱缓解**（版本自检只诊断不
+下载：/health 版本字段 + 启动打印 + --check-versions 诊断命令）+
+**doctor CLI 补 --mode**（与 MCP 四态对齐）+ **china_search since 默认
+7d**（门面与各引擎统一，显式 None 兼容）+ **HN 布尔语法如实声明**
+（Algolia 不解析 OR——拆查指引进 docstring/MCP 描述），详见
+[CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.40.0（2026-09-17）**：v3.0 全面审计大修之后连续四十一轮迭代——
 **digest watch_feeds 厂商 RSS 动态段**（vendor 官宣第一方信号此前零
 自动覆盖——HN 只接社区讨论、GitHub 只接代码发布、热榜只接中文回声；

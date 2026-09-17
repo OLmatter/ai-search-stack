@@ -16,10 +16,15 @@
       微博访客 cookie 缓存线单发探活（禁 incarnate，读数顺带落账
       weibo_cookie_lifetime_log.jsonl——cookie 寿命标定起步）；知乎线
       needs_login 是诚实上限非故障，零网络静态说明
-    - google-bridge 服务：/health（通常按需启动，未起不算故障）
-    - GitHub API：可达性（v3.11 起走 UA+直连通道，裸 urlopen 的默认
-      UA 会被 GitHub 按 IP 强限流成永久 403；v3.18 起可选 GITHUB_TOKEN，
-      设置后带 Bearer 认证头，见 check_github 注释）
+    - google-bridge 服务：/health + Chrome/ChromeDriver 版本匹配自检
+      （v3.42；通常按需启动，未起不算故障；服务在跑但版本错配亮 ⚠️——
+      探活 ≠ 可用，错配的 driver 会在首次搜索时炸 session）
+    - GitHub API：v3.42 起查 /rate_limit 拿配额读数（匿名可达且不消耗
+      配额）——可达性 + remaining=0 亮 ⚠️「配额耗尽」（探活 ≠ 可用，
+      匿名 60 req/h 是本机全部 GitHub 调用共享的池）。v3.11 走 UA+直连
+      通道（裸 urlopen 的默认 UA 会被 GitHub 按 IP 强限流成永久 403）；
+      v3.18 起可选 GITHUB_TOKEN，设置后带 Bearer 认证头，见 check_github
+      注释
     - 值班巡检趋势（v3.16 引入，v3.18 统计口径重做）：shift_log.md 近 7
       天记录条数/覆盖天数/每日分布/关键事件计数/最近一条摘要——让值班
       连续性与异常趋势在 doctor 输出可见（可选观测：缺文件/空/全坏行
@@ -27,21 +32,32 @@
 
 用法:
     python tools/doctor.py                  # 全量巡检，逐项 ✅/❌/⚠️
+    python tools/doctor.py --mode full      # 同上（v3.42 与 MCP doctor mode 对齐）
     python tools/doctor.py --cookie-probe   # 只跑知乎 cookie 寿命标定探活
+    python tools/doctor.py --mode cookie    # 同上（v3.42 与 MCP mode 对齐）
     python tools/doctor.py --cookie-probe --renew-if-older-than 36
                                             # 探活 + 过期超龄顺带续期（cron 友好）
     python tools/doctor.py --sogou-probe    # 只跑搜狗单发探活（v3.14 恢复
                                             # 曲线标定，读数追加
                                             # state/sogou_recovery_log.jsonl）
+    python tools/doctor.py --mode sogou     # 同上（v3.42 与 MCP mode 对齐）
     python tools/doctor.py --hotlist-probe  # 只跑微博访客 cookie 寿命标定
                                             # 探活（v3.30，禁 incarnate，
                                             # 读数追加
                                             # state/weibo_cookie_lifetime_log.jsonl）
-退出码: 0=全绿或仅可选服务未启动（--cookie-probe / --sogou-probe /
-        --hotlist-probe 单项标定模式只观测不判故障，expired/valid/
-        missing/blocked 均为成功读数）;
+    python tools/doctor.py --mode hotlist   # 同上（v3.42 与 MCP mode 对齐）
+退出码: 0=全绿或仅可选服务未启动/软警告（⚠️ 软警告如 GitHub 配额耗尽、
+        google-bridge 版本错配不翻退出码——通道本体活着，是可用性降级；
+        --cookie-probe / --sogou-probe / --hotlist-probe / --mode 四态
+        单项标定模式只观测不判故障，expired/valid/missing/blocked 均为
+        成功读数）;
         1=有核心通道故障（--cookie-probe --renew-if-older-than 时续期失败
         也 1；--sogou-probe / --hotlist-probe 本地故障也 1）。
+
+v3.42 三态显示语义（_check 图标）:
+    ✅ = 探活通过且可用；⚠️ = 软警告（Warn）：探活通过但可用性降级
+    （配额耗尽/版本错配），或可选观测项异常——均不翻退出码；
+    ❌ = 核心通道故障（翻退出码 1）。探活 ≠ 可用，是 v3.42 的核心修正。
 """
 import json
 import os
@@ -100,11 +116,27 @@ SHIFT_LOG_EVENT_KEYWORDS = ("restart", "处置", "❌", "恶化")
 _results = []
 
 
+class Warn(Exception):
+    """软警告（v3.42）：探活通过但可用性降级。
+
+    check 函数抛 Warn = 通道本体活着、端点可达，但「可用」存疑
+    （GitHub 配额耗尽、google-bridge Chrome/ChromeDriver 版本错配）。
+    _check 显示 ⚠️、计入警告数、不翻退出码——与 optional 异常的 ⚠️
+    图标共用，但语义不同：optional ⚠️ 是「该项未启用/降级」，Warn ⚠️
+    是「探活 ≠ 可用」的可用性预警。真实使用验证暴露的盲区：探活 200
+    被读成「可用」，而配额耗尽/版本错配时下一个真实调用必炸。
+    """
+
+
 def _check(name, fn, optional=False):
     try:
         detail = fn()
         _results.append((name, True, detail, optional))
         print(f"✅ {name}: {detail}")
+    except Warn as e:
+        # 软警告：ok=True（通道可达，不算核心故障），⚠️ 显示并计警告数
+        _results.append((name, True, f"⚠️ {str(e)[:120]}", optional))
+        print(f"⚠️ {name}: {str(e)[:120]}")
     except Exception as e:
         _results.append((name, False, str(e)[:120], optional))
         print(f"{'⚠️' if optional else '❌'} {name}: {str(e)[:120]}")
@@ -412,10 +444,31 @@ def check_hotlist():
 
 def check_google_bridge():
     body = _get("http://127.0.0.1:18799/health", timeout=3)
-    ok = json.loads(body).get("ok")
-    if not ok:
+    payload = json.loads(body)
+    if not payload.get("ok"):
         raise RuntimeError("health ok=false")
-    return "服务在跑"
+    # v3.42: 版本匹配自检——/health 自 v23.11 带版本诊断字段；helper 未
+    # 升级（字段缺失）时如实说「版本未验」，不假装验过。版本错配抛
+    # Warn（⚠️ 不翻退出码）：服务进程活着，但错配的 chromedriver 会在
+    # 首次 /search 拉 Chrome 时炸 session not created——探活 ≠ 可用。
+    cv = payload.get("chrome_version")
+    dv = payload.get("chromedriver_version")
+    match = payload.get("version_match")
+    if match is False:
+        raise Warn(
+            f"Chrome/ChromeDriver 版本错配（chrome={cv or '?'} / "
+            f"driver={dv or '?'}）——首次搜索将失败。修复：下载 Chrome "
+            f"同主版本的 ChromeDriver 放 tools/google-bridge/state/bin/ "
+            f"或设 NO1_CHROMEDRIVER_BIN（本工具不自动下载）；诊断命令 "
+            f"python tools/google-bridge/search_helper.py --check-versions")
+    if match is None:
+        if cv is None and dv is None:
+            return "服务在跑（helper 无版本自检字段，版本未验）"
+        # 单边有版本：能验一半就报一半（多数是 chromedriver 走 uc 自动
+        # 下载分支，doctor 无法本地定位——如实标注）
+        return (f"服务在跑（版本部分可验: chrome={cv or '?'} / "
+                f"driver={dv or '?'}/未知，匹配性未验）")
+    return f"服务在跑（chrome {cv} / chromedriver {dv} 版本匹配）"
 
 
 def check_github():
@@ -428,12 +481,34 @@ def check_github():
     # 2026-09-16 08:52/09:03 两班连续撞限流窗口（doctor 403、同刻独立
     # curl 直连全 200）；设置后本检查带 Authorization: Bearer（5000/h），
     # 不再吃匿名配额。未设置时维持匿名可达性观测（可选配置缺失不是故障）。
+    # v3.42: 探活对象从 / 换成 /rate_limit——/ 只能证明「可达」，而匿名
+    # 配额耗尽时可达 ≠ 可用（github_releases/advisories 会 403）。
+    # /rate_limit 匿名可达、不消耗配额，响应带 resources.core.remaining/
+    # limit/reset——把「探活」升级成「可达性 + 配额读数」。remaining=0
+    # 抛 Warn（⚠️ 配额耗尽，不判通道故障）：通道本体（网络/认证/端点）
+    # 是好的，耗尽的是共享池状态，X 分钟后自动重置。
     headers = {"User-Agent": "ai-search-stack-doctor"}
     token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    _get("https://api.github.com/", headers=headers)
-    return f"API 可达 (200, {'Bearer 认证' if token else '匿名'})"
+    body = _get("https://api.github.com/rate_limit", headers=headers)
+    auth = "Bearer 认证" if token else "匿名"
+    core = ((json.loads(body).get("resources") or {}).get("core") or {})
+    remaining, limit = core.get("remaining"), core.get("limit")
+    if remaining is None:
+        # /rate_limit 200 但无配额字段（端点响应形态变化）——可达性结论
+        # 保留，配额读数如实标「不可得」，不假装有读数
+        return f"可达 (200, {auth})；配额读数不可得（响应无 resources.core）"
+    if remaining == 0:
+        reset = core.get("reset")
+        eta = ""
+        if isinstance(reset, (int, float)):
+            mins = max(0, int(reset - time.time()) // 60)
+            eta = f"，约 {mins} 分钟后重置"
+        raise Warn(
+            f"配额耗尽 (200, {auth}, remaining=0/{limit}{eta})——"
+            f"github_* 工具本窗口将 403；可设 GITHUB_TOKEN 提额（5000/h）")
+    return f"可达且配额可用 (200, {auth}, remaining={remaining}/{limit})"
 
 
 # ---- v3.8.2: --cookie-probe（cookie 寿命标定，独立于全量巡检） ----
@@ -719,12 +794,34 @@ def main(argv=None) -> int:
                         "state/weibo_cookie_lifetime_log.jsonl），不跑全"
                         "量巡检；valid/expired/missing 均为成功观测，"
                         "exit 0")
+    p.add_argument("--mode", default=None,
+                   choices=["full", "cookie", "sogou", "hotlist"],
+                   help="v3.42 与 MCP doctor 工具的 mode 参数对齐的等价 "
+                        "入口：full=全量巡检；cookie/sogou/hotlist=对应"
+                        "单项标定探活（语义同 --cookie-probe/--sogou-probe"
+                        "/--hotlist-probe）。与旧 flag 同时给出时必须指向"
+                        "同一模式（如 --mode cookie --cookie-probe），指向"
+                        "不同模式报错退出")
     args = p.parse_args(argv)
-    if args.cookie_probe:
+
+    # v3.42: 新旧入口并存——旧 flag（--cookie-probe 等）保持向后兼容；
+    # --mode 是与 MCP doctor 对齐的规范入口。两者同指一个模式 = 冗余但
+    # 合法；指向不同模式 = 调用方意图不明，argparse 风格报错退出 2。
+    flag_mode = ("cookie" if args.cookie_probe
+                 else "sogou" if args.sogou_probe
+                 else "hotlist" if args.hotlist_probe
+                 else None)
+    if args.mode is not None and flag_mode is not None \
+            and args.mode != flag_mode:
+        p.error(f"--mode {args.mode} 与 {'--' + flag_mode.replace('_', '-')
+                + '-probe'} 指向不同模式，意图不明")
+    mode = args.mode or flag_mode
+
+    if mode == "cookie":
         return cmd_cookie_probe(renew_hours=args.renew_if_older_than)
-    if args.sogou_probe:
+    if mode == "sogou":
         return cmd_sogou_probe()
-    if args.hotlist_probe:
+    if mode == "hotlist":
         return cmd_hotlist_probe()
     print(f"== ai-search-stack doctor @ {_logfmt.stamp()} ==")
     _check("SearXNG 本地实例", check_searxng, optional=True)
@@ -739,8 +836,12 @@ def main(argv=None) -> int:
     core = [r for r in _results if not r[3]]
     core_fail = [r for r in core if not r[1]]
     opt_fail = [r for r in _results if not r[1] and r[3]]
+    # v3.42: 软警告（Warn）单独计数——ok=True 不进故障数，⚠️ 详情已在
+    # 各行显示，末行给总数让「探活通过但可用性降级」一眼可见
+    warns = [r for r in _results if r[1] and str(r[2]).startswith("⚠️")]
     print(f"== 结果: 核心 {len(core) - len(core_fail)}/{len(core)} 正常"
-          f"，核心故障 {len(core_fail)}，可选异常 {len(opt_fail)} ==")
+          f"，核心故障 {len(core_fail)}，可选异常 {len(opt_fail)}"
+          f"{f'，软警告 {len(warns)}' if warns else ''} ==")
     return 1 if core_fail else 0
 
 
