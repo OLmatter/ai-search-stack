@@ -2,11 +2,24 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.39.0](https://img.shields.io/badge/release-v3.39.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.39.0)
+[![Release: v3.40.0](https://img.shields.io/badge/release-v3.40.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.40.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 746 passing](https://img.shields.io/badge/tests-746%20passing-success.svg)](tests/)
+[![Tests: 770 passing](https://img.shields.io/badge/tests-770%20passing-success.svg)](tests/)
 
+**v3.40.0（2026-09-17）**：v3.0 全面审计大修之后连续四十一轮迭代——
+**digest watch_feeds 厂商 RSS 动态段**（vendor 官宣第一方信号此前零
+自动覆盖——HN 只接社区讨论、GitHub 只接代码发布、热榜只接中文回声；
+digest 增第四配置键 watch_feeds，每源一发抓取 + stdlib RSS 2.0/Atom
+解析 + seen 状态 diff 新增，首轮建基线不洪水；模板默认只收实测验证
+过的源——openai.com/news/rss.xml 200 可用，anthropic 无 RSS、
+DeepMind/Meta/HF 本机不可达，四源取证如实入档）+ **SOP client-shim
+诚实性修复**（「from client import search 仍可用」对 chat-scraper 自
+v3.0.0 起即假——全仓库史无 client.py + 实测 ModuleNotFoundError，假
+陈述清除负向钉防回焊）+ 探索批四方向判读落账（SearXNG 九轮采样后
+双 streak=0 判据不升级、结构债零立项、X/GITHUB_TOKEN 列主人决策观
+察单），详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.39.0（2026-09-17）**：v3.0 全面审计大修之后连续四十轮迭代——
 **parse_today_lines() 消费端语义下沉 _logfmt**（digest.fetch_hotlist
 消费 shift_log 今日 hotlist_watch 行的「解析 + 今日过滤」双条件实现

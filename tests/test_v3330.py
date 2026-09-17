@@ -93,8 +93,10 @@ class TestConfig(unittest.TestCase):
         self.assertIn("类型不对", r["note"])
 
     def test_valid_config_loaded(self):
+        # v3.40 起 load_config 认 watch_feeds 第四键：合法配置四键全透传
         cfg = {"watch_repos": ["a/b"], "watch_queries": ["q1", "q2"],
-               "watch_platforms": ["bilibili"]}
+               "watch_platforms": ["bilibili"],
+               "watch_feeds": ["https://f.example/rss.xml"]}
         r = dg.load_config(loader=lambda p: json.dumps(cfg))
         self.assertEqual(r["config"], cfg)
         self.assertEqual(r["note"], "")
@@ -330,19 +332,22 @@ class TestRunDigest(unittest.TestCase):
         return (dict(
             hn_fetcher=lambda q, num: [_hn_row(f"t-{q}")],
             releases_fetcher=lambda repo, num: [_rel_row()],
-            shift_log=str(shift_log), snapshots_dir=str(snap_dir), now=NOW))
+            shift_log=str(shift_log), snapshots_dir=str(snap_dir), feeds_fetcher=lambda url: "<rss><channel><item><title>f-title</title><link>https://f.example/1</link></item></channel></rss>", feed_seen_path=str(Path(td) / "feed_seen.json"), now=NOW))
 
     def test_overall_ok_markdown_four_sections(self):
         with tempfile.TemporaryDirectory() as td:
             r = dg.run_digest(**self._deps(td))
         self.assertEqual(r["overall"], "ok")
+        # v3.40 起五段：feeds 段随 _deps 桩 ok（钉翻转：段数 4->5）
         self.assertEqual(r["sections"],
                          {"hotlist": "ok", "hn": "ok",
-                          "releases": "ok", "toolbox": "ok"})
+                          "releases": "ok", "feeds": "ok",
+                          "toolbox": "ok"})
         md = r["markdown"]
         for head in ("# 晨报 2026-09-17 10:00",
                      "## 热榜动态", "## 技术社区信号",
-                     "## 关注项目发布", "## 工具箱状态"):
+                     "## 关注项目发布", "## 厂商动态（RSS）",
+                     "## 工具箱状态"):
             self.assertIn(head, md)
         # v3.34 起页脚版本串降常青：随 dg.__version__ 推导（换版零漂移），
         # 精确版本串由 test_v3340 版本锁接管
@@ -364,29 +369,38 @@ class TestRunDigest(unittest.TestCase):
         # 本例：三网段全 fault + toolbox 本地状态 ok = 晨报仍有效。
         def boom(*a, **k):
             raise RuntimeError("all down")
-        r = dg.run_digest(
-            config_loader=lambda p: json.dumps(
-                {"watch_repos": ["a/b"], "watch_queries": ["q"]}),
-            hn_fetcher=boom, releases_fetcher=boom,
-            hotlist_sampler=boom, sample_hotlist=True,
-            shift_log=str(Path(tempfile.gettempdir()) / "no_such_dg.log"),
-            snapshots_dir="no_such_dir_dg", now=NOW)
-        self.assertEqual(r["sections"]["toolbox"], "ok")
-        self.assertEqual(r["overall"], "ok")
-
-    def test_all_four_fault_overall_fault(self):
-        def boom(*a, **k):
-            raise RuntimeError("all down")
-        with mock.patch.object(doctor, "_shift_log_stats",
-                               side_effect=RuntimeError("local too")):
+        with tempfile.TemporaryDirectory() as td2:
             r = dg.run_digest(
                 config_loader=lambda p: json.dumps(
                     {"watch_repos": ["a/b"], "watch_queries": ["q"]}),
-                hn_fetcher=boom, releases_fetcher=boom,
+                hn_fetcher=boom, releases_fetcher=boom, feeds_fetcher=boom,
+                feed_seen_path=str(Path(td2) / "seen.json"),
                 hotlist_sampler=boom, sample_hotlist=True,
-                shift_log="no_such_dg.log", snapshots_dir="no_such_dir_dg",
-                now=NOW)
+                shift_log=str(Path(tempfile.gettempdir()) / "no_such_dg.log"),
+                snapshots_dir="no_such_dir_dg", now=NOW)
+        self.assertEqual(r["sections"]["toolbox"], "ok")
+        self.assertEqual(r["sections"]["feeds"], "fault")
+        self.assertEqual(r["overall"], "ok")
+
+    def test_all_five_fault_overall_fault(self):
+        # v3.40 起五段（原 test_all_four_fault_overall_fault，feeds 段
+        # 加入全 fault 判定——段数 4->5 钉翻转）
+        def boom(*a, **k):
+            raise RuntimeError("all down")
+        with tempfile.TemporaryDirectory() as td2:
+            with mock.patch.object(doctor, "_shift_log_stats",
+                                   side_effect=RuntimeError("local too")):
+                r = dg.run_digest(
+                    config_loader=lambda p: json.dumps(
+                        {"watch_repos": ["a/b"], "watch_queries": ["q"]}),
+                    hn_fetcher=boom, releases_fetcher=boom,
+                    feeds_fetcher=boom,
+                    feed_seen_path=str(Path(td2) / "seen.json"),
+                    hotlist_sampler=boom, sample_hotlist=True,
+                    shift_log="no_such_dg.log",
+                    snapshots_dir="no_such_dir_dg", now=NOW)
         self.assertEqual(r["sections"]["toolbox"], "fault")
+        self.assertEqual(r["sections"]["feeds"], "fault")
         self.assertEqual(r["overall"], "fault")          # cron 侧可报警
 
     def test_log_line_parseable_by_doctor_shift_stats(self):

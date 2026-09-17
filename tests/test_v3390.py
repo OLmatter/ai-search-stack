@@ -216,20 +216,27 @@ class TestWorkerQueueBoundaryAudit(unittest.TestCase):
 
 class TestVersionSyncV339(unittest.TestCase):
     def test_versions_3390(self):
-        # 自 test_v3380 接管精确锁（v3.33->v3.34->…交接链延续）
-        self.assertEqual(dg.__version__, "3.39.0")
+        # 自 test_v3380 接管过精确锁；v3.40 起精确锁交接 test_v3400，
+        # 本钉降常青（>= 3.39，v3.33->v3.34->…降常青交接链延续）
+        self.assertGreaterEqual(
+            tuple(int(x) for x in dg.__version__.split(".")), (3, 39, 0))
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.39.0")
-        self.assertIn("chat-scraper v3.39.0", init_src)
+        m = re.search(r'__version__ = "(\d+)\.(\d+)\.(\d+)"', init_src)
+        self.assertIsNotNone(m)
+        self.assertGreaterEqual(tuple(map(int, m.groups())), (3, 39, 0))
+        self.assertRegex(init_src, r"chat-scraper v3\.\d+\.\d+")
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.39.0")
+            self.assertGreaterEqual(
+                tuple(int(x) for x in mcp_server.__version__.split(".")),
+                (3, 39, 0))
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.39.0"', src)
+            m2 = re.search(r'__version__ = "(\d+)\.(\d+)\.(\d+)"', src)
+            self.assertIsNotNone(m2)
+            self.assertGreaterEqual(tuple(map(int, m2.groups())), (3, 39, 0))
 
     def test_changelog_and_readme_3390(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -237,20 +244,12 @@ class TestVersionSyncV339(unittest.TestCase):
         self.assertIn("parse_today_lines", changelog)
         self.assertIn("worker_queue", changelog)   # 审计判词入账
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.39.0", readme)
-        self.assertIn("v3.39.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 730（v3.38 基线）+ 本批钉数
-        m = re.search(r"tests-(\d+)%20passing", readme)
-        self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 730 + self._batch_pins())
-
-    @staticmethod
-    def _batch_pins():
-        src = (REPO / "tests" / "test_v3390.py").read_text(encoding="utf-8")
-        # 数真实 test 方法定义形态；本函数注释与正则字面量一律不得写成
-        # 可被下方正则命中的形态（自引用虚增——v3.33 首跑抓到过）
-        return len(re.findall(r"def (test_\w+)\(", src))
+        # v3.40 起徽章/状态行精确值交接 test_v3400，此处降常青形态钉
+        self.assertRegex(readme, r"release-v\d+\.\d+\.\d+")
+        self.assertRegex(readme, r"v3\.\d+\.\d+（2026-09-17）")
+        # 测试徽章数精确锁随 v3.40 交接 test_v3400（746+本批钉），此处
+        # 只钉形态（防止徽章漂移消失）
+        self.assertRegex(readme, r"tests-\d+%20passing")
 
 
 if __name__ == "__main__":

@@ -76,6 +76,8 @@ class TestTemplate(unittest.TestCase):
         self.assertEqual(data["watch_repos"], dg.DEFAULT_REPOS)
         self.assertEqual(data["watch_queries"], dg.DEFAULT_QUERIES)
         self.assertEqual(data["watch_platforms"], dg.DEFAULT_PLATFORMS)
+        # v3.40 起模板第四键 watch_feeds 双向钉（模板只收实测验证过的源）
+        self.assertEqual(data["watch_feeds"], dg.DEFAULT_FEEDS)
 
     def test_template_has_readme_comment_key(self):
         data = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
@@ -91,7 +93,8 @@ class TestTemplate(unittest.TestCase):
         self.assertEqual(r["config"],
                          {"watch_repos": dg.DEFAULT_REPOS,
                           "watch_queries": ["q1"],
-                          "watch_platforms": dg.DEFAULT_PLATFORMS})
+                          "watch_platforms": dg.DEFAULT_PLATFORMS,
+                          "watch_feeds": dg.DEFAULT_FEEDS})
         self.assertEqual(r["note"], "")
 
 
@@ -291,16 +294,19 @@ class TestExtractNewEntries(unittest.TestCase):
 class TestToastText(unittest.TestCase):
     def _result(self, overall="ok", sections=None, new_entries=None,
                 ts="2026-09-17 10:00:00"):
+        # v3.40 起五段形态：默认 sections 含 feeds=ok
         return {"markdown": "# 晨报\n", "overall": overall,
                 "sections": sections or {"hotlist": "ok", "hn": "ok",
-                                         "releases": "ok", "toolbox": "ok"},
+                                         "releases": "ok", "feeds": "ok",
+                                         "toolbox": "ok"},
                 "ts": ts, "new_entries": new_entries}
 
     def test_ok_with_new_entries_summary(self):
         title, body = dg.toast_text(self._result(
             new_entries={"count": 2, "titles": ["甲事件", "乙事件"]}))
         self.assertTrue(title.startswith("晨报完成"))
-        self.assertIn("热榜✅ HN✅ GitHub✅ 状态✅", body)
+        # v3.40 图标序翻转：热榜 HN GitHub RSS 状态（钉翻转：段数 4->5）
+        self.assertIn("热榜✅ HN✅ GitHub✅ RSS✅ 状态✅", body)
         self.assertIn("热榜新增 2 条：甲事件 / 乙事件", body)
 
     def test_fault_title_and_body(self):

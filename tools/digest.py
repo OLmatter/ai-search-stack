@@ -1,7 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""每日晨报聚合（v3.33；v3.34/v3.35/v3.36 增量见下）——四段组合一次早晨
+"""每日晨报聚合（v3.33；v3.34~v3.40 增量见下）——五段组合一次早晨
 汇报，stdout markdown。
+
+v3.40 增量（厂商 RSS 动态段）: 第五段「厂商动态（RSS）」——vendor 官宣
+第一方信号此前零自动覆盖（HN watch_queries 只接社区讨论、GitHub releases
+只接代码发布、热榜只接中文回声）。watch_feeds 配置 RSS/Atom URL 列表，
+每源一发抓取 + stdlib xml 解析（RSS 2.0 item / Atom entry 双形态，无法
+识别的形态按段故障如实报不伪装成真空）+ seen 状态
+（state/digest_feed_seen.json，链接身份，每源保留 FEED_SEEN_MAX 条）
+diff 出新增——首轮建基线不洪水（hotlist_watch 建基线同款语义）。
+seen 状态是承重态：写不进去该段 fault（监控环失明同构）。
+模板默认只收**实测验证过**的源（2026-09-17 实测 openai.com/news/rss.xml
+HTTP 200 RSS 2.0；anthropic 无 RSS 两路径均 HTML 错误页、DeepMind/Meta/
+HF 本机网络不可达、机器之心 /rss 已 302 下线——未实测的源不入模板，
+诚实文档原则）。本段纯 stdlib（urllib + xml.etree）；feed URL 来自
+本地配置文件（非任意输入），实体展开风险面受控并有 _FEED_BODY_MAX
+读取上限护栏。
 
 v3.36 增量（解码链收口）: _decode_out 链身共享 tools/_subproc_decode.py
 （toast.py 同步改 import；re-export 别名保旧引用名与函数对象身份一致，
@@ -62,7 +77,9 @@ toolbox 引擎与 MCP）。二选一评估：
        on_error="report"）。
     3. 关注项目发布：watch_repos 每仓库 github_releases 一发
        （on_error="report"）。
-    4. 工具箱状态（零网络）：doctor 本地状态——shift_log 近 7 天统计
+    4. 厂商动态（RSS）：watch_feeds 每源一发抓取解析 + seen diff
+       （v3.40；vendor 官宣第一方信号，首轮建基线不洪水）。
+    5. 工具箱状态（零网络）：doctor 本地状态——shift_log 近 7 天统计
        （复用 doctor._shift_log_stats，跨解析器契约 test_v3310 同款钉
        法）、知乎 cookie 龄（doctor._cookie_meta）、weibo cookie 最后
        标定读数（doctor._last_valid_entry）、热榜快照链份数。
@@ -73,13 +90,14 @@ toolbox 引擎与 MCP）。二选一评估：
 本地）:
     {"watch_repos": ["owner/repo", ...],
      "watch_queries": ["关键词", ...],
-     "watch_platforms": ["bilibili", "weibo"]}
+     "watch_platforms": ["bilibili", "weibo"],
+     "watch_feeds": ["https://.../rss.xml", ...]}
 文件缺失 → 落回仓库模板 tools/digest_config.example.json（v3.34），
 模板也缺 → 代码内置默认；坏 JSON/键类型不对 → 内置默认。落回层级
 在晨报头部注明（配置问题不炸整体）。
 
-网络预算（默认配置 2 查询 + 2 仓库）：4 发；快照缺失仍 4 发；
---sample-hotlist 再 +2（bilibili+weibo 各一）。晨报实测 ≤8。
+网络预算（默认配置 2 查询 + 2 仓库 + 1 feed）：5 发；快照缺失仍 5 发；
+--sample-hotlist 再 +2（bilibili+weibo 各一）。晨报实测 ≤9。
 
 退出码: 0 = 晨报已产出（段「通道异常」是观测内容不翻码）；1 = 全部段
 fault（整份晨报零有效内容，cron 侧可报警）。
@@ -91,6 +109,9 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -104,7 +125,7 @@ from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
 import _logfmt   # shift_log 行格式单一真源（v3.38 四方收口，同目录）
 
-__version__ = "3.39.0"
+__version__ = "3.40.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent
@@ -112,17 +133,27 @@ DEFAULT_CONFIG = HERE / "state" / "digest_config.json"
 EXAMPLE_CONFIG = HERE / "digest_config.example.json"
 DEFAULT_SHIFT_LOG = HERE / "chat-scraper" / "state" / "shift_log.md"
 DEFAULT_SNAPSHOTS = HERE / "chat-scraper" / "state" / "hotlist_snapshots"
+DEFAULT_FEED_SEEN = HERE / "state" / "digest_feed_seen.json"
 
 # 内置默认关注列表（配置缺失/坏时落回；守护 ai-search-stack 自身生态 +
-# 两条通用信号词；平台默认双平台——预算口径 2 查询 + 2 仓库 = 4 发）
+# 两条通用信号词；平台默认双平台——预算口径 2 查询 + 2 仓库 + 1 feed
+# = 5 发）
 DEFAULT_REPOS = ["anthropics/claude-code", "microsoft/vscode"]
 DEFAULT_QUERIES = ["LLM agent", "AI search"]
 DEFAULT_PLATFORMS = ["bilibili", "weibo"]
+# 只收实测验证过的源（2026-09-17 实测 200 RSS 2.0；未验证的源不入库——
+# 取证记录见模块 docstring v3.40 段）
+DEFAULT_FEEDS = ["https://openai.com/news/rss.xml"]
 
 TOP_N = 3                # 每段展示行数
 HN_NUM = 5               # 每条查询 HN 行数
 REL_NUM = 3              # 每仓库 release 行数
 SNAP_TOP_N = 5           # 快照 top 展示行数
+FEED_NUM = 5             # 每 feed 新增展示行数
+FEED_PARSE_MAX = 20      # 每 feed 解析条目上限（openai feed 实测 730KB 大源）
+FEED_TIMEOUT_S = 20      # 单 feed 抓取超时
+FEED_SEEN_MAX = 200      # seen 状态每源保留链接数
+_FEED_BODY_MAX = 2_000_000  # 响应读取上限（护栏；openai 实测 ~730KB）
 _DIFF_LINE_MAX = 500     # --log 一行上限（班次流水不刷屏，hotlist_watch 同款）
 
 # shift_log 里 hotlist_watch 产出行的形态（v3.38 起前缀片段收口
@@ -193,7 +224,8 @@ def load_config(path: Optional[str] = None,
             for key, default, typ in (
                     ("watch_repos", DEFAULT_REPOS, list),
                     ("watch_queries", DEFAULT_QUERIES, list),
-                    ("watch_platforms", DEFAULT_PLATFORMS, list)):
+                    ("watch_platforms", DEFAULT_PLATFORMS, list),
+                    ("watch_feeds", DEFAULT_FEEDS, list)):
                 v = data.get(key, default)
                 if isinstance(v, list) and all(isinstance(x, str) for x in v):
                     cfg[key] = [x for x in v if x.strip()]
@@ -203,7 +235,8 @@ def load_config(path: Optional[str] = None,
             return {"config": cfg, "note": note.strip()}
     return {"config": {"watch_repos": list(DEFAULT_REPOS),
                        "watch_queries": list(DEFAULT_QUERIES),
-                       "watch_platforms": list(DEFAULT_PLATFORMS)},
+                       "watch_platforms": list(DEFAULT_PLATFORMS),
+                       "watch_feeds": list(DEFAULT_FEEDS)},
             "note": note}
 
 
@@ -276,6 +309,126 @@ def fetch_releases(repos: List[str], num: int = REL_NUM,
             out["repos"].append(
                 {"repo": repo, "error": f"{type(e).__name__}: {e}"[:200]})
     out["status"] = "fault" if faults == len(repos) and repos else "ok"
+    return out
+
+
+def _default_feeds_fetcher(url: str) -> str:
+    """抓一个 RSS/Atom 源，返回响应文本（读取上限 _FEED_BODY_MAX 护栏）。"""
+    req = urllib.request.Request(
+        url, headers={"User-Agent": f"ai-search-stack/{__version__}"})
+    with urllib.request.urlopen(req, timeout=FEED_TIMEOUT_S) as r:
+        return r.read(_FEED_BODY_MAX).decode("utf-8", "replace")
+
+
+def parse_feed(xml_text: str) -> List[Dict]:
+    """解析 RSS 2.0 / Atom 文本 → [{title, url, date}, ...]（cap
+    FEED_PARSE_MAX；url 是条目身份，无链接条目跳过）。
+
+    只支持 RSS 2.0（channel/item）与 Atom（feed/entry）；两类元素都不在
+    → ValueError（无法识别的形态如实报故障，不伪装成「0 条真空」）。
+    解析失败（坏 XML）同样抛 ValueError——调用方按段故障降级。
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        raise ValueError(f"XML 解析失败: {e}") from e
+    items: List[Dict] = []
+    local = root.tag.rsplit("}", 1)[-1]
+    if local == "rss":                            # RSS 2.0: channel/item
+        nodes = root.findall("./channel/item")
+        for it in nodes:
+            url = (it.findtext("link") or "").strip()
+            if not url:
+                continue
+            items.append({"title": (it.findtext("title") or "").strip(),
+                          "url": url,
+                          "date": (it.findtext("pubDate") or "").strip()})
+    elif local == "feed":                         # Atom: entry
+        nodes = root.findall("{*}entry")
+        for it in nodes:
+            link = it.find("{*}link")
+            url = (link.get("href") if link is not None else "") or ""
+            url = url.strip()
+            if not url:
+                continue
+            items.append({"title": (it.findtext("{*}title") or "").strip(),
+                          "url": url,
+                          "date": (it.findtext("{*}updated")
+                                   or it.findtext("{*}published") or "").strip()})
+    else:
+        raise ValueError(f"无法识别的 feed 形态（根元素 {local!r}，"
+                         "支持 RSS 2.0/Atom）")
+    if not items:
+        raise ValueError("feed 中无可识别条目（RSS item/Atom entry 均缺）")
+    return items[:FEED_PARSE_MAX]
+
+
+def _load_seen(path: Optional[str]) -> Dict:
+    """读 seen 状态 {feed_url: [链接...]};缺失/坏按空处理（下轮建基线）。"""
+    p = Path(path) if path else DEFAULT_FEED_SEEN
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_seen(data: Dict, path: Optional[str]) -> None:
+    p = Path(path) if path else DEFAULT_FEED_SEEN
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=1),
+                 encoding="utf-8")
+
+
+def fetch_feeds(feeds: List[str],
+                fetcher: Optional[Callable[[str], str]] = None,
+                seen_path: Optional[str] = None) -> Dict:
+    """厂商 RSS 段：每源一发，返回 {status, feeds: [{url, new|error,
+    baseline?|new_n?|seen_n?}], error?}。
+
+    - 首轮（seen 无该源）= 建基线：本轮条目全部计入 seen、new=[]、
+      baseline=N（hotlist_watch 建基线同款语义——不洪水告警）。
+    - seen 状态是承重态：写失败 → 整段 fault（监控环失明同构）。
+    - status 语义与 HN/GitHub 段一致：全部源 fault 才段 fault；空列表
+      = "empty"（未配置，诚实不算故障）。
+    """
+    fn = fetcher or _default_feeds_fetcher
+    out: Dict = {"status": None, "feeds": []}
+    if not feeds:
+        out["status"] = "empty"
+        return out
+    seen = _load_seen(seen_path)
+    faults = 0
+    for url in feeds:
+        entry: Dict = {"url": url}
+        try:
+            items = parse_feed(fn(url))
+        except Exception as e:                    # noqa: BLE001 —— 段降级
+            faults += 1
+            entry["error"] = f"{type(e).__name__}: {e}"[:200]
+            out["feeds"].append(entry)
+            continue
+        known = set(seen.get(url) or [])
+        entry["seen_n"] = len(known)
+        if not known:
+            entry["baseline"] = len(items)        # 首轮建基线，不洪水
+            entry["new"] = []
+            entry["items"] = items[:FEED_NUM]     # 基线轮展示源顶样目
+        else:
+            fresh = [it for it in items if it["url"] not in known]
+            entry["new_n"] = len(fresh)
+            entry["new"] = fresh[:FEED_NUM]
+        merged = list(dict.fromkeys(
+            (seen.get(url) or []) + [it["url"] for it in items]))
+        seen[url] = merged[-FEED_SEEN_MAX:]
+        out["feeds"].append(entry)
+    try:
+        _save_seen(seen, seen_path)
+    except OSError as e:
+        out["status"] = "fault"
+        out["error"] = f"seen 状态写失败（OSError: {e})"[:200]
+        return out
+    out["status"] = "fault" if faults == len(feeds) else "ok"
     return out
 
 
@@ -405,8 +558,11 @@ def fetch_toolbox(now: Optional[datetime] = None,
 # markdown 渲染
 # ---------------------------------------------------------------------------
 def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
-           config_note: str, now: Optional[datetime] = None) -> str:
-    """四段渲染成 markdown 晨报（段 fault 渲染成 ⚠️ 通道异常行）。"""
+           config_note: str, now: Optional[datetime] = None,
+           feeds: Optional[Dict] = None) -> str:
+    """五段渲染成 markdown 晨报（段 fault 渲染成 ⚠️ 通道异常行）。
+
+    feeds=None 视为未配置（旧调用方兼容形态，渲染 empty 路径）。"""
     ts = _logfmt.stamp(now or datetime.now())
     lines = [f"# 晨报 {ts}", ""]
     if config_note:
@@ -459,7 +615,37 @@ def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
                          + (" ..." if len(r.get("content") or "") > 120 else ""))
     lines.append("")
 
-    # 4 工具箱状态
+    # 4 厂商动态（RSS，v3.40；vendor 官宣第一方信号）
+    fs = feeds or {"status": "empty", "feeds": []}
+    lines.append("## 厂商动态（RSS）")
+    if fs["status"] == "empty":
+        lines.append("- （未配置）watch_feeds 为空——厂商 RSS 段关闭")
+    elif fs["status"] == "fault" and fs.get("error"):
+        lines.append(f"- ⚠️ 通道异常: {fs['error']}")
+    for f in fs.get("feeds") or []:
+        host = urllib.parse.urlparse(f.get("url", "")).netloc or f.get("url", "?")
+        if "error" in f:
+            lines.append(f"- `{host}` ⚠️ 通道异常: {f['error']}")
+            continue
+        if f.get("baseline") is not None:
+            lines.append(f"- `{host}` 建基线 {f['baseline']} 条（下轮起产新增）")
+            for it in f.get("items") or []:
+                date = (it.get("date") or "")[:10]
+                head = f" [{date}]" if date else ""
+                lines.append(f"  -{head} {it.get('title', '')}"
+                             f" — {it.get('url', '')}")
+        elif f.get("new"):
+            lines.append(f"- `{host}` 新增 {f.get('new_n', len(f['new']))} 条:")
+            for it in f["new"]:
+                date = (it.get("date") or "")[:10]
+                head = f" [{date}]" if date else ""
+                lines.append(f"  -{head} {it.get('title', '')}"
+                             f" — {it.get('url', '')}")
+        else:
+            lines.append(f"- `{host}` 无新增（已见 {f.get('seen_n', 0)} 条）")
+    lines.append("")
+
+    # 5 工具箱状态
     lines.append("## 工具箱状态（doctor 本地状态，零网络）")
     if toolbox["status"] == "ok":
         lines.append(f"- 值班流水: {toolbox.get('shift_stats') or '无记录（可选观测未启用）'}")
@@ -479,6 +665,7 @@ def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
         ("热榜", {"ok": "✅", "empty": "➖", "fault": "⚠️"}[hotlist["status"]]),
         ("HN", "✅" if hn["status"] == "ok" else "⚠️"),
         ("GitHub", "✅" if releases["status"] == "ok" else "⚠️"),
+        ("RSS", {"ok": "✅", "empty": "➖", "fault": "⚠️"}[fs["status"]]),
         ("状态", "✅" if toolbox["status"] == "ok" else "⚠️")))
     lines.append("---")
     lines.append(f"digest v{__version__} | 段状态: {footer}")
@@ -487,11 +674,12 @@ def render(hotlist: Dict, hn: Dict, releases: Dict, toolbox: Dict,
 
 def render_log_line(now: Optional[datetime] = None, sections=None) -> str:
     """班次日志一行（doctor _shift_log_stats 可解析的 `[YYYY-MM-DD HH:MM] `
-    前缀 + digest: 自报家门），内容是四段状态摘要。格式构造 v3.38 起
+    前缀 + digest: 自报家门），内容是五段状态摘要。格式构造 v3.38 起
     走 _logfmt 单一真源（stamp + make_line）。"""
     sec = sections or {}
     body = (f"digest: 热榜={sec.get('hotlist', '?')} "
             f"HN={sec.get('hn', '?')} GitHub={sec.get('releases', '?')} "
+            f"RSS={sec.get('feeds', '?')} "
             f"状态={sec.get('toolbox', '?')}")
     return _logfmt.make_line(_logfmt.stamp(now), body, _DIFF_LINE_MAX)
 
@@ -533,15 +721,19 @@ def extract_new_entries(watch_lines: List[str]) -> Dict:
 
 def toast_text(result: Dict) -> tuple:
     """从 run_digest 产物构建弹窗 (title, body)——完成/故障 + 段状态
-    + 热榜新增条目摘要。"""
+    + 热榜新增条目摘要。sections 缺某段键（旧形态调用方）渲染 ➖ 不虚报
+    ⚠️——非故障不许伪装成故障。"""
     fault = result.get("overall") == "fault"
     title = f"晨报{'故障' if fault else '完成'} {result.get('ts', '')[-8:]}"
     icons = {"hotlist": "热榜", "hn": "HN", "releases": "GitHub",
-             "toolbox": "状态"}
-    parts = [f"{name}{'✅' if result.get('sections', {}).get(k) == 'ok'
-              else '➖' if result.get('sections', {}).get(k) == 'empty'
-              else '⚠️'}"
-             for k, name in icons.items()]
+             "feeds": "RSS", "toolbox": "状态"}
+    parts = []
+    for k, name in icons.items():
+        v = result.get("sections", {}).get(k)
+        parts.append(f"{name}"
+                     + ("✅" if v == "ok"
+                        else "➖" if v in ("empty", None)
+                        else "⚠️"))
     body = " ".join(parts)
     new = result.get("new_entries") or {}
     if new.get("count"):
@@ -558,10 +750,12 @@ def run_digest(config_path: Optional[str] = None,
                config_loader: Optional[Callable[[Path], str]] = None,
                hn_fetcher: Optional[Callable[[str, int], List[Dict]]] = None,
                releases_fetcher: Optional[Callable[[str, int], List[Dict]]] = None,
+               feeds_fetcher: Optional[Callable[[str], str]] = None,
                hotlist_sampler: Optional[Callable[..., List[Dict]]] = None,
                sample_hotlist: bool = False,
                shift_log: Optional[str] = None,
                snapshots_dir: Optional[str] = None,
+               feed_seen_path: Optional[str] = None,
                now: Optional[datetime] = None) -> Dict:
     """跑一次晨报聚合，返回 {markdown, sections, statuses}。
 
@@ -577,11 +771,14 @@ def run_digest(config_path: Optional[str] = None,
                             sample=sample_hotlist, sampler=hotlist_sampler)
     hn = fetch_hn(config["watch_queries"], fetcher=hn_fetcher)
     rel = fetch_releases(config["watch_repos"], fetcher=releases_fetcher)
+    fds = fetch_feeds(config["watch_feeds"], fetcher=feeds_fetcher,
+                      seen_path=feed_seen_path)
     tb = fetch_toolbox(now=d, shift_log=shift_log,
                        snapshots_dir=snapshots_dir)
     sections = {"hotlist": hotlist["status"], "hn": hn["status"],
-                "releases": rel["status"], "toolbox": tb["status"]}
-    md = render(hotlist, hn, rel, tb, note, now=d)
+                "releases": rel["status"], "feeds": fds["status"],
+                "toolbox": tb["status"]}
+    md = render(hotlist, hn, rel, tb, note, now=d, feeds=fds)
     overall = "fault" if all(v == "fault" for v in sections.values()) else "ok"
     return {"markdown": md, "sections": sections, "overall": overall,
             "ts": d.strftime("%Y-%m-%d %H:%M:%S"),
@@ -619,7 +816,7 @@ def _maybe_log(log_path: Optional[str], result: Dict,
 
 def _main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="每日晨报聚合（四段组合一次早晨汇报，stdout markdown；"
+        description="每日晨报聚合（五段组合一次早晨汇报，stdout markdown；"
                     "组合层脚本——hotlist_watch v3.31 调用方层先例，引擎/"
                     "MCP 零改动）")
     parser.add_argument("--config", default=None,

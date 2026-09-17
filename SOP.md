@@ -66,7 +66,7 @@ python tools/chat-scraper/search.py "Claude 漏洞" --platforms zhihu --vendor c
 python -c "import sys; sys.path.insert(0, 'tools/chat-scraper'); from search import search; print(search('Claude 漏洞', platforms=['zhihu']))"
 ```
 
-**模块名（v3 起唯一化，同进程可任意组合）**：`hackernews_client` / `github_client` / `searxng_client` / `search`（chat-scraper）。旧的 `from client import search` 仍可用（兼容 shim，打 DeprecationWarning），但**同一进程禁止 import 多个不同工具的 `client`**——第二个会命中 sys.modules 缓存被静默劫持（v2 实测事故，详见 SKILL.md）。
+**模块名（v3 起唯一化，同进程可任意组合）**：`hackernews_client` / `github_client` / `searxng_client` / `search`（chat-scraper）。hackernews / github / searxng 三个轻客户端的旧 `from client import ...` 仍可用（各自 `client.py` 兼容 shim，打 DeprecationWarning）；**chat-scraper 无 client shim**——v3 从零重写，旧 `from client import search` 对 chat-scraper 不可用（实测 ModuleNotFoundError），用 `from search import search`。**同一进程禁止 import 多个不同工具的 `client`**——第二个会命中 sys.modules 缓存被静默劫持（v2 实测事故，详见 SKILL.md）。
 
 ## 步骤 3：统一参数与错误协议（所有工具）
 

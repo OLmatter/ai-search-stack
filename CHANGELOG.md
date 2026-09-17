@@ -1,5 +1,69 @@
 # Changelog
 
+## [3.40.0] - 2026-09-17
+
+### 🎯 digest watch_feeds 厂商 RSS 动态段 + SOP client-shim 诚实性修复
+
+- **厂商动态（RSS）第五段（高价值探索批立项项——vendor 官宣第一方
+  信号此前零自动覆盖**：HN watch_queries 只接社区讨论、GitHub
+  releases 只接代码发布、热榜只接中文回声，vendor 官宣本体（模型
+  发布/产品公告）无任何自动通道。digest 增 watch_feeds 配置（第四键），
+  每源一发抓取 + stdlib 解析（xml.etree；RSS 2.0 channel/item 与
+  Atom feed/entry 双形态）+ seen 状态
+  （state/digest_feed_seen.json，链接身份、每源 FEED_SEEN_MAX=200
+  截断）diff 出新增；首轮建基线不洪水（hotlist_watch 建基线同款
+  语义），基线轮附源顶样目（FEED_NUM=5）。**模板默认只收实测验证过
+  的源**（诚实文档原则——2026-09-17 实测：openai.com/news/rss.xml
+  HTTP 200 RSS 2.0 收入；anthropic.com /rss.xml 与 /news/rss.xml
+  均 HTML 错误页=无 RSS、deepmind.google 与 ai.meta.com 与
+  huggingface.co 本机网络不可达 timeout、jiqizhixin.com/rss 302 下线
+  ——四源未验证不入模板，_readme 如实记录取证）。解析诚实协议：
+  坏 XML 与无法识别形态 ValueError 按段故障上报，不伪装成「0 条真
+  空」；无链接条目跳过（链接=身份）。seen 状态承重：写失败整段
+  fault（监控环失明同构），坏 seen 文件按首轮重建不炸。纯 stdlib
+  （urllib+ET，digest 原零第三方依赖保持），_FEED_BODY_MAX=2MB 读取
+  护栏（openai 实测 ~730KB）。网络预算 4→5 发（docstring 同步）。
+  渲染：「## 厂商动态（RSS）」段置于 releases 与工具箱状态之间；
+  render(feeds=None) 旧调用方兼容走 empty 路径；页脚/班次行
+  （render_log_line RSS= 段）/toast 图标序（热榜 HN GitHub RSS 状态）
+  同步；toast 缺段键渲染 ➖ 不虚报 ⚠️（非故障不许伪装成故障——统一
+  错误协议的镜像纪律）。run_digest 增 feeds_fetcher/feed_seen_path
+  注入（离线测试纪律：旧测试全量适配零真实网络零真实 state 写）。
+- **SOP client-shim 假陈述清除（架构原则 8 诚实文档）**：SOP 步骤 2
+  曾称「旧的 `from client import search` 仍可用（兼容 shim）」——
+  chat-scraper 全仓库史无 client.py（`git log --all --all -- …/client.py`
+  零提交实证）+ 实测 `from client import search` ModuleNotFoundError，
+  该句对 chat-scraper（v2 语境中 search 的本尊）自 v3.0.0 起即假。
+  修为：三轻客户端（hackernews/github/searxng）shim 可用 + chat-scraper
+  无 shim 用 `from search import search`；负向钉防回焊（假陈述原文
+  串不再出现）+ 正向钉（「chat-scraper 无 client shim」在场）。
+- **评估不立项（边界内取证，探索批四方向结论落账）**：
+  ① SearXNG 引擎判据不升级——第九轮采样后 brave streak=0（v3.26
+  timeout 归零、v3.27 too many requests 重积累首发 fail）、ddg
+  streak=0（归零后连续 5 fail，v3.27 逐字 CAPTCHA 复发），判据 v2
+  （N=3 连过+背靠背 K=2+跨度 ≥24h）无任何新数据点支持调整，采样
+  按班次继续；② anthropic 官宣无 RSS——HTML diff 抓取=新脆弱机制，
+  且 read_page 已覆盖按需人工探查路径，不为本批立项；③ X/Twitter
+  通道、GITHUB_TOKEN（消 digest GitHub 段匿名 403 窗口）均需主人
+  资源/决策，列观察清单不动；④ 结构性债务扫描：零 TODO/FIXME、
+  最大文件 893 行 <2x 判据（v3.29 结案延续）、版本锁测试文件为
+  设计资产不合并。
+- **班次流水补记**：v3.37/v3.38/v3.39 三批收工未写 shift_log
+  （CONTRIBUTING 版本发布检查点第 2 条违例，本批审计发现）——按
+  同条款补记三段并标注「补记」（state/ 本地件不随提交）。
+- **测试**：test_v3400 24 钉全离线（parse_feed 原语 6：RSS/Atom 提
+  取/上限/坏 XML/未知形态/空条目；fetch_feeds 8：基线不洪水/二轮
+  diff/seen 截断/单源降级/全源 fault/空列表 empty/seen 写失败承重/
+  坏 seen 重建；接线文案 6：第四键双向/模板 _readme/run_digest 五段
+  渲染/班次行 RSS 段/render None 兼容/toast 缺键 ➖；SOP 诚实性 2；
+  版本锁 2）；test_v3330 钉翻转 4 处（配置精确 dict 补第四键、
+  sections 五段、markdown 段头、两 fault 测试注入 feeds 桩——
+  test_all_four_fault 改名 five）；test_v3340 钉翻转 4 处（模板双向
+  钉补 watch_feeds、未知键精确 dict、_result 五段形态、toast 图标
+  串 RSS 入列）；test_v3390 版本锁精确值交接 test_v3400 降常青
+  （>= 3.39 形态钉，v3.27→…交接先例）。746→770 两轮连续绿。
+  engines/mcp 零变更（v3.33 组合层判词延续；chat-scraper 仅版本号）。
+
 ## [3.39.0] - 2026-09-17
 
 ### 🎯 parse_today_lines() 消费端语义下沉 _logfmt + worker_queue 边界审计
