@@ -1,4 +1,4 @@
-"""chat-scraper v3.36.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.37.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -182,8 +182,9 @@ watchdog_task.py 四份逐字节等价副本提炼为一处，四方改 import �
 旧引用名零漂移）+ hotlist_watch_task v3.35 回读验证对策移植
 digest_task.py（/Query /XML 存储与预期不一致响亮 exit 1，无法回读只
 告警——/TR 261 检查是假安全感的同病种根治）。
+v3.37.0：注册器公共层二次提炼（tools/_schtasks_common.py：python_for_task/run_schtasks/stream/readback_tr/verify_stored_tr/is_already_gone/check_tr_length/win32_guard 自三注册器功能等价副本收口，差异处参数化不硬统一——unregister 单任务直返 vs watchdog 双任务循环 failed 聚合的控制流留在各注册器）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.36.0"
+__version__ = "3.37.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

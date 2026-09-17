@@ -177,40 +177,40 @@ class TestDigestTaskReadback(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestVersionSyncV336(unittest.TestCase):
     def test_versions_3360(self):
-        self.assertEqual(dg.__version__, "3.36.0")
+        # v3.37 起精确锁移交 test_v3370，此处降常青下限（v3.27→…→v3.33
+        # 先例）：双 __version__ 同步本身不许破
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
         m = re.search(r'__version__ = "([^"]+)"', init_src)
-        self.assertEqual(m.group(1), "3.36.0")
-        self.assertIn("chat-scraper v3.36.0", init_src)
+        self.assertGreaterEqual(
+            [int(x) for x in m.group(1).split(".")], [3, 36, 0])
+        self.assertIn(f"chat-scraper v{m.group(1)}", init_src)
         try:
             import mcp_server              # noqa: F401
-            self.assertEqual(mcp_server.__version__, "3.36.0")
+            self.assertEqual(mcp_server.__version__, m.group(1))
         except ImportError:
             src = (REPO / "tools" / "mcp_server.py").read_text(
                 encoding="utf-8")
-            self.assertIn('__version__ = "3.36.0"', src)
+            self.assertIn(f'__version__ = "{m.group(1)}"', src)
 
     def test_changelog_and_readme_3360(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertIn("## [3.36.0] - 2026-09-17", changelog)
         self.assertIn("_subproc_decode", changelog)
         self.assertIn("回读验证", changelog)
+        # v3.37 起精确徽章/状态行锁移交 test_v3370，此处降常青：
+        # 徽章/状态行与 __version__ 一致（防换版时徽章漂移回退）
+        init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
+                    ).read_text(encoding="utf-8")
+        ver = re.search(r'__version__ = "([^"]+)"', init_src).group(1)
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.36.0", readme)
-        self.assertIn("v3.36.0（2026-09-17）", readme)
-        # 测试徽章数随本批钉死（下一批交接时降常青）：
-        # 676（v3.35 基线）+ 本批钉数
+        self.assertIn(f"release-v{ver}", readme)
+        self.assertIn(f"v{ver}（", readme)
+        # 测试徽章数 v3.37 起移交 test_v3370 精确锁，此处降常青单调下限：
+        # 676（v3.35 基线）+ 11（v3.36 本批钉），回归只许增不许缩
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        self.assertEqual(int(m.group(1)), 676 + self._batch_pins())
-
-    @staticmethod
-    def _batch_pins():
-        src = (REPO / "tests" / "test_v3360.py").read_text(encoding="utf-8")
-        # 数真实 test 方法定义形态；本函数注释与正则字面量一律不得写成
-        # 可被下方正则命中的形态（自引用虚增——v3.33 首跑抓到过）
-        return len(re.findall(r"def (test_\w+)\(", src))
+        self.assertGreaterEqual(int(m.group(1)), 687)
 
     def test_honest_doc_pins(self):
         # 诚实文档（架构原则 8）：收口史随共享模块 docstring 走，

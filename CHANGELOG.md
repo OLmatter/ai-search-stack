@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.37.0] - 2026-09-17
+
+### 🎯 注册器公共层二次提炼（tools/_schtasks_common.py）
+
+- **三注册器 schtask 机械件副本收口（v3.36 解码链收口的同思路下一环
+  ——上轮 CHANGELOG 明记的潜伏下一环）**：digest_task.py /
+  hotlist_watch_task.py / google-bridge/watchdog_task.py 此前各散落
+  一份**功能等价**副本——`_python_for_task`（pythonw 优先/缺失回退
+  告警）×3、`_run_schtasks`（字节层收包 + _decode 解码 + runner 注
+  入）×3、`_stream` ×3、`_readback_tr`（/Query /XML 回读）×2
+  （digest_task v3.36 自 hotlist_watch_task v3.35 移植所致）、register
+  内回读验证块（warn/ERROR/pass 三态）×2、unregister「不存在」幂等
+  匹配（does not exist/不存在/找不到 三措辞）×3、/TR 261 硬上限 +
+  超长报错 ×3、非 win32 平台守卫 ×7 处。统一收口
+  tools/_schtasks_common.py 一处——副本漂移是潜伏病（改一处漏三处）。
+- **差异处参数化不硬统一（取证先行）**：消息前缀 tag（
+  [digest_task]/[hotlist_watch_task]/[watchdog_task]）、pythonw 缺失
+  告警闪窗频率措辞 cadence（watchdog 每 N 分钟高频跑，"on each run"
+  与单任务 "daily" 文案各对任务真）、readback/回读验证的 task_name。
+- **unregister 语义差异承重（本批立项取证结论，控制流不收口）**：
+  单任务版（digest/hotlist）恰一次 /Delete，本任务成败即返回值；
+  watchdog 双任务版循环删（boot -> watchdog 顺序）+ failed 聚合
+  （任一任务真实失败整体 exit 1、循环不中断、「不存在」逐任务幂等
+  不计失败）——控制流留在各注册器，公共层只共享 is_already_gone
+  三措辞幂等谓词；test_v3370 源码钉防被硬统一抹平。
+- **零漂移绑定（v3.36 别名先例）**：run_schtasks/stream 签名不变，
+  三注册器 `from _schtasks_common import ... as _run_schtasks` 同对象
+  直引（test_v3370 以 is 钉三方同源）；签名有变的
+  _python_for_task/_readback_tr 留 1 行委托包装（tag/task_name 注入
+  真实生效），旧引用名（v3350/v3360 测试原名调用）不断；`_decode`
+  绑定存活保留（test_v3360 四方 is 钉承重）。TR_MAX 收口公共层后，
+  test_v3330 超长守卫的 patch 目标随实现位置走（`sc.TR_MAX`），语义
+  不变（超长宁可不注册）。
+- **副本不再生源码钉**：`with_name("pythonw.exe")` /
+  `subprocess.run(argv, capture_output=True)` / Command|Arguments
+  正则 / `"找不到" in blob` / `ERROR: Windows-only` 五类机械件特征串
+  只许存在于公共层一处；注册器侧 unregister 只许调 is_already_gone
+  不许内联 blob 匹配。
+- 测试：tests/test_v3370.py 25 钉（公共层行为 13：cadence 参数化/
+  task_name 进 /Query argv 承重证据/verify 三态/三措辞/261 守卫/
+  win32 suffix 透传；三方 is 钉 4；副本不再生 2；unregister 语义差
+  异承重 3——单任务幂等直返 vs watchdog 循环聚合不中断；版本锁 +
+  诚实文档钉 3），test_v3360 精确版本锁/徽章锁降常青移交（dead
+  _batch_pins 清理），test_v3330 patch 目标随位；687 -> 712 连续两
+  轮全绿。行为零变化（纯提炼——register/unregister/status 对 schtasks
+  的 argv 序列、退出码语义、stdout/stderr 消息逐字保持）。
+
 ## [3.36.0] - 2026-09-17
 
 ### 🎯 digest_task 回读验证移植 + 解码链四方副本收口

@@ -2,11 +2,25 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.36.0](https://img.shields.io/badge/release-v3.36.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.36.0)
+[![Release: v3.37.0](https://img.shields.io/badge/release-v3.37.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.37.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 687 passing](https://img.shields.io/badge/tests-687%20passing-success.svg)](tests/)
+[![Tests: 712 passing](https://img.shields.io/badge/tests-712%20passing-success.svg)](tests/)
 
+**v3.37.0（2026-09-17）**：v3.0 全面审计大修之后连续三十八轮迭代——
+**注册器公共层二次提炼**：tools/_schtasks_common.py（v3.36 解码链收
+口的同思路下一环——三注册器（digest_task/hotlist_watch_task/
+watchdog_task）的 schtask 机械件功能等价副本收口一处：python_for_task
+/run_schtasks/stream/readback_tr/verify_stored_tr/is_already_gone/
+check_tr_length/win32_guard；差异处**参数化不硬统一**——消息前缀
+tag、pythonw 告警闪窗频率措辞（watchdog "on each run" vs 单任务
+"daily"）、readback 的 task_name；unregister 语义差异承重：单任务版
+本任务成败即返回值，watchdog 双任务版循环删 + failed 聚合，控制流留
+在各注册器、公共层只共享「不存在」三措辞幂等谓词；run_schtasks/
+stream 同对象直引 is 钉 + 签名有变件 1 行委托包装保旧引用名零漂移 +
+副本不再生源码钉：机械件特征串只许存在于公共层一处），
+详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.36.0（2026-09-17）**：v3.0 全面审计大修之后连续三十七轮迭代——
 **digest_task 回读验证移植 + 解码链四方副本收口**：digest_task.py
 注册后 /Query /XML 回读验证（hotlist_watch_task v3.35 静默截断抓虫

@@ -37,6 +37,7 @@ import digest as dg                 # noqa: E402
 import digest_task as task          # noqa: E402
 import hotlist_watch as hw          # noqa: E402
 import doctor                       # noqa: E402
+import _schtasks_common as sc       # noqa: E402  (v3.37 公共层：TR_MAX 收口处)
 
 NOW = datetime(2026, 9, 17, 10, 0)
 
@@ -523,7 +524,9 @@ class TestRegistrar(unittest.TestCase):
         def runner(argv, **kw):
             procs.append(argv)
             return self._ok_proc()
-        with mock.patch.object(task, "TR_MAX", 10):
+        # v3.37 TR_MAX 收口公共层：patch 目标随实现位置走（语义不变：
+        # 超长宁可不注册，注册器读 check_tr_length 所在模块的常量）
+        with mock.patch.object(sc, "TR_MAX", 10):
             err = io.StringIO()
             with redirect_stderr(err):
                 self.assertEqual(task.register(runner=runner), 1)

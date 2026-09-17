@@ -102,7 +102,7 @@ from toast import (TOAST_BOX_TYPE, TOAST_SUBPROC_TIMEOUT, TOAST_TIMEOUT_S,
                    send_toast)
 from toast import TOAST_BODY_MAX as _TOAST_BODY_MAX
 
-__version__ = "3.36.0"
+__version__ = "3.37.0"
 
 _TOOL = "digest"
 HERE = Path(__file__).resolve().parent

@@ -6,6 +6,10 @@
     ai-search-hotlist-watch   每日 09:45 单发一轮 hotlist_watch.py
                               （采样 -> 快照 -> hot_diff -> 班次日志一行）
 
+v3.37：schtask 机械件收口 tools/_schtasks_common.py（三注册器公共层
+二次提炼），本文件只留 hotlist 特有件：/TR 相对 --log 构造、错峰时刻、
+消息文案。
+
 接线方式推导（二选一：班次提示词片段 vs schtasks）——选 schtasks：
     - 每日 diff 节拍是确定性动作（采样/diff/追加一行），零 agent 认知；
       班次会话（CronUpdate 驱动）是 Agent 调度框架——ARCHITECTURE.md
@@ -39,8 +43,6 @@
     python hotlist_watch_task.py unregister
 """
 import argparse
-import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -50,7 +52,19 @@ from pathlib import Path
 _PARENT = str(Path(__file__).resolve().parent.parent)
 if _PARENT not in sys.path:
     sys.path.insert(0, _PARENT)
-from _subproc_decode import decode_out as _decode  # noqa: E402
+from _subproc_decode import decode_out as _decode  # noqa: E402,F401
+# ^ v3.36 四方 is 钉承重绑定（test_v3360）：_run_schtasks 收口公共层后
+# 本文件不再直接消费 _decode，但别名绑定必须存活——身份断链=收口失败
+
+# schtasks 机械件公共层（v3.37 自三注册器二次提炼）：run_schtasks/stream
+# 签名不变同对象直引；python_for_task/readback_tr 签名带参（tag/
+# task_name 注入），下方 1 行委托包装保旧引用名零漂移（v3350/v3360
+# 测试原名调用不断）
+from _schtasks_common import (TR_MAX, check_tr_length, is_already_gone,  # noqa: E402
+                              python_for_task, readback_tr, verify_stored_tr,
+                              win32_guard)
+from _schtasks_common import stream as _stream  # noqa: E402
+from _schtasks_common import run_schtasks as _run_schtasks  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 WATCH_PY = HERE / "hotlist_watch.py"
@@ -58,21 +72,20 @@ WATCH_PY = HERE / "hotlist_watch.py"
 # --log，由 hotlist_watch.py 锚定到脚本目录——绝对 SHIFT_LOG 常量随之
 # 移除，防 dead const；doctor/digest 消费端不受影响，文件位置不变）
 
+TAG = "hotlist_watch_task"  # 消息前缀（公共层告警/报错注入）
 TASK_NAME = "ai-search-hotlist-watch"
 DEFAULT_AT = "09:45"           # 与 ai-search-sogou-probe（09:30）错峰
-TR_MAX = 261                   # schtasks /TR 值硬上限（超出报错不截断）
+# TR_MAX 自公共层导入（schtasks /TR 值硬上限 261）
 
 
 def _python_for_task() -> str:
-    """计划任务用的解释器：优先 pythonw.exe（免闪窗），缺失回退并告警。"""
-    exe = Path(sys.executable)
-    pythonw = exe.with_name("pythonw.exe")
-    if pythonw.is_file():
-        return str(pythonw)
-    print(f"[hotlist_watch_task] warning: {pythonw} not found; "
-          f"falling back to {exe} (console window will flash daily)",
-          file=sys.stderr)
-    return str(exe)
+    """计划任务用的解释器（公共层 python_for_task，前缀注入本注册器）。"""
+    return python_for_task(TAG)
+
+
+def _readback_tr(runner=None):
+    """回读存储 /TR（公共层 readback_tr，task_name 注入本注册器）。"""
+    return readback_tr(TASK_NAME, runner=runner)
 
 
 def _tr_value(python: str, toast: bool = False) -> str:
@@ -89,46 +102,8 @@ def _tr_value(python: str, toast: bool = False) -> str:
           f'--log state/shift_log.md')
     if toast:
         tr += " --toast"
-    if len(tr) > TR_MAX:
-        # schtasks 对 /TR 有 261 字符硬上限；超长静默截断会注册出
-        # 永远跑不起来的任务——宁可不注册
-        raise ValueError(
-            f"/TR too long ({len(tr)} > {TR_MAX}): {tr}\n"
-            "把仓库挪到更短路径，或手工注册（schtasks /Create ...）")
+    check_tr_length(tr)  # 261 上限 + 超长报错文案在公共层（超长宁可不注册）
     return tr
-
-
-def _run_schtasks(argv, runner=None):
-    """跑 schtasks 并返回 stdout/stderr 已解码为 str 的结果（runner 可注入）。"""
-    if runner is None:
-        proc = subprocess.run(argv, capture_output=True)
-        proc.stdout, proc.stderr = _decode(proc.stdout), _decode(proc.stderr)
-        return proc
-    proc = runner(argv, capture_output=True, text=True)
-    proc.stdout, proc.stderr = _decode(proc.stdout), _decode(proc.stderr)
-    return proc
-
-
-def _stream(proc, name: str) -> str:
-    """None 安全取 stdout/stderr 文本。"""
-    return getattr(proc, name, None) or ""
-
-
-def _readback_tr(runner=None):
-    """回读任务存储的 Command+Arguments（schtasks /Query /XML）。
-
-    返回拼接串；任务缺失/非零退出/XML 无 Command|Arguments 节点返回
-    None（调用方按「无法验证」处理，不与「验证失败」混谈）。"""
-    proc = _run_schtasks(
-        ["schtasks", "/Query", "/TN", TASK_NAME, "/XML"], runner=runner)
-    if proc.returncode != 0:
-        return None
-    xml = _stream(proc, "stdout")
-    m_cmd = re.search(r"<Command>(.*?)</Command>", xml, re.S)
-    m_arg = re.search(r"<Arguments>(.*?)</Arguments>", xml, re.S)
-    if not (m_cmd and m_arg):
-        return None
-    return f"{m_cmd.group(1)} {m_arg.group(1)}"
 
 
 def register(at: str = DEFAULT_AT, runner=None, toast: bool = False) -> int:
@@ -137,10 +112,9 @@ def register(at: str = DEFAULT_AT, runner=None, toast: bool = False) -> int:
     toast=True 时 /TR 追加 --toast：监控环 diff 出新增条目当日 09:45 即
     时弹 Windows 通知（hotlist_watch.py --toast，通道与降级语义见
     hotlist_watch.py docstring）——不等 10:00 晨报汇总弹窗。"""
-    if sys.platform != "win32":
-        print("[hotlist_watch_task] ERROR: Windows-only（Linux 用 cron: "
-              "45 9 * * * python hotlist_watch.py --log state/shift_log.md）",
-              file=sys.stderr)
+    if not win32_guard(TAG, "（Linux 用 cron: "
+                            "45 9 * * * python hotlist_watch.py "
+                            "--log state/shift_log.md）"):
         return 1
     try:
         tr = _tr_value(_python_for_task(), toast=toast)
@@ -156,28 +130,13 @@ def register(at: str = DEFAULT_AT, runner=None, toast: bool = False) -> int:
               f"  stderr: {_stream(proc, 'stderr').strip()}",
               file=sys.stderr)
         return 1
-    # 回读验证（v3.35）：schtasks /Create 会静默截断超长 /TR 且仍报
-    # SUCCESS（本机实测 258 -> 254，悬崖 (250, 258]）——存储不一致必须
-    # 响亮报错，宁报错不留一个不按预期运行的假任务。空白不敏感比对
-    # （schtasks 拆 Command/Arguments 时空格归属有出入），尾部截断必现
-    # 形差异逃不掉。无法回读（任务缺失/XML 无节点）只告警不判失败——
-    # 「无法验证」不等于「验证失败」。
-    stored = _readback_tr(runner=runner)
-    if stored is None:
-        print("[hotlist_watch_task] warning: 回读验证不可用（/Query XML"
-              " 无法解析）——已注册但未经存储比对", file=sys.stderr)
-    elif "".join(stored.split()) != "".join(tr.split()):
-        print(f"[hotlist_watch_task] ERROR: 回读验证失败——存储 /TR 与"
-              f"预期不一致（schtasks 静默截断？预期 {len(tr)} 字符，"
-              f"存得 {len(stored)} 字符）\n"
-              f"  预期: {tr}\n  存储: {stored}\n"
-              f"  任务可能不按预期运行——请缩短仓库路径后重注册，或手工"
-              f"注册（schtasks /Create ...）",
-              file=sys.stderr)
+    # 回读验证（v3.35 实机抓虫对策；v3.37 收口公共层 verify_stored_tr）：
+    # schtasks /Create 会静默截断超长 /TR 且仍报 SUCCESS（本机实测
+    # 258 -> 254，悬崖 (250, 258]）——存储不一致响亮 exit 1，宁报错不
+    # 留一个不按预期运行的假任务；无法回读只告警不判失败（「无法验证」
+    # 不等于「验证失败」）。
+    if not verify_stored_tr(TASK_NAME, tr, TAG, runner=runner):
         return 1
-    else:
-        print(f"[hotlist_watch_task] 回读验证通过（存储 {len(stored)}"
-              f" 字符与预期一致）")
     print(f"[hotlist_watch_task] registered {TASK_NAME} "
           f"(DAILY {at} -> hotlist_watch 单发一轮，diff 进班次日志"
           + ("，新增条目即时弹 Windows 通知)" if toast else ")"))
@@ -186,8 +145,7 @@ def register(at: str = DEFAULT_AT, runner=None, toast: bool = False) -> int:
 
 def status(runner=None) -> int:
     """查询任务状态；0=在场，1=缺失。"""
-    if sys.platform != "win32":
-        print("[hotlist_watch_task] ERROR: Windows-only", file=sys.stderr)
+    if not win32_guard(TAG):
         return 1
     proc = _run_schtasks(
         ["schtasks", "/Query", "/TN", TASK_NAME], runner=runner)
@@ -198,16 +156,18 @@ def status(runner=None) -> int:
 
 
 def unregister(runner=None) -> int:
-    """删除任务（一键回滚）；已不存在的任务视为删除成功（幂等）。"""
-    if sys.platform != "win32":
-        print("[hotlist_watch_task] ERROR: Windows-only", file=sys.stderr)
+    """删除任务（一键回滚）；已不存在的任务视为删除成功（幂等）。
+
+    单任务语义：本任务成败即返回值（watchdog 双任务版是循环删 +
+    failed 聚合——语义差异承重，见公共层 docstring，不硬统一）。"""
+    if not win32_guard(TAG):
         return 1
     proc = _run_schtasks(
         ["schtasks", "/Delete", "/F", "/TN", TASK_NAME], runner=runner)
     if proc.returncode != 0:
         # 中文 schtasks「系统找不到指定的文件」/ 英文 "does not exist"
-        blob = f"{_stream(proc, 'stdout')}{_stream(proc, 'stderr')}"
-        if ("does not exist" in blob or "不存在" in blob or "找不到" in blob):
+        # ——三措辞匹配收口公共层 is_already_gone
+        if is_already_gone(proc):
             print(f"[hotlist_watch_task] {TASK_NAME}: not installed "
                   f"(already gone)")
             return 0
