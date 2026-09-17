@@ -13,7 +13,7 @@
 | 任务类型 | 选工具 | 备选 |
 |---|---|---|
 | 通用主题搜索（任何语言，国际内容） | `google-bridge` | `searxng`（本地实例） |
-| 中国平台内容（知乎/B站/CSDN/豆瓣…16 站 + 任意域名） | `chat-scraper` | — |
+| 中国平台内容（知乎/B站/CSDN/豆瓣…19 平台 + 任意域名） | `chat-scraper` | — |
 | GitHub release / advisory / 仓库搜索 | `github` | — |
 | 验证社区反应（高赞 = 真信号） | `hackernews` | — |
 | CAPTCHA 兜底 / 不想装 Chrome | `searxng` | — |

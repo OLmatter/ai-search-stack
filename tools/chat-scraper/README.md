@@ -1,6 +1,6 @@
 # chat-scraper (v3)
 
-中国平台聚合搜索：**bilibili/掘金官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（16 个站点 + 任意域名透传 + 无 `site:` 通用搜索）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）+ **热榜聚合 `hot()`**（bilibili 热门/微博热搜实测可用；知乎热榜实测需登录态，v3.29）+ **榜单 diff `hot_diff()` 与微博 cookie 寿命标定 `weibo_probe_once()`**（监控闭环 + 标定起步，v3.30）+ **监控环组合脚本 `hotlist_watch.py` 与每日班次接线 `hotlist_watch_task.py`**（采样->快照->diff->告警；schtasks 每日 09:45 diff 进班次日志，v3.31）+ **HTTP 服务 `GET /hot`**（接口奇偶补齐，v3.31）。
+中国平台聚合搜索：**bilibili/掘金官方 API**（结构化字段）+ **百度 `site:` 站内过滤路由**（13 个站点 + 任意域名透传 + 无 `site:` 通用搜索；全门面 19 平台）+ **文心 AI 搜索低频线**（AI 认可度 + 引用发现）+ **通用阅读器 `read()`**（知乎结构化线 + 任意 URL 的 HTTP/浏览器兜底线）+ **热榜聚合 `hot()`**（bilibili 热门/微博热搜实测可用；知乎热榜实测需登录态，v3.29）+ **榜单 diff `hot_diff()` 与微博 cookie 寿命标定 `weibo_probe_once()`**（监控闭环 + 标定起步，v3.30）+ **监控环组合脚本 `hotlist_watch.py` 与每日班次接线 `hotlist_watch_task.py`**（采样->快照->diff->告警；schtasks 每日 09:45 diff 进班次日志，v3.31）+ **HTTP 服务 `GET /hot`**（接口奇偶补齐，v3.31）。
 
 ## 版本与诚实声明（先读这段）
 

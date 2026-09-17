@@ -19,7 +19,7 @@ agent 拿到一个"搜索 / 调研 / 验证"任务，不知道用哪个工具、
 | `searxng` | CAPTCHA 兜底 / 不想装 Chrome（`tools/searxng/docker` 一条命令起本地实例） | 默认主搜（聚合引擎，结果质量视后端）|
 | `hackernews` | 验证社区反应 | 中文内容 / 非技术 |
 | `github` | Release / CVE / 仓库 | 非 GitHub |
-| `chat-scraper` | 中国平台内容（bilibili 官方 API + 百度 site: 路由 16 站） | 国际主题（Google 索引更好）|
+| `chat-scraper` | 中国平台内容（bilibili 官方 API + 百度 site: 路由 13 站） | 国际主题（Google 索引更好）|
 
 > **模块名规则（v3）**：同一 Python 进程组合多工具时，import 真名 `hackernews_client` / `github_client` / `searxng_client`。旧的 `from client import ...` 是兼容 shim，**同进程禁止 import 两个不同工具的 `client`**（sys.modules 缓存会静默劫持第二个，v2 实测事故）。
 

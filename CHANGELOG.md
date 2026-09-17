@@ -1,5 +1,58 @@
 # Changelog
 
+## [3.43.0] - 2026-09-17
+
+### 🎯 全箱精修批：doctor 软警告 cron 可见性 + 环境对齐落锤 + 覆盖缺口补钉 + 文档计数漂移修复
+
+- **doctor 软警告 cron 可见性（退出码语义不变）**：v3.42 的软警告只在
+  统计行报数不点名——cron 日志要上翻找 ⚠️ 行才知道哪个通道降级。v3.43
+  末行点名软警告项（`软警告 1（GitHub API）`，多项分号连列），TTY 直连
+  时整行 ANSI 加粗（`\033[1m…\033[0m`，人眼看）；**重定向路径零转义码**
+  （`sys.stdout.isatty()` 判定——cron 落日志/MCP 捕获/测试 StringIO 天然
+  走纯文本分支，grep/告警解析不被 `\033` 字节污染）。退出码三态语义原样：
+  全绿 0 / 软警告 0（末行可见）/ 核心故障 1。MCP doctor 描述同步。
+- **google-bridge 服务版本对齐落锤（v3.42 遗留现场收尾）**：v3.42 只交付
+  了 v23.11 代码，常驻服务进程还跑着旧 v23.10（/health 无版本字段）。本批
+  kill 旧进程（PID 36944）→ 重启 → `/health` 实测返回
+  `version=v23.11 + chrome_version=152.0.7977.83 + chromedriver_version=
+  152.0.7977.82 + version_match=true` 四字段；doctor 全量巡检同步亮 ✅
+  「版本匹配」（v3.42 首轮实测的 `match=null` 盲区就此闭环）。
+- **Chrome/ChromeDriver 对齐**：Chrome 152.0.7977.83 对应 driver 缺位
+  （env/state/bin/PATH 均无，此前靠 uc 自动下载）。精确补丁版 152.0.7977.83
+  npmmirror 无货（镜像只到 .82），按 ChromeDriver「major 一致即匹配」判据
+  （search_helper version_diagnostics 同款语义）落 152.0.7977.82 win64 到
+  `tools/google-bridge/state/bin/`（npmmirror chrome-for-testing 镜像，
+  state/ 已 gitignore 不入库）；`--check-versions` 实测
+  `version_match=true`。
+- **兼容 shim 覆盖缺口补钉**：github/searxng 两个 `client.py` 兼容 shim
+  自入库起零测试覆盖（hackernews 那个只测了 DeprecationWarning 没测转发
+  等价）。补三工具 shim 子进程钉：警告在 + `from client import X is
+  canonical.X` 转发等价（子进程纪律——同名 client.py 同进程会 sys.modules
+  劫持，v2 实测事故同款）。
+- **auto_select_node 覆盖缺口补钉**：看门狗拉起的 mihomo 选节点脚本
+  （v17 预算护栏所在地）零测试覆盖。补六条关键路径离线钉（全 mock 零
+  网络）：skip 集过滤（DIRECT/REJECT/GLOBAL/COMPATIBLE 不进测速）、
+  MAX_CANDIDATES 截断、TIME_BUDGET 早停、最低延迟者胜出切换、失败候选
+  剔除、全败保现状不瞎切。
+- **错误路径遍测固化**：低预算实测（bilibili 坏 BV 1 发、知乎坏问题 ID
+  1 发、GitHub 坏 repo 1 发——403 rate limit 恰好实证 v3.42 Warn 设计的
+  现实价值）+ 离线固化钉：bilibili 坏 code report 协议（slug+query 自含）、
+  hotlist 未知平台 raise 文案自含合法平台集、china_search 未知平台
+  report 文案指引 list_platforms()。知乎/GitHub 的 raise/report 路径
+  既有钉（test_v3100/test_offline/test_mcp_server）复核零改动通过。
+- **文档计数漂移修复（「16 站」是 v3.8 旧数）**：list_platforms() 实际
+  **19 平台**（百度 site: 路由 13 站 + 知乎/专栏专用链 + bilibili/掘金
+  官方 API + 文心 + general）。README 特性列表/工具矩阵/MCP 表、SOP 路
+  由表、SKILL 工具表、mcp_server 工具清单/instructions/china_search 描
+  述、chat-scraper README、google-bridge README 九处齐改 + 反漂移钉
+  （四文档无「16 站」残留 + 19/13 拆解对账）。search_helper 过时版本引
+  用清零（README 目录树 v23.10→v23.11、ARCHITECTURE v23.9→v23.11）。
+- **chat-scraper __init__ 版本史乱序纠正**：v3.22→v3.21→v3.20 三块错序
+  （v3.22 插队在 v3.21 前）重排为升序 + 单调性钉（防历史再写乱）；
+  `__version__` 对齐 3.43.0。
+- 测试：test_v3430 29 钉全离线（Warn 可见性 5 / shim 3 / auto_select_node
+  6 / 文档计数 6 / 错误路径 3 / 版本锁 6），810→839 两轮全绿。
+
 ## [3.42.0] - 2026-09-17
 
 ### 🎯 doctor 探活盲区修复 + MCP 单份输出 + google-bridge 环境脆弱缓解

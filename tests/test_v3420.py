@@ -477,35 +477,37 @@ class TestHnBooleanDeclaration(unittest.TestCase):
 
 
 class TestVersionLock(unittest.TestCase):
-    """精确锁（自 test_v3400 接管，v3.27→…→v3.40 交接链延续）：
-    三版本载体（mcp_server / chat-scraper __init__ / digest）+ docstring
-    首行 + CHANGELOG/README。下一批发布时本类降常青交接。"""
+    """精确锁已移交 test_v3430（v3.43 起降常青，交接先例
+    v3.27→…→v3.40→v3.42 链延续）：双/三版本载体同步本身不许破，
+    只放开具体版本号。"""
 
     def test_versions_3420(self):
-        self.assertEqual(mcp_server.__version__, "3.42.0")
+        # v3.43 起精确锁移交 test_v3430，此处降常青下限
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 42, 0))
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.42.0"', init_src)
-        self.assertIn("chat-scraper v3.42.0", init_src)
+        m = re.search(r'__version__ = "([^"]+)"', init_src)
+        self.assertIsNotNone(m)
+        ver = m.group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 42, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)
+        self.assertEqual(mcp_server.__version__, ver)   # 双载体同步不许破
         digest_src = (REPO / "tools" / "digest.py").read_text(
             encoding="utf-8")
-        self.assertIn('__version__ = "3.42.0"', digest_src)
+        self.assertIn(f'__version__ = "{ver}"', digest_src)
 
     def test_changelog_and_readme_3420(self):
+        # 3.42 批次的 CHANGELOG 事实行永久在场；徽章/标题行精确锁已移交
+        # test_v3430，此处降常青单调下限（810 = 770 + 本批 40 钉）
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertIn("## [3.42.0] - 2026-09-17", changelog)
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.42.0", readme)
-        self.assertIn("v3.42.0（2026-09-17）", readme)
-        # 徽章数 = 770（v3.40 基线）+ 本批 test_v3420 钉数；数真实 test
-        # 方法定义形态，本函数注释与正则字面量不得写成可命中形态
-        # （自引用虚增——v3.33 先例）
         m = re.search(r"tests-(\d+)%20passing", readme)
         self.assertIsNotNone(m)
-        src = (REPO / "tests" / "test_v3420.py").read_text(
-            encoding="utf-8")
-        self.assertEqual(int(m.group(1)), 770 + len(
-            re.findall(r"def (test_\w+)\(", src)))
+        self.assertGreaterEqual(int(m.group(1)), 810)
 
 
 if __name__ == "__main__":

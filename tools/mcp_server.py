@@ -21,7 +21,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     依赖：pip install "mcp>=2.1"（1.x SDK 亦兼容，见下方双版本导入）。
 
 工具清单（15）:
-    china_search        中国平台聚合搜索（知乎/B站/微信/百度16站）
+    china_search        中国平台聚合搜索（知乎/B站/掘金/微信等19平台，含百度site:路由13站）
     china_hotlist       中国平台热榜聚合（B站热门/微博热搜；知乎实测需登录态）
     read_page           通用阅读器（知乎 API 线 + 外域 HTTP/浏览器兜底）
     zhihu_question      知乎问题详情（官方 API）
@@ -63,7 +63,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.42.0"
+__version__ = "3.43.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -109,7 +109,7 @@ def _make_server():
 
 
 _INSTRUCTIONS = """ai-search-stack 工具箱路由：
-- 中国平台内容/社区（知乎、B站、微信公众号、百度16站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles
+- 中国平台内容/社区（知乎、B站、微信公众号、百度site:路由13站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles
 - 中国平台热榜监控（vendor 官宣/事件首发地/舆情雷达）-> china_hotlist
 - 国际技术社区反应验证 -> hn_search
 - GitHub release / 安全通告 -> github_releases / github_advisories
@@ -188,20 +188,21 @@ def _run(tool: str, query: str, fn, *args, **kwargs) -> str:
 # 15 个 MCP tools —— 每个都是对现有模块函数的透传委托
 # ---------------------------------------------------------------------------
 @_tool(structured_output=False, description=(
-    "中国平台聚合搜索：知乎/B站/掘金官方 API + 百度 site: 路由 16 站"
+    "中国平台聚合搜索：知乎/B站/掘金官方 API + 百度 site: 路由 13 站"
     "（CSDN/简书/豆瓣/微博/V2EX/SegmentFault/博客园/开源中国/51CTO/"
-    "Gitee/微信公众号/头条/百度贴吧等）。\n"
+    "Gitee/微信公众号/头条/百度贴吧）。\n"
     "何时用：找中文社区内容、验证国内舆论/资料。何时不用：英文技术讨论"
     "（用 hn_search）、GitHub release/通告（用 github_*）、通用英文搜索"
     "（用 searxng_search/googlebridge_search）。\n"
     "platforms 可选 bilibili、juejin（掘金官方搜索 API，结构化字段："
     "作者/浏览/点赞/评论/分类，裸调免登录）、wenxin（文心 AI 搜索，低频配额"
     "受限；返回单条聚合行：AI 答案 answer + 引用 citations，不是网页列表）、"
-    "16 个站名、general（百度无 site 通用）、或任意"
-    "形如域名的字符串（透传 site: 过滤）；省略=general。\n"
+    "13 个站名、general（百度无 site 通用）、或任意"
+    "形如域名的字符串（透传 site: 过滤）；省略=general（全平台 19 个，"
+    "list_platforms() 可查）。\n"
     "num 与单页上限（如实声明）：bilibili num>30 自动翻页（护栏 5 页，有效"
     "上限约 150 条）；juejin num>20 自动翻页（护栏 5 页，有效上限约 100 条）；"
-    "百度系（general/16站/任意域名）num>20 自动翻页（护栏"
+    "百度系（general/13站/任意域名）num>20 自动翻页（护栏"
     "3 页，有效上限约 60 条，页间走引擎级 ~20s 节流，翻页耗时按页数放大）；"
     "sogou（百度降级环）与知乎链（SearXNG→搜狗→百度）单页到顶如实截断"
     "——搜狗连发风控阈值实测 4 发（v3.13 标定），不做翻页。\n"
@@ -521,7 +522,8 @@ def googlebridge_search(q: str,
     "十几秒。\n"
     "返回纯文本报告，末行含退出码语义：full 0=核心全绿或仅可选服务未起或"
     "软警告（⚠️ GitHub 配额耗尽/google-bridge 版本错配——通道本体活着，"
-    "可用性降级）/1=有核心通道故障；cookie/sogou/hotlist 0=成功观测"
+    "可用性降级；末行点名软警告项，如「软警告 1（GitHub API）」）"
+    "/1=有核心通道故障；cookie/sogou/hotlist 0=成功观测"
     "（expired/missing/blocked 均为有效标定读数）/1=本地故障。"
     "非法 mode 返回 error JSON。"))
 def doctor(mode: str = "full") -> str:

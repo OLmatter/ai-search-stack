@@ -48,6 +48,8 @@
     python tools/doctor.py --mode hotlist   # 同上（v3.42 与 MCP mode 对齐）
 退出码: 0=全绿或仅可选服务未启动/软警告（⚠️ 软警告如 GitHub 配额耗尽、
         google-bridge 版本错配不翻退出码——通道本体活着，是可用性降级；
+        v3.43 起末行点名软警告项（如「软警告 1（GitHub API）」），TTY
+        直连时整行 ANSI 加粗，cron 重定向到文件则纯文本无转义码）；
         --cookie-probe / --sogou-probe / --hotlist-probe / --mode 四态
         单项标定模式只观测不判故障，expired/valid/missing/blocked 均为
         成功读数）;
@@ -839,9 +841,19 @@ def main(argv=None) -> int:
     # v3.42: 软警告（Warn）单独计数——ok=True 不进故障数，⚠️ 详情已在
     # 各行显示，末行给总数让「探活通过但可用性降级」一眼可见
     warns = [r for r in _results if r[1] and str(r[2]).startswith("⚠️")]
-    print(f"== 结果: 核心 {len(core) - len(core_fail)}/{len(core)} 正常"
-          f"，核心故障 {len(core_fail)}，可选异常 {len(opt_fail)}"
-          f"{f'，软警告 {len(warns)}' if warns else ''} ==")
+    # v3.43 软警告 cron 可见性（退出码语义不变：0=无核心故障，1=有）：
+    # 1) 末行点名软警告项——cron 日志只看末行即知哪些通道降级，不必上翻；
+    # 2) ANSI 加粗只在 TTY 生效——cron 重定向到日志文件时不加转义码，
+    #    grep/告警解析不被 \033 字节污染（StringIO.isatty()=False，MCP
+    #    与测试路径天然走纯文本分支）。
+    summary = (f"== 结果: 核心 {len(core) - len(core_fail)}/{len(core)} 正常"
+               f"，核心故障 {len(core_fail)}，可选异常 {len(opt_fail)}")
+    if warns:
+        summary += f"，软警告 {len(warns)}（{'；'.join(r[0] for r in warns)}）"
+    summary += " =="
+    if warns and sys.stdout.isatty():
+        summary = f"\033[1m{summary}\033[0m"
+    print(summary)
     return 1 if core_fail else 0
 
 

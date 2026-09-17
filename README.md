@@ -2,11 +2,26 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.42.0](https://img.shields.io/badge/release-v3.42.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.42.0)
+[![Release: v3.43.0](https://img.shields.io/badge/release-v3.43.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.43.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 810 passing](https://img.shields.io/badge/tests-810%20passing-success.svg)](tests/)
+[![Tests: 839 passing](https://img.shields.io/badge/tests-839%20passing-success.svg)](tests/)
 
+**v3.43.0（2026-09-17）**：v3.0 全面审计大修之后连续四十三轮迭代——全箱
+精修批（完美主义质量工程）：**doctor 软警告 cron 可见性**（末行点名降级
+通道如「软警告 1（GitHub API）」+ TTY 直连整行 ANSI 加粗；cron 重定向
+纯文本零转义码，grep/告警解析不被污染；退出码语义不变 0/1）+
+**环境对齐落锤**（google-bridge 服务进程已重启到 v23.11[/health 版本
+字段实测]；chromedriver 152.0.7977.82 经 npmmirror 落 state/bin/
+[--check-versions 实测 match=true]）+ **覆盖缺口补钉**（三个 client.py
+兼容 shim[github/searxng 此前零覆盖+转发等价未验]、auto_select_node
+预算/选优路径零覆盖——全 mock 离线钉）+ **错误路径遍测固化**（坏 BV
+report 协议/未知平台文案自含合法集——先低预算实测再离线固化）+
+**文档计数漂移修复**（门面平台数引用停在 v3.8 旧值 16：实际 19 平台/
+百度 site: 路由 13 站，README/SOP/SKILL/mcp_server/两工具 README 六处
+齐改+反漂移钉；search_helper v23.10/v23.9 过时引用清零；chat-scraper
+__init__ 版本史乱序纠正），详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.42.0（2026-09-17）**：v3.0 全面审计大修之后连续四十二轮迭代——
 **doctor 探活盲区修复**（GitHub 检查改查 /rate_limit 拿配额读数，
 remaining=0 亮 ⚠️「配额耗尽」——探活≠可用；google-bridge /health 加
@@ -281,9 +296,9 @@ B站字幕链路（实测未登录恒空，如实声明）、知乎回答列表�
 
 ## ✨ 特性
 
-- 🔍 **中国平台聚合搜索**：16 站一个门面——bilibili 官方 API、知乎专用降级链
-  （SearXNG → 搜狗 → 百度 site:）、百度桌面/移动双桶 + 搜狗第三环、
-  文心 AI 搜索（AI 认可度 + 引用发现，低频线）
+- 🔍 **中国平台聚合搜索**：19 平台一个门面——bilibili/掘金官方 API、知乎/知乎
+  专栏专用降级链（SearXNG → 搜狗 → 百度 site:）、百度 site: 路由 13 站 +
+  general 通用、文心 AI 搜索（AI 认可度 + 引用发现，低频线）
 - 📖 **通用阅读器 `read(url)`**：知乎问题/回答/文章/评论走官方 API（含认证
   过期自愈），B站视频结构化读取（含 cid）+ 字幕读取链路（实测：未登录
   访客字幕列表恒为空，如实报告），外域 HTTP 直读 + 无头浏览器兜底
@@ -342,7 +357,7 @@ python tools/doctor.py         # 全通道体检，确认环境就绪
 
 | 工具 | 解决什么 | 何时不用 |
 |---|---|---|
-| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：16 站搜索门面 + 知乎官方 API 读取（问题/回答/文章/评论）+ B站/微信读取 + 文心 AI 搜索 | 国际主题 |
+| [`tools/chat-scraper/`](tools/chat-scraper/) | 中国平台内容：19 平台搜索门面（百度 site: 路由 13 站）+ 知乎官方 API 读取（问题/回答/文章/评论）+ B站/微信读取 + 文心 AI 搜索 | 国际主题 |
 | [`tools/google-bridge/`](tools/google-bridge/) | 真 Google（WebSearch 100% CAPTCHA），需 Chrome + 代理 | 找中国平台 / GitHub release |
 | [`tools/searxng/`](tools/searxng/) | 兜底聚合搜索；`tools/searxng/docker` 一条命令起本地实例（已启用 JSON，公网实例默认禁 JSON 勿用） | 默认主搜 |
 | [`tools/hackernews/`](tools/hackernews/) | 验证社区反应（高赞 = 真信号），零部署 | 中文 / 非技术 |
@@ -446,7 +461,7 @@ anaconda python 的绝对路径。
 
 | MCP 工具 | 委托的模块函数 | 用途 | 耗时预期 |
 |---|---|---|---|
-| `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/掘金/微信/百度16站） | bilibili/juejin 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
+| `china_search` | `chat-scraper/search.search` | 中国平台聚合搜索（知乎/B站/掘金/微信等 19 平台，含百度 site: 路由 13 站） | bilibili/juejin 1-3s；百度有 ~20s 强制间隔，多平台串行按平台数放大 |
 | `china_hotlist` | `chat-scraper/search.hot` | 热榜聚合：B站热门/微博热搜（知乎实测需登录态，恒报诚实错误） | 秒级（微博首调约 10s，含访客 incarnate 与节流间隔） |
 | `read_page` | `zhihu_content.read` | 通用阅读器：知乎 API 线 + B站/微信特化 + 外域 HTTP/无头浏览器兜底 | 可能起无头浏览器 10-15s |
 | `zhihu_question` | `zhihu_content.fetch_question` | 知乎问题详情（官方 API） | 秒级 |
@@ -516,7 +531,7 @@ ai-search-stack/
 ├── tools/
 │   ├── mcp_server.py     # MCP stdio server（全工具箱暴露成 15 个 MCP tools）
 │   ├── doctor.py         # 工具箱体检（一条命令巡检全部通道）
-│   ├── google-bridge/    # Chrome 桥（search_helper v23.10，Windows/Linux 可用）
+│   ├── google-bridge/    # Chrome 桥（search_helper v23.11，Windows/Linux 可用）
 │   │   ├── search_helper.py
 │   │   ├── start_*.sh
 │   │   ├── requirements.txt

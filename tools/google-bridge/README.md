@@ -132,4 +132,4 @@ bash start_search_helper.sh   # 自动：Xvfb :99 → 代理健康检查 → 选
 - ↔️ `searxng`（可选）— 主工具 CAPTCHA 锁时的兜底
 - ↔️ `hackernews`（可选）— 社区反应验证
 - ↔️ `github`（可选）— 代码/CVE 验证
-- ↔️ `chat-scraper`（替代）— 中国平台（bilibili API + 百度 site: 路由 16 站）
+- ↔️ `chat-scraper`（替代）— 中国平台（bilibili API + 百度 site: 路由 13 站）
