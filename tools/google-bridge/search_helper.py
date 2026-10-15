@@ -29,6 +29,14 @@ import subprocess as _subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs, unquote, urlencode
 
+# D405 桌面弹窗零容忍 (2026-10-06): 本模块以 pythonw 常驻(无控制台),
+# 而 chromedriver.exe 是 PE Subsystem=3 的控制台程序。Windows 上控制台程序
+# 若无可继承的控制台会自动申请一个【新的、可见的】控制台 -> 桌面闪一下即逝。
+# 正解 = CREATE_NO_WINDOW (0x08000000, 不分配控制台), 严禁用 DETACHED_PROCESS
+# (0x08): 那会让孙进程各开新可见窗, 比不设更糟。
+# POSIX 不接受 creationflags, 故按平台取 0。
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
 # Force UTF-8 stdout
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -238,7 +246,8 @@ def _extract_chrome_version(chrome_bin):
             return None
     try:
         out = _subprocess.run([chrome_bin, '--version'], capture_output=True,
-                              text=True, timeout=8)
+                              text=True, timeout=8,
+                              creationflags=_CREATE_NO_WINDOW)
         m = _CHROME_VER_RE.search(out.stdout or '')
         return m.group(1) if m else None
     except Exception:
@@ -251,7 +260,8 @@ def _extract_driver_version(driver_bin):
         return None
     try:
         out = _subprocess.run([driver_bin, '--version'], capture_output=True,
-                              text=True, timeout=8)
+                              text=True, timeout=8,
+                              creationflags=_CREATE_NO_WINDOW)
         m = _CHROMEDRIVER_VER_RE.search(out.stdout or '')
         return m.group(1) if m else None
     except Exception:
