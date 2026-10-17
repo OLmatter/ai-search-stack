@@ -1,4 +1,4 @@
-"""chat-scraper v3.44.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
+"""chat-scraper v3.45.0 —— 中国平台聚合搜索（bilibili/掘金官方 API + 百度 site: 路由
 + 知乎官方 API 内容线 + 文心 AI 搜索低频线 + 通用阅读器 + 热榜聚合/监控环）。
 
 诚实声明：v3 从零重写；旧版（宣称 32+ 平台）代码损失为纯 NUL 空壳，不可考。
@@ -195,8 +195,17 @@ README/SOP/SKILL/mcp_server 侧，不在本包）。
 v3.44.0：本包无业务代码改动（正主客户端行为钉批：github/hackernews
 正主客户端的解析/转义/错误接线/CLI 离线行为钉归 tools/github、
 tools/hackernews 侧，不在本包；__version__ 例行对齐 3.44.0）。
+
+v3.45.0：全平台协议直连与双订阅多 IP 代理池批——新增 bilibili_engine.fetch_comments
+（免登录 /x/v2/reply 评论+置顶+弹幕）、tieba_engine（百度贴吧移动端 H5 免登录
+getFrsData/getPbData 实时帖与千楼详情，并接入 read_page 分流）、weibo_engine
+（visitor.passport.weibo.cn/visitor/genvisitor2 秒签 .weibo.cn 访客流 + m.weibo.cn
+实时/热门直搜）、rmt_engine（DD373/7881/5173/交易猫/盼之/UU898/藏宝阁/Steam/G2G/
+TapTap 10 平台实时盘口+成交流水+在线人数+订单簿快照差分纯函数 diff_order_book）、
+finance_engine（东方财富股吧/7x24快讯+雪球电报/行情+新浪7x24）与 proxy_pool
+（双机场订阅 mihomo 多端口零切换延迟代理池，固化中转机场不按入口去重与精确词过滤铁律）。
 """
 from .search import list_platforms, search, hot
 
-__version__ = "3.44.0"
+__version__ = "3.45.0"
 __all__ = ["search", "list_platforms", "hot", "__version__"]

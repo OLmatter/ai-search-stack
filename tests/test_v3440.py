@@ -237,49 +237,26 @@ class TestHackernewsErrorWiring(unittest.TestCase):
 
 
 class TestVersionLock3440(unittest.TestCase):
-    """精确锁（自 test_v3430 接管，v3.27→…→v3.40→v3.42→v3.43 交接链延续）：
-    三版本载体（mcp_server / chat-scraper __init__ / digest）+ docstring
-    首行 + CHANGELOG/README 徽章与标题行。下一批发布时本类降常青交接。"""
+    """精确锁已移交 test_v3450（v3.45 起降常青，交接链延续）：
+    三版本载体同步本身不许破，只放开具体版本号。"""
 
-    def test_mcp_server_version(self):
+    def test_versions_3440(self):
         import mcp_server
-        self.assertEqual(mcp_server.__version__, "3.44.0")
-
-    def test_chat_scraper_package_version(self):
+        self.assertGreaterEqual(
+            tuple(int(x) for x in mcp_server.__version__.split(".")),
+            (3, 44, 0))
         init_src = (REPO / "tools" / "chat-scraper" / "__init__.py"
                     ).read_text(encoding="utf-8")
-        self.assertIn('__version__ = "3.44.0"', init_src)
-        self.assertIn("chat-scraper v3.44.0", init_src)   # docstring 首行同步
-
-    def test_digest_version(self):
+        m = re.search(r'__version__ = "([^"]+)"', init_src)
+        self.assertIsNotNone(m)
+        ver = m.group(1)
+        self.assertGreaterEqual(
+            tuple(int(x) for x in ver.split(".")), (3, 44, 0))
+        self.assertIn(f"chat-scraper v{ver}", init_src)
+        self.assertEqual(mcp_server.__version__, ver)
         digest_src = (REPO / "tools" / "digest.py").read_text(
             encoding="utf-8")
-        self.assertIn('__version__ = "3.44.0"', digest_src)
-
-    def test_readme_headline_mentions_3440(self):
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("release-v3.44.0", readme)
-        self.assertIn("v3.44.0（2026-09-17）", readme)
-
-    def test_changelog_has_3440_entry(self):
-        cl = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("## [3.44.0] - ", cl)
-
-    def test_readme_badge_count(self):
-        # 徽章数 = 全仓真实测试数：正则 `^    def (test_\w+)\(` 数遍
-        # tests/test_*.py（v3.44 起公式升级——旧公式「基线+本批钉数」
-        # 在同批含降常青坍缩时会虚报[839+17 vs 实际 851 的 5 钉差]，
-        # 全仓计数与 pytest 收集数已对账一致 851==851）；本函数注释与
-        # 正则字面量不得写成可命中形态（自引用虚增——v3.33 先例）
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
-        m = re.search(r"tests-(\d+)%20passing", readme)
-        self.assertIsNotNone(m)
-        real = 0
-        for f in (REPO / "tests").glob("test_*.py"):
-            real += len(re.findall(r"^    def (test_\w+)\(",
-                                   f.read_text(encoding="utf-8"), re.M))
-        self.assertGreater(real, 800)
-        self.assertEqual(int(m.group(1)), real)
+        self.assertIn(f'__version__ = "{ver}"', digest_src)
 
 
 if __name__ == "__main__":

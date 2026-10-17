@@ -277,13 +277,26 @@ class TestDoctorModeFlag(unittest.TestCase):
 
 @unittest.skipUnless(mcp_server, "mcp SDK 未安装，跳过 MCP server 离线测试")
 class TestMcpSingleCopyOutput(unittest.TestCase):
-    """mcp 2.1.1 双份输出机制关停：structured_output=False 全 15 工具生效。"""
+    """mcp 2.1.1 双份输出机制关停：structured_output=False 全部工具生效。"""
+
+    # v3.45.0 拓荒批：15→21（+bilibili_comments/tieba_feed/weibo_search/
+    # finance_wire/physical_probe/rmt_market）。名字集合钉死，扩容必须显式改这里。
+    EXPECTED_TOOLS = frozenset({
+        "bilibili_comments", "bilibili_subtitles", "bilibili_video",
+        "china_hotlist", "china_search", "doctor", "finance_wire",
+        "github_advisories", "github_releases", "googlebridge_search",
+        "hn_search", "physical_probe", "read_page", "rmt_market",
+        "searxng_search", "tieba_feed", "weibo_search", "zhihu_answers",
+        "zhihu_article", "zhihu_comments", "zhihu_question",
+    })
 
     def test_all_tools_output_schema_none(self):
         # 根因钉：`-> str` 注解会派生 output_schema → wire 上 content 与
         # structured_content 双份。关停后 schema 必须全 None。
         tools = asyncio.run(mcp_server.mcp.list_tools())
-        self.assertEqual(len(tools), 15)
+        actual = {t.name for t in tools}
+        self.assertEqual(actual, self.EXPECTED_TOOLS,
+                         "注册工具名单漂移：扩容/下线必须同步改 EXPECTED_TOOLS")
         offenders = [t.name for t in tools if t.output_schema is not None]
         self.assertEqual(offenders, [],
                          "这些工具仍在发布 output_schema（wire 双份输出）")

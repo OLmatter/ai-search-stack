@@ -2,11 +2,14 @@
 
 > **AI agent 搜索工具箱**：5 个独立工具 + 1 个 MCP 接入层 + 1 个统一 SOP + 1 个统一 SKILL。**不强行统一 API**，按任务路由。
 
-[![Release: v3.44.0](https://img.shields.io/badge/release-v3.44.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.44.0)
+[![Release: v3.45.0](https://img.shields.io/badge/release-v3.45.0-brightgreen.svg)](https://github.com/OLmatter/ai-search-stack/releases/tag/v3.45.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests: 851 passing](https://img.shields.io/badge/tests-851%20passing-success.svg)](tests/)
+[![Tests: 870 passing](https://img.shields.io/badge/tests-870%20passing-success.svg)](tests/)
 
+**v3.45.0（2026-10-16）**：v3.0 全面审计大修之后连续四十五轮迭代——
+全平台协议级真实数据拓荒与双订阅 37-IP 代理池批：新增 6 个协议级免登录直连引擎与 MCP 工具（MCP 工具数 15→21）：① **`bilibili_comments`**（`/x/v2/reply` 免登拉取置顶报价/高赞评论/楼中楼 + `comment.bilibili.com` 弹幕流，弥补未登录字幕恒空盲区）；② **`tieba_feed`**（百度贴吧移动端 H5 `/mg/f/getFrsData` 吧内实时帖 + `/mg/p/getPbData` 千楼详情直读，并接入 `read_page` 自动分流，绕过 20s 百度节流与 PC 403）；③ **`weibo_search`**（`visitor.passport.weibo.cn/visitor/genvisitor2` `<0.3s` 秒签 `.weibo.cn` 访客流 + `m.weibo.cn` 实时流 `type=61`/综合热门流 `type=1` 直搜，彻底攻克 `ok=-100`）；④ **`rmt_market`**（覆盖 **DD373 / 7881 / 5173 / 交易猫 / 盼之代售 / UU898 / 藏宝阁 / Steam / G2G / TapTap** 10 大平台实时盘口、交易猫 96 条秒级真实付款成交流水、Steam 实时在线人数及两轮订单簿快照差分纯函数 `diff_order_book`）；⑤ **`finance_wire`**（东方财富股吧散户帖 + 东财/雪球/新浪 7x24 秒级财报宏观电报 + 雪球实时行情）；⑥ **`physical_probe`**（非游戏跨领域真实物理探针引擎 `macro_probe_engine.py` + 跨市场套利排雷引擎 `arbitrage_scanner.py`，覆盖 **京东司法拍卖 38 万套房产/破产资产 JSON、阿里法拍 SSR、懂车帝二手豪车 JSON + 14 字符 PUA 字体完整破译器、铁甲二手挖掘机工程机械抛售价、贝壳全国二手房挂牌与滞销周期、生意社大宗现货 + 新浪期货连续合约贴水、OKX 实时 `USDT/CNY` 场外换汇盘口、全国公共资源交易平台中标公告与采购合同全文直取、黑猫投诉 SHA256 签名维权流、巨潮资讯与水滴信用企业风险/破产处置账户、蓝领普工真实薪资、猫眼无字体加密实时票房与场均人次、豆瓣失业/负债/租房小组 Rexxar JSON、什么值得买全网清仓好价、去哪儿 50 天特价机票日历、以及 `arbitrage_scan` 跨市场套利与求财智子排雷扫描器** 16 大探针源）+ **`proxy_pool`**（双机场订阅 84 节点 `mihomo` 独立端口零切换延迟轮换池，固化中转机场不按入口去重与精确词过滤两大铁律），详见 [CHANGELOG.md](CHANGELOG.md)。
+此前
 **v3.44.0（2026-09-17）**：v3.0 全面审计大修之后连续四十四轮迭代——
 正主客户端行为钉批（v3.43 覆盖缺口线的正主遗漏项收尾）：全量覆盖率
 取证（coverage --source=tools）暴露 **github_client 22% 全仓最低**

@@ -788,6 +788,29 @@ def read(url: str) -> Dict:
                       f"（{getattr(e, 'slug', type(e).__name__)}）→ "
                       f"通用线兜底", file=sys.stderr)
         return read_generic(u)
+    if host == "tieba.baidu.com":
+        m_tb = re.search(r"/p/(\d+)", u)
+        if m_tb:
+            import tieba_engine
+            try:
+                th = tieba_engine.fetch_thread(m_tb.group(1), on_error="raise")
+                lines = [
+                    f"#{p.get('floor')} @{p.get('author')}: {p.get('content')}"
+                    for p in (th.get("posts") or [])
+                ]
+                content, truncated = _content_field("\n".join(lines))
+                return {
+                    "title": th.get("title") or f"贴吧帖子 {m_tb.group(1)}",
+                    "content": content,
+                    "truncated": truncated,
+                    "url": th.get("url") or u,
+                    "engine": "tieba-h5-api",
+                }
+            except Exception as e:
+                print(f"[zhihu_content] tieba H5 线失败"
+                      f"（{getattr(e, 'slug', type(e).__name__)}）→ "
+                      f"通用线兜底", file=sys.stderr)
+        return read_generic(u)
     if host == "zhihu.com" or host.endswith(".zhihu.com"):
         m = _ANSWER_RE.search(u)
         if m:

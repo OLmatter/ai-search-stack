@@ -20,16 +20,22 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     }
     依赖：pip install "mcp>=2.1"（1.x SDK 亦兼容，见下方双版本导入）。
 
-工具清单（15）:
+工具清单（21，自工具清单（15）扩展）:
     china_search        中国平台聚合搜索（知乎/B站/掘金/微信等19平台，含百度site:路由13站）
     china_hotlist       中国平台热榜聚合（B站热门/微博热搜；知乎实测需登录态）
-    read_page           通用阅读器（知乎 API 线 + 外域 HTTP/浏览器兜底）
+    read_page           通用阅读器（知乎/B站/贴吧 API 线 + 外域 HTTP/浏览器兜底）
     zhihu_question      知乎问题详情（官方 API）
     zhihu_answers       知乎回答列表（官方 API）
     zhihu_article       知乎专栏文章（官方 API）
     zhihu_comments      知乎评论读取（官方 comment_v5 API，含子评论展开）
     bilibili_video      B 站视频结构化详情（官方 view API）
     bilibili_subtitles  B 站字幕链路（cid 补全 + player/wbi/v2；未登录实测恒空列表）
+    bilibili_comments   B 站评论区与弹幕免登录读取（置顶报价 + 热门评论 + 子评论 + 弹幕池）
+    tieba_feed          百度贴吧 H5 免登录直读（吧内实时帖子列表 forum + 千楼交易帖楼层 thread）
+    weibo_search        微博移动端免登录直搜（genvisitor2 访客流 + 实时流/综合热门流）
+    rmt_market          10 大游戏币/虚拟资产/在线人口平台实时盘口探针（DD373/7881/5173/交易猫/盼之/Steam/G2G/TapTap等）
+    finance_wire        财经舆情与宏观快讯直连（东财股吧散户帖 + 东财/雪球/新浪 7x24 电报 + 雪球行情）
+    physical_probe      非游戏跨领域真实物理探针（法拍强平/二手豪车挖掘机房产折价/大宗现货USDT场外/公共资源中标/黑猫投诉/企业风险/蓝领薪资/猫眼票房/豆瓣生存小组/清仓价/特价机票）
     hn_search           Hacker News Algolia 搜索
     github_releases     GitHub release 列表
     github_advisories   GitHub Security Advisories
@@ -41,7 +47,7 @@ ZCode / Claude Desktop 配置（stdio server）示例:
     read_page        可能触发无头浏览器（10-15s）；知乎 cookie 过期自动引导更久
     china_search     bilibili 1-3s；百度有强制 ~20s 请求间隔，多平台串行按平台数放大
     googlebridge_search 隐身 Chrome 真搜 Google，数十秒级
-    hn/github/searxng 秒级
+    hn/github/searxng/tieba/weibo/rmt/finance/physical_probe 秒级
 
 并发模型（mcp 2.x 实测）：同步工具经 anyio.to_thread.run_sync 在工作线程执行，
 慢调用不阻塞事件循环与其他调用（并发上限 = anyio 默认线程池 40）。stdin/stdout
@@ -63,7 +69,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Optional
 
-__version__ = "3.44.0"
+__version__ = "3.45.0"
 
 _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -75,9 +81,14 @@ _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 try:
     import bilibili_engine as _bilibili
     import doctor as _doctor
+    import finance_engine as _finance
     import github_client as _github
     import hackernews_client as _hn
+    import macro_probe_engine as _macro
+    import rmt_engine as _rmt
     import searxng_client as _searxng
+    import tieba_engine as _tieba
+    import weibo_engine as _weibo
     import zhihu_content as _zhihu
     import search as _chat
 except ImportError:  # 常规启动：把各工具子目录注入 sys.path 后扁平导入
@@ -87,9 +98,14 @@ except ImportError:  # 常规启动：把各工具子目录注入 sys.path 后�
             sys.path.insert(0, _p)
     import bilibili_engine as _bilibili
     import doctor as _doctor
+    import finance_engine as _finance
     import github_client as _github
     import hackernews_client as _hn
+    import macro_probe_engine as _macro
+    import rmt_engine as _rmt
     import searxng_client as _searxng
+    import tieba_engine as _tieba
+    import weibo_engine as _weibo
     import zhihu_content as _zhihu
     import search as _chat
 
@@ -109,7 +125,12 @@ def _make_server():
 
 
 _INSTRUCTIONS = """ai-search-stack 工具箱路由：
-- 中国平台内容/社区（知乎、B站、微信公众号、百度site:路由13站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles
+- 中国平台内容/社区（知乎、B站、微信公众号、百度site:路由13站）-> china_search / read_page / zhihu_* / bilibili_video / bilibili_subtitles / bilibili_comments
+- 百度贴吧吧内实时帖与千楼详情（免登直连）-> tieba_feed
+- 微博移动端实时/综合搜索（免登访客流，秒级免百度节流）-> weibo_search
+- 游戏币/虚拟资产/在线人口10平台盘口与成交流水（DD373/7881/5173/交易猫/盼之/Steam/G2G/TapTap）-> rmt_market
+- 财经舆情与宏观快讯直连（东方财富股吧散户帖 / 东财+雪球+新浪 7x24 电报 / 雪球实时行情）-> finance_wire
+- 非游戏跨领域真实物理探针（京东阿里法拍强平 / 懂车帝二手豪车PUA解码 / 铁甲二手挖掘机 / 贝壳二手房 / 生意社现货与期货贴水 / OKX场外USDT汇率 / 国家公共资源交易中标公告与合同 / 黑猫投诉 / 巨潮与水滴企业风险 / 蓝领普工薪资 / 猫眼实时票房场均人次 / 豆瓣失业负债租房小组 / 值得买清仓价 / 去哪儿特价机票）-> physical_probe
 - 中国平台热榜监控（vendor 官宣/事件首发地/舆情雷达）-> china_hotlist
 - 国际技术社区反应验证 -> hn_search
 - GitHub release / 安全通告 -> github_releases / github_advisories
@@ -371,6 +392,132 @@ def bilibili_subtitles(video: str, part: Optional[int] = None) -> str:
     """委托 bilibili_engine.fetch_subtitles（Dict 或 List[错误] 双形态归一）。"""
     return _run("chat-scraper", video, _bilibili.fetch_subtitles, video,
                 part=part, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "B 站视频评论区与弹幕池读取（官方 /x/v2/reply + comment.bilibili.com XML，"
+    "公开免登录）：{bvid, aid, cid, title, owner, top_reply(置顶评论/报价), "
+    "comment_count, comments:[{rpid, author, content, like, ctime, sub_replies}],"
+    " danmaku_count, danmaku:[str], url, engine}。\n"
+    "何时用：弥补未登录访客 bilibili_subtitles 恒为空列表的盲区——直接拉取"
+    "UP 主置顶评论（常含报价/群号/置顶订正）、高赞评论、楼中楼及视频实时弹幕。\n"
+    "video 接受纯 BV 号或含 BV 号的 URL；sort: 1=按热度（默认）/ 0=按最新；"
+    "include_danmaku: 默认 True。耗时：秒级。错误按统一错误协议上报。"))
+def bilibili_comments(video: str,
+                      num: int = 20,
+                      sort: int = 1,
+                      include_danmaku: bool = True,
+                      part: Optional[int] = None) -> str:
+    """委托 bilibili_engine.fetch_comments（on_error 固定 report）。"""
+    return _run("chat-scraper", video, _bilibili.fetch_comments, video,
+                num=num, sort=sort, include_danmaku=include_danmaku,
+                part=part, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "百度贴吧移动端 H5 免登录直读（/mg/f/getFrsData 吧内实时帖 + /mg/p/getPbData "
+    "贴内千楼详情）：彻底绕过百度 site: 20s 节流与 PC 端贴吧 403。\n"
+    "何时用：mode=\"forum\" 读指定贴吧（如 \"dd373\" / \"游戏币交易\" / \"传奇私服\"）"
+    "的实时帖子流；mode=\"thread\" 读指定帖子（纯数字 tid 或 /p/<tid> URL）的"
+    "指定页楼层正文（可直读 800+ 楼交易专帖的最新收出币报价）。\n"
+    "耗时：秒级。错误在返回 JSON 内按统一错误协议上报。"))
+def tieba_feed(target: str,
+               mode: str = "forum",
+               num: int = 20,
+               page: int = 1) -> str:
+    """委托 tieba_engine.fetch_forum 或 fetch_thread。"""
+    if mode == "thread":
+        return _run("chat-scraper", target, _tieba.fetch_thread, target,
+                    page=page, rn=num, on_error="report")
+    return _run("chat-scraper", target, _tieba.fetch_forum, target,
+                num=num, page=page, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "微博移动端 H5 免登录直搜（visitor.passport.weibo.cn/visitor/genvisitor2 "
+    "秒签 .weibo.cn 访客 cookie + m.weibo.cn/api/container/getIndex）："
+    "[{id, title, content, author, created_at, attitudes_count, comments_count,"
+    " reposts_count, url}]。\n"
+    "何时用：查微博秒级实时讨论（mode=\"realtime\"，type=61）或综合高赞热门"
+    "（mode=\"hot\"，type=1），无需走百度 site:weibo.com 的 20s 节流。\n"
+    "耗时：秒级。错误按统一错误协议上报。"))
+def weibo_search(q: str,
+                 mode: str = "realtime",
+                 num: int = 10,
+                 page: int = 1,
+                 vendor: str = "?",
+                 role: str = "primary") -> str:
+    """委托 weibo_engine.search（on_error 固定 report）。"""
+    return _run("chat-scraper", q, _weibo.search, q, mode=mode, num=num,
+                page=page, vendor=vendor, role=role, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "多平台游戏币/虚拟资产盘口与在线人口遥测探针（覆盖 10 大平台免登录直连）：\n"
+    "platform 可选：\n"
+    "- dd373     : H5 网关绕过滑块，查 538 款游戏目录 + 卖盘 Ask + 求购盘 Bid\n"
+    "- 7881      : lb-sign 双 MD5 签名查在售卖盘 + shou.7881.com 求购盘 Bid\n"
+    "- 5173      : shop.5173.com 查 456 款游戏实时基准金价 + 账号挂牌抛售流\n"
+    "- jiaoyimao : 交易猫 SSR 直提 96 条全站秒级真实付款成交流水（1秒前/4秒前）\n"
+    "- pzds      : 盼之代售 Nuxt SSR 退坑号挂牌价与「已减XX元」降价幅度\n"
+    "- uu898     : UU898 卖盘与求购盘\n"
+    "- cbg       : 网易藏宝阁在售公示列表\n"
+    "- steam     : Steam 市场五档买卖深度图 + 官方实时在线人数（query=appid）\n"
+    "- g2g       : 全球跨境 RMT USD 实时报价与库存深度（query=brand_id）\n"
+    "- taptap    : TapTap 新游热榜与关键词搜索评分（query=游戏名，空串=热榜）\n"
+    "耗时：秒级。错误按统一错误协议上报。"))
+def rmt_market(platform: str = "dd373",
+               query: str = "",
+               num: int = 5) -> str:
+    """委托 rmt_engine.probe（on_error 固定 report）。"""
+    return _run("rmt-market", query or platform, _rmt.probe,
+                platform, query, num=num, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "财经舆情与宏观快讯直连（免登录直取散户实况帖、7x24 秒级财报宏观电报与实时行情）：\n"
+    "source 可选：\n"
+    "- eastmoney_guba : 东方财富股吧 SSR（query=股票或指数代码如 zssh000001 / 600519）\n"
+    "- eastmoney_724  : 东方财富 7x24 全球财经快讯 JSON\n"
+    "- xueqiu_724     : 雪球 7x24 实时宏观/公司电报\n"
+    "- xueqiu_quote   : 雪球批量实时股价/市值/涨跌幅（query=逗号分隔如 SH600519,HKHSI）\n"
+    "- sina_724       : 新浪财经 7x24 全球实时电报\n"
+    "耗时：秒级。错误按统一错误协议上报。"))
+def finance_wire(source: str = "eastmoney_724",
+                 query: str = "",
+                 num: int = 10) -> str:
+    """委托 finance_engine.fetch_wire（on_error 固定 report）。"""
+    return _run("finance-wire", query or source, _finance.fetch_wire,
+                source, query, num=num, on_error="report")
+
+
+@_tool(structured_output=False, description=(
+    "非游戏跨领域真实物理探针（覆盖 15 个高造假代价一手微观底单源，免登录直连）：\n"
+    "source 可选：\n"
+    "- jd_auction       : 京东司法拍卖/破产强平 JSON（query=住宅/破产/路虎/厂房，含评估价折价率与一拍二拍变卖）\n"
+    "- ali_auction      : 阿里司法拍卖 SSR JSON（query=住宅/保时捷/商铺，含起拍价vs评估价折价率、围观与报名人数）\n"
+    "- used_car         : 懂车帝全国二手豪车/新能源骨折价 JSON + 14字符PUA字体解码（query=路虎/保时捷/蔚来/玛莎拉蒂）\n"
+    "- used_excavator   : 铁甲二手机械全国二手挖掘机/装载机抛售价、工作小时数与年份 SSR\n"
+    "- ershoufang       : 贝壳找房全国城市二手房真实挂牌单价与滞销周期 SSR（query=海口/北京/深圳/上海等）\n"
+    "- commodity_spot   : 生意社大宗商品现货基准价 + 新浪期货连续合约实时贴水（query=多晶硅/碳酸锂/水泥/螺纹钢/玻璃/生猪）\n"
+    "- crypto_otc       : OKX C2C 实时 USDT/CNY 地下换汇盘口、商家报价与深度\n"
+    "- ggzy_bid         : 全国公共资源交易平台中标公告与采购合同全文直取（query=环卫/保安/劳务外包/食堂/殡仪馆）\n"
+    "- blackcat         : 新浪黑猫投诉 SHA256 签名直取实时维权/欠薪/跑路/退费流与商家投诉统计（query=商家名或空串）\n"
+    "- corp_risk        : 巨潮资讯上市公司欠薪/停工/诉讼公告全文检索 + 水滴信用企业存续/注销/破产处置账户直查\n"
+    "- blue_collar      : 新安人才网蓝领普工/保安/操作工/小时工真实到手薪资（query=普工/保安/电工）\n"
+    "- maoyan_boxoffice : 猫眼专业版无字体加密实时全国票房、总人次、场均人次与上座率（query=可选YYYYMMDD）\n"
+    "- douban_group     : 豆瓣草根生存小组 Rexxar JSON + 全站按分钟实时帖搜索（query=失业/负债/消费降级/深圳租房/考公）\n"
+    "- smzdm_clearance  : 什么值得买 api.smzdm.com 全网清仓/飞天茅台/足金/光伏板实时好价（query=商品名）\n"
+    "- qunar_airfare    : 去哪儿全国航线未来 50 天最低特价机票日历（query=出发城市-到达城市，如 上海-深圳）\n"
+    "- arbitrage_scan   : 跨市场套利与求财智子排雷扫描器（query=all/digital/physical/ggzy_scrap 或 mode:keyword）\n"
+    "耗时：秒级。错误按统一错误协议上报。"))
+def physical_probe(source: str = "jd_auction",
+                   query: str = "",
+                   num: int = 5) -> str:
+    """委托 macro_probe_engine.probe（on_error 固定 report）。"""
+    return _run("macro-probe", query or source, _macro.probe,
+                source, query, num=num, on_error="report")
+
 
 
 @_tool(structured_output=False, description=(

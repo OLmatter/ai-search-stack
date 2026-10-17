@@ -41,11 +41,13 @@ import sys
 import threading
 import time
 import urllib.parse
+import zlib
 from typing import Dict, List, Optional, Tuple
 
 import requests
 
-__all__ = ["search", "fetch_video", "fetch_subtitles", "BilibiliApiError"]
+__all__ = ["search", "fetch_video", "fetch_subtitles", "fetch_comments",
+           "BilibiliApiError"]
 
 _TOOL = "chat-scraper"
 _PLATFORM = "bilibili"
@@ -590,3 +592,152 @@ def fetch_subtitles(video: str, part: Optional[int] = None,
             return [{"error": f"{slug}: {e}", "tool": _TOOL,
                      "query": video, "platform": _PLATFORM}]
         return []
+
+
+_API_REPLY = "https://api.bilibili.com/x/v2/reply"
+COMMENT_LIMIT = 500
+
+
+def _format_reply_item(r: Dict) -> Dict:
+    """格式化单条评论（含子评论扁平摘要）。"""
+    content_obj = r.get("content") or {}
+    msg = (content_obj.get("message") or "").strip()
+    truncated = len(msg) > COMMENT_LIMIT
+    if truncated:
+        msg = msg[:COMMENT_LIMIT]
+    member = r.get("member") or {}
+    sub_list = []
+    for sub in (r.get("replies") or [])[:5]:
+        if not isinstance(sub, dict):
+            continue
+        s_msg = ((sub.get("content") or {}).get("message") or "").strip()
+        if len(s_msg) > COMMENT_LIMIT:
+            s_msg = s_msg[:COMMENT_LIMIT]
+        sub_list.append({
+            "rpid": sub.get("rpid"),
+            "author": (sub.get("member") or {}).get("uname", ""),
+            "content": s_msg,
+            "like": int(sub.get("like") or 0),
+            "ctime": int(sub.get("ctime") or 0),
+        })
+    return {
+        "rpid": r.get("rpid"),
+        "author": member.get("uname", ""),
+        "content": msg,
+        "truncated": truncated,
+        "like": int(r.get("like") or 0),
+        "rcount": int(r.get("rcount") or 0),
+        "ctime": int(r.get("ctime") or 0),
+        "sub_replies": sub_list,
+    }
+
+
+def fetch_comments(video: str, num: int = 20, sort: int = 1,
+                   include_danmaku: bool = True,
+                   part: Optional[int] = None,
+                   on_error: str = "report") -> Dict:
+    """B 站视频评论区 + 弹幕池免登录读取（v3.45.0，弥补未登录字幕恒空盲区）。
+
+    实测（2026-10-16，本机 + 32 出口 IP 验证）：
+      1) view API 拿 aid 与 cid（公开免签）；
+      2) /x/v2/reply?type=1&oid={aid}&sort={sort}&ps={ps}&pn=1 免登录直接返回
+         置顶评论（upper.top，常含 UP 主/币商置顶报价与联系方式）+ 热门/最新根评论
+         及内嵌楼中楼 replies；
+      3) comment.bilibili.com/{cid}.xml 免登录返回视频实时弹幕流（deflate 压缩 XML）。
+
+    Args:
+        video: 纯 BV 号或含 BV 号的 URL
+        num: 返回根评论条数上限（1..50，默认 20）
+        sort: 1=按点赞热度（默认），0=按时间最新
+        include_danmaku: 是否附带前 50 条弹幕文本（默认 True，失败降级为空列表不炸主流程）
+        part: 分 P 序号（默认 P1，影响弹幕 cid）
+        on_error: "report"（默认）/ "raise" / "empty"
+    """
+    bvid = _extract_bvid(video)
+    if not bvid:
+        err = ValueError(f"invalid bvid: {video!r}")
+        if on_error == "raise":
+            raise err
+        if on_error == "report":
+            return [{"error": f"ValueError: {err}", "tool": _TOOL,
+                     "query": video, "platform": _PLATFORM}]
+        return []
+    if part is None:
+        part = _extract_part(video) or 1
+    try:
+        s = _get_session()
+        _wait_turn()
+        resp = s.get("https://api.bilibili.com/x/web-interface/view",
+                     params={"bvid": bvid}, timeout=TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != 0:
+            raise BilibiliApiError(
+                f"view code={data.get('code')} message={data.get('message')}")
+        v = data.get("data") or {}
+        aid = v.get("aid")
+        if not aid:
+            raise BilibiliApiError("view 响应无 aid")
+        cid, pages_count, part_title = _resolve_cid(v, int(part))
+
+        ps = max(1, min(int(num), 20))
+        _wait_turn()
+        r_rep = s.get(_API_REPLY, params={
+            "type": 1, "oid": int(aid), "sort": int(sort), "ps": ps, "pn": 1,
+        }, timeout=TIMEOUT)
+        r_rep.raise_for_status()
+        rdata = r_rep.json()
+        if rdata.get("code") != 0:
+            raise BilibiliApiError(
+                f"reply code={rdata.get('code')} message={rdata.get('message')}")
+        rbody = rdata.get("data") or {}
+        top_raw = (rbody.get("upper") or {}).get("top")
+        top_reply = _format_reply_item(top_raw) if isinstance(top_raw, dict) else None
+        raw_replies = rbody.get("replies") or []
+        comments = [_format_reply_item(r) for r in raw_replies[:max(1, int(num))]
+                    if isinstance(r, dict)]
+
+        danmaku_list: List[str] = []
+        if include_danmaku and cid:
+            try:
+                _wait_turn()
+                r_dm = s.get(f"https://comment.bilibili.com/{int(cid)}.xml",
+                             timeout=TIMEOUT)
+                raw_bytes = r_dm.content
+                try:
+                    xml_text = zlib.decompress(raw_bytes, -zlib.MAX_WBITS).decode(
+                        "utf-8", errors="ignore")
+                except Exception:
+                    xml_text = raw_bytes.decode("utf-8", errors="ignore")
+                danmaku_list = re.findall(r'<d p="[^"]*">([^<]+)</d>', xml_text)[:50]
+            except Exception:
+                danmaku_list = []
+
+        return {
+            "bvid": bvid,
+            "aid": int(aid),
+            "cid": int(cid) if cid else 0,
+            "page": int(part),
+            "part_title": part_title,
+            "pages_count": pages_count,
+            "title": _clean_title(v.get("title", "")),
+            "owner": (v.get("owner") or {}).get("name", ""),
+            "top_reply": top_reply,
+            "comment_count": len(comments),
+            "comments": comments,
+            "danmaku_count": len(danmaku_list),
+            "danmaku": danmaku_list,
+            "url": (f"https://www.bilibili.com/video/{bvid}"
+                    + (f"?p={part}" if int(part) > 1 else "")),
+            "platform": _PLATFORM,
+            "engine": "bilibili-reply-api",
+        }
+    except Exception as e:
+        if on_error == "raise":
+            raise
+        if on_error == "report":
+            slug = getattr(e, "slug", None) or type(e).__name__
+            return [{"error": f"{slug}: {e}", "tool": _TOOL,
+                     "query": video, "platform": _PLATFORM}]
+        return []
+

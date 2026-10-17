@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.45.0] - 2026-10-16
+
+### 🎯 全平台协议级真实数据拓荒与双订阅 37-IP 代理池批（MCP 工具 15→21）
+
+- **`bilibili_comments`（`bilibili_engine.fetch_comments`）**：免登录直调 `/x/v2/reply` 拿置顶评论（`upper.top`）、热门/最新评论、子评论展开及 `comment.bilibili.com/{cid}.xml` 弹幕流（弥补未登录访客 `bilibili_subtitles` 恒为空列表的盲区）。
+- **`tieba_feed`（`tieba_engine.py` + `read_page` 分流）**：免登录直调百度贴吧移动端 H5 `/mg/f/getFrsData`（吧内实时帖子列表）与 `/mg/p/getPbData`（千楼详情楼层流），并在 `zhihu_content.read()` 中自动接管 `tieba.baidu.com/p/<tid>`，彻底绕过 PC 端 403 与百度 20s 节流。
+- **`weibo_search`（`weibo_engine.py`）**：单次 POST `visitor.passport.weibo.cn/visitor/genvisitor2`（`<0.3s`）签发 `.weibo.cn` 域访客 `SUB`/`SUBP` cookie，攻克 `m.weibo.cn/api/container/getIndex` `ok=-100` 拦截，支持 `type=61`（秒级实时流）与 `type=1`（综合热门流）免登直搜。
+- **`rmt_market`（`rmt_engine.py` 10 大平台盘口与在线人口探针 + 快照差分纯函数）**：
+  - 国内盘口与退坑号清算：**`dd373`**（`gw.dd373.com` H5 网关绕过阿里云 ESA 滑块，538 款游戏目录 + 卖盘 Ask + 求购盘 Bid）、**`7881`**（逆向 `lb-cry.js` 双 MD5 `lb-sign` 查在售单 + `shou.7881.com` 求购盘）、**`5173`**（`shop.5173.com/g/gsort` 456 款游戏实时金价 + 在售账号与推荐抛售流）、**`jiaoyimao`**（SSR `window.__INITIAL_DATA__` 提取 96 条全站秒级真实成交流水 `realtimeTransactionInfos`）、**`pzds`**（盼之代售 Nuxt SSR 退坑号与已降价幅度）、**`uu898`**、**`cbg`**（网易藏宝阁）；
+  - 跨境与人口遥测：**`steam`**（`itemordershistogram` 五档深度图 + `GetNumberOfCurrentPlayers` 免 Key 实时在线人数）、**`g2g`**（`sls.g2g.com` 全球 USD 报价与库存深度）、**`taptap`**（固定 `X-UA` 免 Cookie 查热榜与搜索评分）；
+  - 无状态两轮快照差分纯函数 `diff_order_book(before, after)`：识别部分成交（`PARTIAL_FILL_CLEARED`）与卖一档消化（`TOUCH_CLEARED`），剔除滞销改价重挂（`RELIST_PRICE_CUT`）与远端无效撤单（`OUT_OF_BOOK_CANCEL`）。
+- **`finance_wire`（`finance_engine.py`）**：直连东方财富股吧 SSR `var article_list`（单页 80 条散户帖）、东方财富/雪球/新浪 7x24 实时财经快讯与雪球批量实时行情（`batch/quote.json`）。
+- **`physical_probe`（`macro_probe_engine.py` 15 大非游戏跨领域真实物理探针）**：
+  - 司法强平与大宗实物折价：**`jd_auction`**（京东法拍/破产强平 JSON API）、**`ali_auction`**（阿里法拍 SSR JSON）、**`used_car`**（懂车帝二手豪车 JSON API + 14 字符 PUA 字体完整破译器 `decode_dongchedi_pua`）、**`used_excavator`**（铁甲二手挖掘机工程机械抛售价）、**`ershoufang`**（贝壳全国二手房挂牌与滞销周期）；
+  - 工业品现货与地下换汇：**`commodity_spot`**（生意社大宗现货基准价 + 新浪期货连续合约实时贴水）、**`crypto_otc`**（OKX C2C 实时 `USDT/CNY` 场外换汇盘口与深度）；
+  - 基层招投标、维权爆雷、企业风险与蓝领工价：**`ggzy_bid`**（全国公共资源交易平台 HTTPS POST JSON + `/html/b/` 中标公告与采购合同全文直取）、**`blackcat`**（新浪黑猫投诉 `$d6eb7ff91ee257475%` SHA256 签名 `compute_blackcat_signature` + 商家投诉两步流水线）、**`corp_risk`**（巨潮资讯欠薪停工公告检索 + 水滴信用企业存续/注销/破产处置账户直查）、**`blue_collar`**（新安人才网蓝领普工/小时工/劳务派遣真实薪资）；
+  - 线下消费人流、草根生存与尾货跳水价：**`maoyan_boxoffice`**（猫眼专业版 `dashboard-ajax/movie` 无字体加密实时票房、总人次、场均人次与上座率）、**`douban_group`**（豆瓣失业/负债/消费降级/租房/考公小组 Rexxar JSON + 全站按分钟实时帖搜索）、**`smzdm_clearance`**（什么值得买 `api.smzdm.com/v1/list` 全网清仓/茅台/黄金/组件好价）、**`qunar_airfare`**（去哪儿 `gw.flight.qunar.com` 50 天最低特价机票日历）。
+- **`arbitrage_scanner.py`（`physical_probe(source="arbitrage_scan")` 跨市场套利与求财智子排雷引擎）**：联动 `sophon-10-wealth-arbitrage-sophon` 去魅卡，自动对撞 G2G USD vs 国内 RMT 收货/零售盘口（扣除 10% 通道费计算净顺差）、京东/阿里法拍二拍变卖价 vs 值得买清仓底价（刺穿注水评估价陷阱）、以及公共资源 `ggzy_bid` 废旧物资/报废电梯 `0%` 溢价与 `0` 账面净值暗标。
+- **`proxy_pool.py`（双机场订阅 `mihomo` 多端口零切换延迟轮换池）**：合并双订阅 84 节点（52 存活 / 37 独立出口 IP），固化中转机场两大铁律（严禁按 `server:port` 入口去重、严禁用宽泛 `"流量"` 过滤节点名）。
+- **测试**：`test_v3440` 降常青交接 `test_v3450`（24 钉全离线），全仓 `851 -> 870` 全绿。
+
 ## [3.44.0] - 2026-09-17
 
 ### 🎯 正主客户端行为钉批：github_client（全仓最低覆盖 22%）补齐 + hackernews 错误接线收尾——v3.43 覆盖缺口线的正主遗漏项
